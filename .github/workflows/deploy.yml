@@ -14,7 +14,6 @@ on:
       - 'uv.lock'
       - 'Dockerfile'
       - '.dockerignore'
-      - 'infra/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch:
 
@@ -23,6 +22,7 @@ permissions:
 
 env:
   DEPLOYMENT_NAME: ttb-cola-infra
+  NAME_PREFIX: ttb-pcr
   IMAGE_REPO: colasearch
   RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
   ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
@@ -52,8 +52,19 @@ jobs:
 
       - name: Read Container App name
         run: |
+          az extension add --name containerapp --upgrade --only-show-errors || true
           APP_NAME=$(az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" \
-            --query properties.outputs.containerAppName.value -o tsv)
+            --query properties.outputs.containerAppName.value -o tsv 2>/dev/null || true)
+          if [ -z "$APP_NAME" ]; then
+            echo "Deployment '$DEPLOYMENT_NAME' not found or missing outputs; falling back to '${NAME_PREFIX}-app'."
+            APP_NAME=$(az containerapp list -g "$RESOURCE_GROUP" \
+              --query "[?name=='${NAME_PREFIX}-app'].name | [0]" -o tsv)
+          fi
+          if [ -z "$APP_NAME" ]; then
+            echo "::error::Could not resolve the Container App name in $RESOURCE_GROUP. Run the infra workflow first."
+            exit 1
+          fi
+          echo "Resolved APP_NAME=$APP_NAME"
           echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
 
       - name: Update Container App image
