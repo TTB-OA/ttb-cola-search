@@ -1,0 +1,61 @@
+"""Application configuration loaded from environment / .env."""
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# All API routes are mounted under this prefix.
+API_PREFIX = "/api"
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # --- Postgres -----------------------------------------------------------
+    postgres_host: str
+    postgres_port: int = 5432
+    postgres_db: str
+    postgres_schema: str = "public"
+    postgres_auth_method: str = "entra"  # "entra" | "password"
+    postgres_user: str
+    postgres_password: str = ""
+    postgres_sslmode: str = "verify-full"
+    postgres_sslrootcert: str | None = None
+    postgres_connect_timeout: int = 30
+    postgres_pool_min: int = 1
+    postgres_pool_max: int = 8
+
+    # --- Blob storage (label images) ---------------------------------------
+    blob_account_url: str | None = None
+    blob_container: str | None = None
+
+    # --- Embedding provider (pluggable) ------------------------------------
+    embedding_provider: str = "gemini"
+    embedding_model: str = "gemini-embedding-2"
+    embedding_dim: int = 768
+    gemini_api_key: str | None = None
+
+    # --- API ----------------------------------------------------------------
+    api_title: str = "TTB COLA Search API"
+    cors_origins: str = "*"
+    # Create/refresh the vw_colas database views on application startup.
+    init_views: bool = True
+    # Directory of the built Vite SPA (dist). When set and present, FastAPI
+    # serves the SPA at "/" so the app runs single-origin (no CORS in prod).
+    # In the container this is set to the copied build output; unset locally.
+    spa_dir: str | None = None
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()  # type: ignore[call-arg]

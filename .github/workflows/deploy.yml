@@ -1,0 +1,73 @@
+# Build the container image and push it to the shared ACR, then roll it out to
+# the Container App. Requires infra.yml to have been run first (creates the
+# Container App and its registry credentials).
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'frontend/**'
+      - 'resources/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'infra/**'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEPLOYMENT_NAME: ttb-cola-infra
+  IMAGE_REPO: colasearch
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  ACR_LOGIN_SERVER: ${{ vars.ACR_LOGIN_SERVER }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (service principal)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Registry login
+        run: |
+          echo "${{ secrets.ACR_PASSWORD }}" | docker login "$ACR_LOGIN_SERVER" \
+            -u "${{ vars.ACR_USERNAME }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          IMAGE="$ACR_LOGIN_SERVER/$IMAGE_REPO"
+          docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" -f Dockerfile .
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+      - name: Read Container App name
+        run: |
+          APP_NAME=$(az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" \
+            --query properties.outputs.containerAppName.value -o tsv)
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
+
+      - name: Update Container App image
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors || true
+          az containerapp update \
+            -g "$RESOURCE_GROUP" \
+            -n "$APP_NAME" \
+            --image "$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ github.sha }}" \
+            --only-show-errors
+
+      - name: Summary
+        run: |
+          FQDN=$(az containerapp show -g "$RESOURCE_GROUP" -n "$APP_NAME" --query properties.configuration.ingress.fqdn -o tsv)
+          echo "### Deployed :ship:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- App URL: https://$FQDN" >> "$GITHUB_STEP_SUMMARY"

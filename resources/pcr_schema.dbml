@@ -1,0 +1,156 @@
+// PCR COLA Model Schema
+// Purpose: DBML documentation for the implemented PCR tables used by the TTB COLA ingestion pipeline.
+// Note: This file documents the approved PCR delivery model. It does not create or modify database objects.
+
+// TTB COLA Registry — unified schema
+// Updated: 2026-06-29
+
+// ─── Core COLA record ─────────────────────────────────────────────────────────
+Table colas {
+  // Core fields — populated by postgres_ingestion_unified.py (list endpoint)
+  cola_id           bigint [pk]
+  permit_num        varchar   [note: 'Primary permit ID from list endpoint']
+  serial_num        varchar
+  brand_name        varchar
+  fanciful_name     varchar
+  origin_code       varchar
+  origin            varchar   [note: 'State or country of origin']
+  class_type_code   varchar
+  class_type        varchar   [note: 'Product class/type (e.g. TABLE WINE, ALE)']
+  completed_date    date      [note: 'Approval/completion date']
+  status_code       varchar
+  status            varchar   [note: 'Approved / Expired / Pending etc.']
+  received_code     varchar
+  image_count_to_parse int    [note: 'Number of label images found by image scraper']
+  scraped_on        datetime  [note: 'When the core record was fetched from the API']
+
+  // Detail fields from /colas/{id} endpoint are stored in cola_parsed_data (see below).
+  // They are not columns on this table. Use --fetch-details to populate junction tables
+  // (cola_qualifications, cola_grape_varietals) in the same pass.
+}
+
+// ─── Qualifications (one-to-many) ────────────────────────────────────────────
+Table cola_qualifications {
+  cola_id              bigint  [not null, ref: > colas.cola_id]
+  appln_qualftn_id     bigint
+  ref_qualification_id integer
+  qualification_text   text
+
+  Indexes {
+    (cola_id, ref_qualification_id) [pk]
+  }
+}
+
+// ─── Grape varietals (one-to-many) ───────────────────────────────────────────
+Table cola_grape_varietals {
+  cola_id    bigint  [not null, ref: > colas.cola_id]
+  vartl_id   integer
+  vartl_name varchar
+
+  Indexes {
+    (cola_id, vartl_id) [pk]
+  }
+}
+
+// ─── Label images ─────────────────────────────────────────────────────────────
+Table cola_images {
+  cola_id               bigint   [ref: > colas.cola_id]
+  file_name             varchar  [note: 'Short filename within the blob container (e.g. label_1.jpg)']
+  img_type              varchar  [note: 'e.g. FRONT, BACK, NECK, STRIP, OTHER']
+  width_px              int
+  height_px             int
+  dimensions_txt        varchar  [note: 'Dimensions as printed on the COLA form']
+  blob_name             varchar  [note: 'Full path of the blob within the container (e.g. 2025/04/25083001/label_1.jpg)']
+  blob_url              varchar  [note: 'Full Azure Blob Storage URL of the uploaded image']
+  download_status       varchar  [note: 'SUCCESS | PARTIAL | FAILED']
+  scraped_on            datetime
+  image_feature_vector  float[][100]
+  image_feature_vector_date  datetime
+  image_feature_vector_model varchar
+  text_feature_vector   float[][100]
+  text_feature_vector_date   datetime
+  text_feature_vector_model  varchar
+
+  Indexes {
+    (cola_id, file_name) [pk]
+  }
+}
+
+// ─── Parsed detail data from /colas/{id} endpoint ────────────────────────────
+Table cola_parsed_data {
+  cola_id           bigint   [pk, ref: > colas.cola_id]
+  ttb_id            varchar
+  ct_code           varchar
+  or_code           varchar
+  permit_number     text
+  source_dm_im      varchar
+  serial_number     varchar
+  commodity         varchar
+  brand_name        varchar
+  fanciful_name     varchar
+  applicant_name    text
+  mailing_address   text
+  formula           varchar
+  grape_varietal    varchar
+  appelation        varchar
+  phone_number      varchar
+  fax_number        varchar
+  email             varchar
+  application_type  varchar
+  date_of_application varchar
+  qualifications    text
+  date_issued       varchar
+  ttb_status        varchar
+  ttb_ct_description varchar
+  vendor_code       varchar
+  for_sale_in       varchar
+  bottle_capacity   varchar
+  front_label_url   varchar
+  back_label_url    varchar
+  neck_label_url    varchar
+  strip_label_url   varchar
+  other_label_url   varchar
+  parsed_on         datetime
+}
+
+// ─── AI analysis of a COLA (label text, consistency checks, etc.) ─────────────
+Table cola_analysis {
+  cola_id                  bigint   [not null, ref: > colas.cola_id]
+  analysis_model           varchar
+  analysis_type            varchar
+  model_version            varchar
+  analysis_completed_on    datetime
+  prompt                   varchar
+  response                 json
+  metadata                 json
+
+  Indexes {
+    (cola_id, analysis_model) [pk]
+  }
+}
+
+// ─── AI analysis of an individual label image ─────────────────────────────────
+Table cola_image_analysis {
+  cola_id                  bigint   [not null, ref: > colas.cola_id]
+  file_name                varchar  [not null]
+  analysis_model           varchar
+  model_version            varchar
+  analysis_completed_on    datetime
+  metadata                 json
+
+  Indexes {
+    (cola_id, file_name, analysis_model) [pk]
+  }
+}
+
+// ─── Individual items extracted from image analysis ───────────────────────────
+Table image_analysis_items {
+  id                       bigint   [pk]
+  cola_id                  bigint   [not null, ref: > colas.cola_id]
+  file_name                varchar
+  analysis_model           varchar
+  analysis_item_type       varchar
+  text                     varchar
+  model_confidence         float
+  bounding_box             json
+}

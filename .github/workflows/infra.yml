@@ -1,0 +1,55 @@
+# Provision the Azure infrastructure (Container Apps env, identity, app) into the
+# existing resource group, reusing the shared ACR. Run this manually once to
+# bootstrap, and again whenever infra/main.bicep or its parameters change.
+# Day-to-day image deploys use deploy.yml.
+name: infra
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEPLOYMENT_NAME: ttb-cola-infra
+  RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (service principal)
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy Bicep
+        run: |
+          az deployment group create \
+            -g "$RESOURCE_GROUP" \
+            -n "$DEPLOYMENT_NAME" \
+            -f infra/main.bicep \
+            -p infra/main.parameters.json \
+            -p acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
+            -p acrUsername="${{ vars.ACR_USERNAME }}" \
+            -p acrPassword="${{ secrets.ACR_PASSWORD }}" \
+            -p postgresHost="${{ vars.PG_HOST }}" \
+            -p postgresPort="${{ vars.PG_PORT }}" \
+            -p postgresSslmode="${{ vars.PG_SSLMODE }}" \
+            -p postgresDb="${{ vars.PG_DATABASE }}" \
+            -p postgresSchema="${{ vars.PG_SCHEMA }}" \
+            -p postgresUser="${{ vars.PG_USER }}" \
+            -p geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
+            --only-show-errors
+
+      - name: Show outputs
+        run: |
+          az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" \
+            --query properties.outputs -o json
+          FQDN=$(az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" --query properties.outputs.containerAppFqdn.value -o tsv)
+          MI=$(az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" --query properties.outputs.managedIdentityName.value -o tsv)
+          echo "### Infrastructure ready :rocket:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- App URL: https://$FQDN" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Managed identity (grant this in Postgres + Blob RBAC): \`$MI\`" >> "$GITHUB_STEP_SUMMARY"

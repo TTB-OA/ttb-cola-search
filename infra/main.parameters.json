@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "namePrefix": {
+      "value": "ttb-pcr"
+    },
+    "blobAccountUrl": {
+      "value": "https://ttbstoragetesting.blob.core.windows.net"
+    },
+    "blobContainer": {
+      "value": "ttb-public-cola-registry-images"
+    },
+    "embeddingProvider": {
+      "value": "gemini"
+    },
+    "embeddingModel": {
+      "value": "gemini-embedding-2"
+    },
+    "embeddingDim": {
+      "value": 768
+    },
+    "corsOrigins": {
+      "value": "*"
+    }
+  }
+}
