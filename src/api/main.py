@@ -36,7 +36,13 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.api_title, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.api_title,
+        lifespan=lifespan,
+        # Enable "Try it out" by default so users can execute endpoints
+        # without first clicking the button.
+        swagger_ui_parameters={"tryItOutEnabled": True},
+    )
 
     app.add_middleware(
         CORSMiddleware,

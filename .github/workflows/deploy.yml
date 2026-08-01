@@ -82,3 +82,4 @@ jobs:
           echo "### Deployed :ship:" >> "$GITHUB_STEP_SUMMARY"
           echo "- Image: \`$ACR_LOGIN_SERVER/$IMAGE_REPO:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- App URL: https://$FQDN" >> "$GITHUB_STEP_SUMMARY"
+          echo "- API docs: https://$FQDN/docs" >> "$GITHUB_STEP_SUMMARY"
