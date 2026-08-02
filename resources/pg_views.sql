@@ -85,7 +85,56 @@ SELECT
     p.appelation      AS appellation,
     p.ttb_ct_description,
     p.grape_varietal,
-    p.qualifications  AS parsed_qualifications
+    p.qualifications  AS parsed_qualifications,
+
+    -- origin_flag (STUB): emoji flag keyed on origin_code. Foreign codes map to
+    -- their country flag; domestic US-state codes (00-49) fall back to the US
+    -- flag because individual US state flags are not representable as emoji
+    -- (they would need image assets). Unmapped foreign codes (e.g. 4A, 5D, 6E)
+    -- return NULL until the full TTB origin code list is researched/verified.
+    -- New view columns must stay at the end (CREATE OR REPLACE VIEW rule).
+    CASE
+        WHEN c.origin_code ~ '^[0-4][0-9]$' THEN '🇺🇸'  -- 00-49: American / US states
+        WHEN c.origin_code = '50' THEN '🇮🇹'  -- Italy
+        WHEN c.origin_code = '51' THEN '🇫🇷'  -- France
+        WHEN c.origin_code = '52' THEN '🇪🇸'  -- Spain
+        WHEN c.origin_code = '53' THEN '🇩🇪'  -- Germany
+        WHEN c.origin_code = '54' THEN '🇵🇹'  -- Portugal
+        WHEN c.origin_code = '55' THEN '🇩🇰'  -- Denmark
+        WHEN c.origin_code = '56' THEN '🇮🇱'  -- Israel
+        WHEN c.origin_code = '57' THEN '🇬🇷'  -- Greece
+        WHEN c.origin_code = '59' THEN '🇯🇵'  -- Japan
+        WHEN c.origin_code = '5B' THEN '🇸🇪'  -- Sweden
+        WHEN c.origin_code = '5H' THEN '🇮🇸'  -- Iceland
+        WHEN c.origin_code = '62' THEN '🇦🇷'  -- Argentina
+        WHEN c.origin_code = '63' THEN '🇦🇺'  -- Australia
+        WHEN c.origin_code = '64' THEN '🇦🇹'  -- Austria
+        WHEN c.origin_code = '65' THEN '🇧🇪'  -- Belgium
+        WHEN c.origin_code = '67' THEN '🇧🇷'  -- Brazil
+        WHEN c.origin_code = '68' THEN '🇧🇬'  -- Bulgaria
+        WHEN c.origin_code = '69' THEN '🇨🇦'  -- Canada
+        WHEN c.origin_code = '70' THEN '🇨🇱'  -- Chile
+        WHEN c.origin_code = '72' THEN '🇨🇾'  -- Cyprus
+        WHEN c.origin_code = '75' THEN '🇭🇺'  -- Hungary
+        WHEN c.origin_code = '7H' THEN '🇬🇭'  -- Ghana
+        WHEN c.origin_code = '81' THEN '🇲🇽'  -- Mexico
+        WHEN c.origin_code = '83' THEN '🇳🇱'  -- Netherlands
+        WHEN c.origin_code = '84' THEN '🇳🇿'  -- New Zealand
+        WHEN c.origin_code = '86' THEN '🇷🇴'  -- Romania
+        WHEN c.origin_code = '87' THEN '🇨🇭'  -- Switzerland
+        WHEN c.origin_code = '8D' THEN '🇳🇦'  -- Namibia
+        WHEN c.origin_code = '8F' THEN '🇵🇾'  -- Paraguay
+        WHEN c.origin_code = '91' THEN '🇿🇦'  -- South Africa
+        WHEN c.origin_code = '92' THEN '🇬🇧'  -- United Kingdom
+        WHEN c.origin_code = '93' THEN '🇺🇾'  -- Uruguay
+        WHEN c.origin_code = '95' THEN '🇻🇪'  -- Venezuela
+        WHEN c.origin_code = '96' THEN '🇨🇳'  -- China
+        WHEN c.origin_code = '99' THEN '🇵🇱'  -- Poland
+        WHEN c.origin_code = '4U' THEN '🇬🇧'  -- Great Britain
+        WHEN c.origin_code = '4W' THEN '🇫🇯'  -- Fiji
+        WHEN c.origin_code = 'MC' THEN '🌍'   -- Multiple countries
+        ELSE NULL
+    END AS origin_flag
 FROM __SCHEMA__.colas c
 LEFT JOIN __SCHEMA__.cola_parsed_data p ON p.cola_id = c.cola_id;
 $view$;

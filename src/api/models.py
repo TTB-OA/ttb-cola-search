@@ -42,6 +42,7 @@ class ColaSummary(ApiModel):
     class_sub: str | None = None
     origin: str | None = None
     origin_group: str
+    origin_flag: str | None = None
     status: str | None = None
     approval_date: date | None = None
     permit: str | None = None

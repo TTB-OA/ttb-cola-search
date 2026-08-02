@@ -55,6 +55,7 @@ def summary_from_row(row: dict[str, Any], score: float | None = None) -> ColaSum
         class_sub=row.get("ttb_ct_description"),
         origin=row.get("origin"),
         origin_group=source_label(row.get("ct_source")),
+        origin_flag=row.get("origin_flag"),
         status=row.get("status"),
         approval_date=row.get("completed_date"),
         permit=row.get("permit_num"),

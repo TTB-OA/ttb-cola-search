@@ -295,7 +295,7 @@ export default function DetailPage() {
               <h3 className="d-section">Origin &amp; status</h3>
               <div className="d-fields">
                 <Field label="Source">{rec.originGroup}</Field>
-                <Field label="Origin">{rec.origin}</Field>
+                <Field label="Origin">{rec.originFlag ? rec.originFlag + ' ' : ''}{rec.origin}</Field>
                 <Field label="Origin code" mono>
                   {rec.originCode}
                 </Field>

@@ -69,7 +69,7 @@ function GalleryView({ rows, criteria, isImg, onOpen }) {
             </div>
             <div className="g-meta mono">{r.ttbId}</div>
             <div className="g-meta">
-              {r.origin} · {fmtDate(r.approvalDate)}
+              {r.originFlag ? r.originFlag + ' ' : ''}{r.origin} · {fmtDate(r.approvalDate)}
             </div>
           </div>
         </button>
@@ -98,7 +98,7 @@ function ListView({ rows, criteria, isImg, onOpen }) {
             </div>
             <div className="l-meta">
               <span className="mono">{r.ttbId}</span>
-              <span>{r.origin}</span>
+              <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
               <span>{r.applicant}</span>
             </div>
           </div>
@@ -155,7 +155,7 @@ function TableView({ rows, criteria, isImg, onOpen }) {
                   {r.classSub}
                 </div>
               </td>
-              <td>{r.origin}</td>
+              <td>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</td>
               <td className="mono" style={{ fontSize: 12.5 }}>
                 {r.ttbId}
               </td>
