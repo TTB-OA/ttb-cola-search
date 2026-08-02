@@ -44,8 +44,6 @@ class Settings(BaseSettings):
     # --- API ----------------------------------------------------------------
     api_title: str = "TTB COLA Search API"
     cors_origins: str = "*"
-    # Create/refresh the vw_colas database views on application startup.
-    init_views: bool = True
     # Directory of the built Vite SPA (dist). When set and present, FastAPI
     # serves the SPA at "/" so the app runs single-origin (no CORS in prod).
     # In the container this is set to the copied build output; unset locally.

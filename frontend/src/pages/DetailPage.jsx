@@ -318,7 +318,7 @@ export default function DetailPage() {
                 <Field label="Mailing address">{rec.mailingAddress}</Field>
                 <Field label="Application type">{rec.applicationType}</Field>
                 <Field label="Permit / plant number" mono>
-                  {rec.permit}
+                  {rec.permitId || rec.permit}
                 </Field>
                 <Field label="Serial number" mono>
                   {rec.serial}
@@ -326,15 +326,69 @@ export default function DetailPage() {
                 <Field label="Vendor code" mono>
                   {rec.vendorCode}
                 </Field>
-                <Field label="Date received">{fmtDate(rec.receivedDate)}</Field>
+                <Field label="Received as">{rec.receivedDescription || rec.receivedCode}</Field>
                 <Field label="Date approved">{fmtDate(rec.approvalDate)}</Field>
               </div>
 
-              {rec.qualifications && (
+              <h3 className="d-section">Submitter</h3>
+              <div className="d-fields">
+                <Field label="Name">{rec.submitter}</Field>
+                <Field label="Submitter ID" mono>
+                  {rec.submitterId}
+                </Field>
+                <Field label="Telephone" mono>
+                  {rec.submitterPhone}
+                </Field>
+                <Field label="Fax" mono>
+                  {rec.submitterFax}
+                </Field>
+              </div>
+
+              {rec.permits && rec.permits.length > 0 && (
+                <>
+                  <h3 className="d-section">
+                    Permits {rec.permits.length > 1 ? `(${rec.permits.length})` : ''}
+                  </h3>
+                  <div className="d-permits">
+                    {rec.permits.map((p, i) => (
+                      <div className="d-permit" key={p.permitId || i}>
+                        <div className="row gap-8" style={{ alignItems: 'baseline' }}>
+                          <span className="mono" style={{ fontWeight: 700 }}>
+                            {p.permitId || '—'}
+                          </span>
+                          {p.primary && <span className="chip static">Primary</span>}
+                        </div>
+                        <div style={{ fontWeight: 600 }}>{p.name}</div>
+                        <div className="muted" style={{ fontSize: 13 }}>
+                          {[p.address, p.city, [p.state, p.postalCode].filter(Boolean).join(' '), p.country]
+                            .filter(Boolean)
+                            .join(', ') || '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {rec.qualificationItems && rec.qualificationItems.length > 0 ? (
                 <>
                   <h3 className="d-section">Qualifications</h3>
-                  <div className="d-qual">{rec.qualifications}</div>
+                  <ul className="d-qual-list">
+                    {rec.qualificationItems.map((qi, i) => (
+                      <li key={qi.id ?? i}>
+                        {qi.text}
+                        {qi.comment && <div className="muted" style={{ fontSize: 13 }}>{qi.comment}</div>}
+                      </li>
+                    ))}
+                  </ul>
                 </>
+              ) : (
+                rec.qualifications && (
+                  <>
+                    <h3 className="d-section">Qualifications</h3>
+                    <div className="d-qual">{rec.qualifications}</div>
+                  </>
+                )
               )}
             </div>
 

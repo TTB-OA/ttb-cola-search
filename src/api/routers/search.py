@@ -8,7 +8,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from ..config import get_settings
 from ..db import fetch_all, fetch_one
 from ..embedding import get_embedder
-from ..mappers import COMMODITY_CODE, summary_from_row
+from ..mappers import COMMODITY_CODE, SUMMARY_COLUMN_LIST, select_columns, summary_from_row
 from ..models import ColaSummary, SearchResponse
 from ..vectors import to_pgvector
 
@@ -34,7 +34,7 @@ async def _nearest_by_vector(
 
     # Best (smallest) distance per cola, then join back to the view.
     query = (
-        "SELECT v.*, d.dist FROM ("
+        f"SELECT {select_columns(SUMMARY_COLUMN_LIST, 'v')}, d.dist FROM ("
         "  SELECT DISTINCT ON (i.cola_id) i.cola_id, "
         "         (i.image_feature_vector <=> %s::vector) AS dist "
         f"  FROM cola_images i WHERE {inner_where} "

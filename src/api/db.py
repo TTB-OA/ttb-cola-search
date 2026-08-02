@@ -8,9 +8,7 @@ as its password, so long-lived pools survive token expiry.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
-from pathlib import Path
 from typing import Any
 
 import certifi
@@ -22,16 +20,11 @@ from psycopg_pool import AsyncConnectionPool
 
 from .config import Settings, get_settings
 
-logger = logging.getLogger(__name__)
-
 # Scope for AAD tokens used to authenticate to Azure Database for PostgreSQL.
 # The resource is ossrdbms-aad.database.windows.net (equivalent to the Azure CLI
 # `--resource-type oss-rdbms`); the ...postgres.azure.com identifier is not
 # provisioned in all tenants and fails token acquisition with AADSTS500011.
 PG_AAD_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
-
-# Repository resources directory (src/api/db.py -> src -> repo root -> resources).
-_RESOURCES_DIR = Path(__file__).resolve().parents[2] / "resources"
 
 
 class _TokenProvider:
@@ -138,27 +131,6 @@ def get_pool() -> AsyncConnectionPool:
 
 async def open_pool() -> None:
     await get_pool().open(wait=False)
-
-
-async def run_sql_script(path: Path) -> None:
-    """Execute a .sql script file on a pooled connection."""
-    sql = path.read_text(encoding="utf-8")
-    async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(sql)  # type: ignore[arg-type]
-
-
-async def init_views() -> None:
-    """Create/refresh the vw_colas views (both schemas) at startup.
-
-    Failures are logged but do not abort startup, so the app (and its health
-    endpoint) can still come up when the database is briefly unreachable.
-    """
-    script = _RESOURCES_DIR / "pg_views.sql"
-    try:
-        await run_sql_script(script)
-        logger.info("Initialized database views from %s", script.name)
-    except Exception:  # noqa: BLE001 - startup must not hard-fail on view init
-        logger.exception("Failed to initialize database views from %s", script.name)
 
 
 async def close_pool() -> None:

@@ -13,10 +13,36 @@ import { useAsync } from '../hooks/useAsync.js';
 const PAGE_SIZE = 24;
 
 // URL params that are search filters (as opposed to view/paging state).
-const FILTER_KEYS = ['q', 'ttbId', 'brand', 'fanciful', 'commodity', 'source', 'origin', 'status', 'dateFrom', 'dateTo'];
+const FILTER_KEYS = [
+  'q',
+  'ttbId',
+  'brand',
+  'fanciful',
+  'applicant',
+  'permit',
+  'permitName',
+  'permitCity',
+  'permitState',
+  'submitter',
+  'varietal',
+  'qualification',
+  'labelText',
+  'commodity',
+  'source',
+  'origin',
+  'status',
+  'dateFrom',
+  'dateTo',
+];
 
 // Map a facet group name to the single-value URL/API param it controls.
-const FACET_PARAM = { commodity: 'commodity', source: 'source', origin: 'origin', status: 'status' };
+const FACET_PARAM = {
+  commodity: 'commodity',
+  source: 'source',
+  origin: 'origin',
+  status: 'status',
+  permitState: 'permitState',
+};
 
 function paramsToObject(sp) {
   const o = {};
@@ -99,7 +125,16 @@ function ListView({ rows, criteria, isImg, onOpen }) {
             <div className="l-meta">
               <span className="mono">{r.ttbId}</span>
               <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
-              <span>{r.applicant}</span>
+              <span>
+                <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+              </span>
+              {r.permitId && <span className="mono">{r.permitId}</span>}
+              {r.permitState && (
+                <span>
+                  {r.permitCity ? r.permitCity + ', ' : ''}
+                  {r.permitState}
+                </span>
+              )}
             </div>
           </div>
           <div className="l-side">
@@ -126,6 +161,7 @@ function TableView({ rows, criteria, isImg, onOpen }) {
             <th style={{ width: 52 }}></th>
             <th>Brand / Fanciful</th>
             <th>Class / Type</th>
+            <th>Applicant / Permit</th>
             <th>Origin</th>
             <th>TTB ID</th>
             <th>Approved</th>
@@ -155,6 +191,14 @@ function TableView({ rows, criteria, isImg, onOpen }) {
                   {r.classSub}
                 </div>
               </td>
+              <td>
+                <div>
+                  <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+                </div>
+                <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
+                  {[r.permitId, r.permitState].filter(Boolean).join(' · ')}
+                </div>
+              </td>
               <td>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</td>
               <td className="mono" style={{ fontSize: 12.5 }}>
                 {r.ttbId}
@@ -178,6 +222,15 @@ const CHIP_LABELS = {
   ttbId: 'TTB/Serial',
   brand: 'Brand',
   fanciful: 'Product',
+  applicant: 'Applicant',
+  permit: 'Permit',
+  permitName: 'Permit holder',
+  permitCity: 'Permit city',
+  permitState: 'Permit state',
+  submitter: 'Submitter',
+  varietal: 'Varietal',
+  qualification: 'Qualification',
+  labelText: 'Label text',
   commodity: 'Commodity',
   source: 'Source',
   origin: 'Origin',
@@ -373,6 +426,13 @@ export default function ResultsPage() {
                 <FacetGroup title="Source" buckets={facets.source} selected={activeFacet('source')} onSelect={(v) => selectFacet('source', v)} />
                 <hr className="divider" />
                 <FacetGroup title="Origin" buckets={facets.origin} selected={activeFacet('origin')} onSelect={(v) => selectFacet('origin', v)} />
+                <hr className="divider" />
+                <FacetGroup
+                  title="Permit state"
+                  buckets={facets.permitState}
+                  selected={activeFacet('permitState')}
+                  onSelect={(v) => selectFacet('permitState', v)}
+                />
               </>
             ) : (
               <div className="muted" style={{ fontSize: 13 }}>Loading filters…</div>
@@ -411,6 +471,7 @@ export default function ResultsPage() {
                     <option value="relevance">Relevance</option>
                     <option value="approvalDate">Newest approval</option>
                     <option value="brand">Brand (A–Z)</option>
+                    <option value="applicant">Applicant (A–Z)</option>
                   </select>
                 </div>
               )}

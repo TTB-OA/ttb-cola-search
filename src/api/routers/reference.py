@@ -36,10 +36,18 @@ async def reference() -> ReferenceData:
         COMMODITY_LABEL[c] for c in ("wine", "beer", "distilled_spirits") if c in present
     ] or CATEGORIES
 
+    permit_state_rows = await fetch_all(
+        "SELECT DISTINCT upper(btrim(primary_permit_state_addr)) AS state FROM vw_colas "
+        "WHERE primary_permit_state_addr IS NOT NULL "
+        "AND btrim(primary_permit_state_addr) <> '' ORDER BY state"
+    )
+    permit_states = [r["state"] for r in permit_state_rows]
+
     return ReferenceData(
         categories=categories,
         sources=SOURCES,
         statuses=statuses,
         domestic_origins=domestic,
         imported_origins=imported,
+        permit_states=permit_states,
     )

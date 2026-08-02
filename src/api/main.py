@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .blob import close_blob
 from .config import API_PREFIX, get_settings
-from .db import close_pool, init_views, open_pool
+from .db import close_pool, open_pool
 from .routers import colas, health, images, reference, search
 
 # psycopg's async driver cannot run on Windows' default ProactorEventLoop; select
@@ -25,8 +25,6 @@ if sys.platform == "win32":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await open_pool()
-    if get_settings().init_views:
-        await init_views()
     try:
         yield
     finally:
