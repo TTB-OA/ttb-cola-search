@@ -22,7 +22,11 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pylance>=9.0.0",
+    "pyright>=1.1.411",
     "pytest>=9.1.1",
+    "ruff>=0.16.1",
+    "ty>=0.0.65",
 ]
 
 [tool.pytest.ini_options]

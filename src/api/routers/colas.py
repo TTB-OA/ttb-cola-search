@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -294,8 +294,8 @@ async def list_colas(
     source: str | None = None,
     origin: str | None = None,
     status: str | None = None,
-    date_from: date | None = Query(default=None, alias="dateFrom"),
-    date_to: date | None = Query(default=None, alias="dateTo"),
+    date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
+    date_to: Annotated[date | None, Query(alias="dateTo")] = None,
     sort: str = Query(
         default="relevance",
         title="Result ordering",

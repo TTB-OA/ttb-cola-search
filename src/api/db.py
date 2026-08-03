@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, cast
 
 import certifi
 from azure.identity.aio import DefaultAzureCredential
 from psycopg import AsyncConnection
+from psycopg.abc import QueryNoTemplate
 from psycopg.rows import dict_row
 from psycopg.sql import SQL, Identifier, Literal
 from psycopg_pool import AsyncConnectionPool
@@ -149,11 +150,15 @@ async def close_pool() -> None:
 
 async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
     async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(query, params)  # type: ignore[arg-type]
-        return await cur.fetchall()
+        await cur.execute(cast(QueryNoTemplate, query), params)
+        rows = await cur.fetchall()
+        # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
+        return cast(list[dict[str, Any]], rows)
 
 
 async def fetch_one(query: str, params: list[Any] | None = None) -> dict[str, Any] | None:
     async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(query, params)  # type: ignore[arg-type]
-        return await cur.fetchone()
+        await cur.execute(cast(QueryNoTemplate, query), params)
+        row = await cur.fetchone()
+        # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
+        return cast(dict[str, Any] | None, row)

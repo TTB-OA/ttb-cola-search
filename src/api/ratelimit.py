@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-
-from fastapi import Request
+from typing import Any
 
 
 class SlidingWindowLimiter:
@@ -48,16 +47,19 @@ class SlidingWindowLimiter:
         return None
 
 
-def client_key(request: Request, trust_forwarded_for: bool) -> str:
+def client_key(request: Any, trust_forwarded_for: bool) -> str:
     """Identify the caller, preferring the proxy-supplied client address.
 
     X-Forwarded-For is only consulted when the API is known to sit behind a
     trusted reverse proxy, since clients can otherwise spoof it to reset their
     own bucket.
     """
+    headers = getattr(request, "headers", {}) or {}
     if trust_forwarded_for:
-        forwarded = request.headers.get("x-forwarded-for", "")
+        forwarded = headers.get("x-forwarded-for", "")
         first = forwarded.split(",")[0].strip()
         if first:
             return first
-    return request.client.host if request.client else "unknown"
+    client = getattr(request, "client", None)
+    host = getattr(client, "host", None) if client else None
+    return host or "unknown"

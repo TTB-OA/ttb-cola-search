@@ -7,4 +7,4 @@ new provider by dropping a module in ``providers/`` and registering it in
 from .base import Embedder
 from .registry import available_providers, get_embedder
 
-__all__ = ["Embedder", "get_embedder", "available_providers"]
+__all__ = ["Embedder", "available_providers", "get_embedder"]

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
+from psycopg.abc import QueryNoTemplate
 from psycopg.sql import SQL, Literal
 
 from ..config import get_settings
@@ -85,14 +86,10 @@ async def _nearest_by_vector(
 
     # ef_search has to exceed the candidate LIMIT or HNSW recall collapses.
     ef_search = max(64, candidates)
-    async with get_pool().connection() as conn:
-        async with conn.transaction():
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search))
-                )
-                await cur.execute(query, params)
-                rows = await cur.fetchall()
+    async with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
+        await cur.execute(SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search)))
+        await cur.execute(cast(QueryNoTemplate, query), params)
+        rows = cast(list[dict[str, Any]], await cur.fetchall())
 
     return [summary_from_row(r, score=round(1.0 - float(r["dist"]), 4)) for r in rows]
 
@@ -100,7 +97,7 @@ async def _nearest_by_vector(
 @router.post("/search/image", response_model=SearchResponse)
 async def search_by_image(
     request: Request,
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
     commodity: str | None = Form(default=None),
     limit: int = Form(default=48, ge=1, le=48),
 ) -> SearchResponse:
@@ -127,7 +124,7 @@ async def search_by_image(
     try:
         embedder = get_embedder()
         vector = await embedder.embed_image(data, file.content_type or "image/jpeg")
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.exception("Image embedding failed")
         raise HTTPException(status_code=503, detail="Embedding unavailable") from None
 

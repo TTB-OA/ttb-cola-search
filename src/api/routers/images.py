@@ -35,7 +35,7 @@ async def get_image(cola_id: int, file_name: str):
 
     try:
         chunks, content_type = await stream_blob(blob_name)
-    except Exception as exc:  # noqa: BLE001 - surfaced as 502 to the client
+    except Exception as exc:
         raise HTTPException(status_code=502, detail="Image backend unavailable") from exc
 
     return StreamingResponse(

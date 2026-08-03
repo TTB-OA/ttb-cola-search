@@ -1,11 +1,19 @@
 """Translate raw database rows into the shape the UI expects."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import quote
 
 from .config import API_PREFIX
-from .models import ColaDetail, ColaSummary, ImageItem, ImageRef, PermitRef, Qualification
+from .models import (
+    ColaDetail,
+    ColaSummary,
+    ImageItem,
+    ImageRef,
+    PermitRef,
+    Qualification,
+)
 
 # Materialised, indexed search surface. vw_colas is still the upstream source
 # that maintains it, but the API never reads the view directly.
@@ -110,7 +118,7 @@ def thumb_url(cola_id: int) -> str:
     return f"{API_PREFIX}/colas/{cola_id}/images/primary"
 
 
-def submitter_name(row: dict[str, Any]) -> str | None:
+def submitter_name(row: Mapping[str, Any]) -> str | None:
     name = " ".join(
         part
         for part in (row.get("submtr_frst_name"), row.get("submtr_last_name"))
@@ -139,7 +147,7 @@ def permit_from_json(entry: dict[str, Any]) -> PermitRef:
     )
 
 
-def summary_from_row(row: dict[str, Any], score: float | None = None) -> ColaSummary:
+def summary_from_row(row: Mapping[str, Any], score: float | None = None) -> ColaSummary:
     cola_id = row["cola_id"]
     return ColaSummary(
         id=cola_id,

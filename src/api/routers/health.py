@@ -14,7 +14,7 @@ async def health() -> dict[str, object]:
     database_ok = True
     try:
         await fetch_one("SELECT 1 AS ok")
-    except Exception:
+    except Exception:  # noqa: BLE001 - health endpoint should degrade, not fail hard
         database_ok = False
     return {
         "status": "ok" if database_ok else "degraded",

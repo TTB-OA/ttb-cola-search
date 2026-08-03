@@ -27,5 +27,5 @@ class Embedder(ABC):
         try:
             await self.embed_text("healthcheck")
             return True
-        except Exception:
+        except Exception:  # noqa: BLE001 - probe should degrade to False, never bubble
             return False

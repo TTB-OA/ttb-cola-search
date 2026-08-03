@@ -9,7 +9,7 @@ from src.api.ratelimit import SlidingWindowLimiter, client_key
 
 
 class FakeRequest:
-    def __init__(self, headers=None, host="10.0.0.1"):
+    def __init__(self, headers=None, host: str | None = "10.0.0.1"):
         self.headers = headers or {}
         self.client = type("C", (), {"host": host})() if host else None
 
