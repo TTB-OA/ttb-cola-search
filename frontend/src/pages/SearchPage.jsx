@@ -7,6 +7,7 @@ import { api, toQuery } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const EMPTY = {
   text: '',
@@ -25,7 +26,7 @@ const EMPTY = {
   commodity: '',
   source: '',
   origin: '',
-  status: '',
+  status: 'Approved',
   dateFrom: '',
   dateTo: '',
   mode: 'text',
@@ -393,6 +394,7 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
 
 export default function SearchPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [draft, setDraft] = useState(EMPTY);
   const [advanced, setAdvanced] = useState(false);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
@@ -402,7 +404,7 @@ export default function SearchPage() {
   const categories = ref.categories || [];
 
   const recentState = useAsync(
-    (signal) => api.searchColas({ sort: 'approvalDate', pageSize: 6, facets: false }, signal),
+    (signal) => api.searchColas({ sort: 'approvalDate', status: 'Approved', pageSize: 6, facets: false }, signal),
     []
   );
   const recent = (recentState.data && recentState.data.items) || [];
@@ -502,13 +504,13 @@ export default function SearchPage() {
       <section className="wrap" style={{ marginTop: 44 }}>
         <div className="row between" style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 20 }}>Recently approved</h2>
-          <button className="linkbtn" onClick={() => navigate({ pathname: '/results', search: toQuery({ sort: 'approvalDate' }) })}>
+          <button className="linkbtn" onClick={() => navigate({ pathname: '/results', search: toQuery({ sort: 'approvalDate', status: 'Approved' }) })}>
             Browse all approvals <Icon name="arrowRt" size={16} />
           </button>
         </div>
-        <div className="recent-grid">
+        <div className={'recent-grid' + (isMobile ? ' compact' : '')}>
           {recent.map((r) => (
-            <button key={r.id} className="recent-card" onClick={() => navigate(`/cola/${r.id}`)}>
+            <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${r.id}`)}>
               <LabelThumb rec={r} />
               <div className="recent-meta">
                 <div className="row between gap-8">

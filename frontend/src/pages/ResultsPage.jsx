@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -9,6 +9,7 @@ import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { takePendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const PAGE_SIZE = 24;
 
@@ -263,11 +264,19 @@ function ActiveChips({ criteria, onClearKey }) {
 export default function ResultsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useIsMobile();
   const criteria = paramsToObject(searchParams);
   const isImg = criteria.mode === 'image';
   const page = Math.max(1, parseInt(criteria.page || '1', 10) || 1);
 
-  const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || 'gallery');
+  const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || (window.matchMedia('(max-width: 720px)').matches ? 'list' : 'gallery'));
+
+  // Default to compact list on mobile only when no explicit user preference is stored.
+  useEffect(() => {
+    if (isMobile && !localStorage.getItem('cola.view')) {
+      setViewState('list');
+    }
+  }, [isMobile]);
   const setView = (v) => {
     setViewState(v);
     localStorage.setItem('cola.view', v);
