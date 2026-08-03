@@ -1,159 +1,222 @@
 # ttb-cola-search
-A Basic Web Application to Search TTB COLA Images & Characteristics
 
-## Setup
+Search and browse TTB Certificate of Label Approval (COLA) records — by text,
+by label content, and by image similarity.
 
-### Prerequisites
+## Architecture
 
-- Python 3.13+ 
-- [uv](https://docs.astral.sh/uv/) package manager
-- MotherDuck account and database
+| Layer | Stack |
+| --- | --- |
+| API | FastAPI, async psycopg 3 (`src/api`) |
+| Database | Azure Database for PostgreSQL + pgvector |
+| SPA | React 18 + Vite (`frontend/`), plain `fetch` |
+| Images | Private Azure Blob Storage, streamed through the API |
+| Embeddings | Pluggable provider (Gemini by default) |
+| Hosting | One container on Azure Container Apps |
 
-### MotherDuck Configuration
+Text search uses Postgres full-text (`tsvector` + GIN); image similarity uses
+pgvector HNSW over 768-dimension embeddings. The container serves the built SPA
+and the API from the same origin, so production needs no CORS.
 
-This application connects to a MotherDuck hosted DuckDB database. You'll need to set up environment variables for authentication:
+Postgres and Blob Storage are reached with Entra tokens via
+`DefaultAzureCredential` — a user-assigned managed identity in Azure, your
+`az login` session locally. No passwords or connection strings are stored.
 
-1. **Get your MotherDuck token** from [https://app.motherduck.com/](https://app.motherduck.com/)
-   - Go to Settings → API Tokens
-   - Create a new token or copy an existing one
+## Project layout
 
-2. **Set up environment variables:**
-   ```bash
-   cp .env.example .env
-   ```
-
-3. **Edit `.env` with your configuration:**
-   ```env
-   MOTHERDUCK_TOKEN=your_actual_token_here
-   MOTHERDUCK_DATABASE=md:your_database_name
-   ```
-
-### Installation and Testing
-
-```bash
-# Install dependencies
-uv sync
-
-# Test your MotherDuck connection
-uv run python test_motherduck.py
-
-# Run the Streamlit app
-uv run streamlit run cola_streamlit_app.py
+```
+src/api/            FastAPI app
+  main.py           app factory, lifespan, SPA mount
+  config.py         pydantic-settings (env / .env)
+  db.py             async pool, Entra token auth, per-connection setup
+  mappers.py        column lists, row -> model mapping, reference codes
+  models.py         Pydantic response models (camelCase aliases)
+  ratelimit.py      in-process sliding-window limiter
+  routers/          health, reference, colas, search, images
+  embedding/        provider registry + implementations
+frontend/           Vite SPA
+infra/              Bicep for Container Apps
+resources/          schema definitions (pcr_schema.dbml is the source of truth)
+tests/              pytest suite
 ```
 
-### Environment Variables
+## Prerequisites
 
-- `MOTHERDUCK_TOKEN`: Your MotherDuck authentication token (required)
-- `MOTHERDUCK_DATABASE`: Database connection string (default: `md:ttb_public_data`)
+- Python 3.13+
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 20+
+- Access to the Postgres database and blob container
+- A Gemini API key, if image search should be enabled
 
-### Database Schema
+## Local development
 
-The MotherDuck database should contain the following tables and views:
+```bash
+uv sync
+cp .env.example .env      # fill in the values, then:
+az login                  # required when POSTGRES_AUTH_METHOD=entra
 
-#### Core Tables:
+uv run python run.py      # API on http://127.0.0.1:8000 (add --reload if wanted)
+```
 
-- **`colas`** - Main COLA data with fields like:
-  - `cola_id`, `brand_name`, `fanciful_name`, `origin`, `class_type`
-  - `permit_num`, `serial_num`, `completed_date`
-  - `origin_code`, `class_type_code`, `scraped_on`, `image_count_to_parse`
+In a second shell:
 
-- **`cola_images`** - Image metadata:
-  - `cola_id`, `file_name`, `local_path`, `img_type`, `dimensions_txt`
-  - `width_px`, `height_px`, `scraped_on`
+```bash
+cd frontend
+npm install
+npm run dev               # SPA on http://localhost:5173, proxies /api to :8000
+```
 
-- **`cola_image_analysis`** - Image analysis results:
-  - `cola_id`, `file_name`, `analysis_model`, `model_version`
-  - `analysis_completed_on`, `metadata`
+Interactive API docs are at <http://127.0.0.1:8000/docs>.
 
-- **`image_analysis_items`** - Detailed analysis items:
-  - `id`, `cola_id`, `file_name`, `analysis_model`
-  - `analysis_item_type`, `text`, `model_confidence`, `bounding_box`
-  - Types: `dense_caption`, `tag`, `object`, `text_block`
+> On Windows, always start the API through `run.py`. psycopg's async driver
+> rejects the default `ProactorEventLoop`, and `run.py` installs the selector
+> policy before uvicorn creates its loop. The same applies to any standalone
+> script that opens the pool.
 
-- **`cola_analysis`** - COLA-level analysis and violations:
-  - `cola_id`, `analysis_model`, `analysis_type`, `model_version`
-  - `analysis_completed_on`, `prompt`, `response`, `metadata`
+### Tests
 
-#### Optimized Views (Required):
+```bash
+uv run pytest
+```
 
-- **`vw_colas`** - Enhanced COLA view with pre-computed aggregates:
-  - All `colas` fields plus computed fields like `ct_commodity`, `ct_source`
-  - Pre-computed counts: `cola_analysis_count`, `cola_analysis_with_violations_count`
-  - `parsed_image_count`, `downloaded_image_count`, `image_analysis_count`
-  - URLs: `cola_details_url`, `cola_form_url`, `cola_internal_url`
+The suite covers the pure logic that is easy to break silently — SQL
+placeholder/parameter alignment in the search filter builder, and rate-limiter
+behaviour. It needs no database.
 
-- **`vw_cola_images`** - Image view with public URLs:
-  - All `cola_images` fields plus `public_url` (derived from `local_path`)
+## Configuration
 
-- **`vw_cola_violations_list`** - Flattened violations view:
-  - `cola_id`, violation details (`violation_comment`, `violation_type`, etc.)
-  - Analysis metadata and brand/class type comparisons
+All settings are read from the environment or `.env` (case-insensitive). See
+[`.env.example`](.env.example) for a documented starting point.
 
-### Application Features
+**Database**
 
-The TTB COLA Data Explorer provides the following search and analysis capabilities:
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `POSTGRES_HOST` | — | required |
+| `POSTGRES_DB` | — | required |
+| `POSTGRES_USER` | — | required; the Entra principal when using token auth |
+| `POSTGRES_PORT` | `5432` | |
+| `POSTGRES_SCHEMA` | `public` | e.g. `pcr-dev`, `pcr-prod` |
+| `POSTGRES_AUTH_METHOD` | `entra` | or `password` |
+| `POSTGRES_PASSWORD` | — | ignored under `entra` |
+| `POSTGRES_SSLMODE` | `verify-full` | do not weaken under token auth |
+| `POSTGRES_SSLROOTCERT` | certifi bundle | |
+| `POSTGRES_CONNECT_TIMEOUT` | `30` | |
+| `POSTGRES_POOL_MIN` / `_MAX` | `1` / `16` | |
+| `POSTGRES_STATEMENT_TIMEOUT_MS` | `15000` | per-statement ceiling; exceeding it returns HTTP 504 |
 
-#### Search & Filter Options:
-- **Text Search**: Search across COLA IDs, brand names, permit numbers, image analysis data, and violation comments
-- **Date Range**: Filter by COLA completion date
-- **Origin & Class Type**: Multi-select dropdowns for geographic origin and beverage class
-- **Image Filters**: Show only COLAs with downloaded images or image analysis data
-- **Violation Filter**: Show only COLAs with regulatory violations detected
+**Blob storage and embeddings**
 
-#### Data Display:
-- **COLA Summary**: ID, permit info, brand names, origin, class type, completion date
-- **Quick Stats**: Visual indicators for image count (📷) and violation count (⚠️)
-- **External Links**: Direct links to TTB detail pages and form displays
-- **Violation Details**: Type, group, and comment information with search highlighting
-- **Image Analysis**: AI-generated captions, tags, objects, and text extraction with confidence scores
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `BLOB_ACCOUNT_URL` / `BLOB_CONTAINER` | — | label image source |
+| `EMBEDDING_PROVIDER` | `gemini` | |
+| `EMBEDDING_MODEL` | `gemini-embedding-2` | |
+| `EMBEDDING_DIM` | `768` | must match the `vector(n)` column |
+| `GEMINI_API_KEY` | — | unset disables image search |
 
-#### Performance Optimizations:
-- Uses pre-computed database views for fast filtering
-- Separate queries for images and violations to reduce load times
-- Efficient batch loading of related data
-- Smart search indexing across multiple data sources
+**API and limits**
 
-### Image Handling
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `API_TITLE` | `TTB COLA Search API` | |
+| `CORS_ORIGINS` | `*` | unused in production (single-origin) |
+| `SPA_DIR` | unset | path to `frontend/dist`; set in the container |
+| `MAX_UPLOAD_BYTES` | `10485760` | image upload cap; over it returns HTTP 413 |
+| `IMAGE_SEARCH_RATE_LIMIT` | `10` | image searches allowed per window, per client |
+| `IMAGE_SEARCH_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 + `Retry-After` |
+| `TRUST_FORWARDED_FOR` | `true` | set `false` if not behind a trusted reverse proxy |
 
-The application displays images using:
-- **Public URLs**: Primary method using `vw_cola_images.public_url` 
-- **Fallback Support**: Legacy local path handling for backwards compatibility
+`run.py` also honours `API_HOST` and `API_PORT`.
 
-### Troubleshooting
+> The rate limiter keeps state in process, so the effective ceiling is the limit
+> multiplied by the replica count. It exists to stop one client looping on the
+> metered embedding call, not to enforce a precise global quota. `X-Forwarded-For`
+> is only consulted when `TRUST_FORWARDED_FOR` is on, because clients can
+> otherwise spoof it to reset their own bucket.
 
-#### Common Issues:
 
-1. **Database Alias Error:**
-   ```
-   Failed to attach 'database.table': Database aliases are not yet supported by MotherDuck in workspace mode.
-   ```
-   See `MOTHERDUCK_TROUBLESHOOTING.md` for detailed solutions.
+## API endpoints
 
-2. **Connection Issues:**
-   - Verify your `MOTHERDUCK_TOKEN` is correct and not expired
-   - Check the `MOTHERDUCK_DATABASE` name format
-   - Ensure you have access permissions to the database
+All routes are mounted under `/api`.
 
-3. **Missing Tables/Views:**
-   - Run `uv run python test_motherduck.py` to check database structure
-   - Verify all required views (`vw_colas`, `vw_cola_images`, `vw_cola_violations_list`) exist
-   - Check that the database contains the expected schema
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Liveness plus database and embedding-provider status |
+| `GET` | `/reference` | Filter vocabularies (origins, statuses, categories, permit states); cached in process for 1 hour |
+| `GET` | `/colas` | Paged, filtered, faceted search |
+| `GET` | `/colas/{cola_id}` | Full COLA detail with images and label analysis |
+| `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
+| `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
+| `POST` | `/search/image` | Reverse image search from an upload |
 
-4. **Performance Issues:**
-   - Ensure database views are properly created and indexed
-   - Check if pre-computed aggregates in `vw_colas` are up to date
-   - Monitor query performance in MotherDuck console
+Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
+`applicant`, `permit`, `permitName`, `permitState`, `permitCity`, `submitter`,
+`varietal`, `qualification`, `labelText`, `commodity`, `source`, `origin`,
+`status`, `dateFrom`, `dateTo`, `sort`, `page`, `pageSize`, and `facets`.
 
-5. **Image Loading:**
-   - Verify `public_url` field is properly populated in `vw_cola_images`
-   - Check image URL accessibility and CORS settings
-   - Local images should be in the `data/` directory (legacy support)
+### Search behaviour
 
-#### Diagnostic Tools:
+A few semantics are worth knowing before writing queries against it:
 
-- **Connection Test:** `uv run python test_motherduck.py`
-- **MotherDuck Console:** https://app.motherduck.com/
-- **Troubleshooting Guide:** See `MOTHERDUCK_TROUBLESHOOTING.md`
+- `q` is word- and phrase-based (`websearch_to_tsquery`), not substring — `cab`
+  will not match `Cabernet`. It also probes `serial_num`, `permit_num`,
+  `primary_permit_id`, and, for all-digit input, `cola_id`.
+- `ttbId`, `permit`, and `submitter` match on **prefix**. Identifier input is
+  upper-cased before comparison, since the supporting indexes compare bytes.
+- `labelText` searches OCR text from the label images via `cola_search_ocr`.
+- `total` is capped at 10,000. When the cap is hit, `totalIsCapped` is `true` and
+  `total` should be read as a floor. `page` is capped at 500 — narrow the filters
+  rather than paging deeper.
+- Result ordering always includes `cola_id` as a tiebreaker, so pagination stays
+  stable across ties.
+
+## Data model
+
+[`resources/pcr_schema.dbml`](resources/pcr_schema.dbml) is the source of truth.
+The API reads a small number of objects:
+
+- **`cola_search`** — a materialised, indexed copy of `vw_colas`, one row per
+  COLA. Carries the generated `search_tsv` (weighted: brand/fanciful, then
+  applicant/permit, then the rest), a `permits` jsonb rollup, and composite
+  indexes pairing each facet column with `completed_date, cola_id`. The API never
+  reads `vw_colas` directly — aggregating it per request does not scale.
+- **`cola_search_ocr`** — per-COLA OCR text plus its own `ocr_tsv` GIN index,
+  kept in a side table so the large text never rides along on list queries.
+- **`cola_search_dirty`** — triggers on `colas` and its children push changed
+  `cola_id`s here for the materialiser to drain.
+- **`cola_images`** — image metadata plus `image_feature_vector` and
+  `text_feature_vector` (`vector(768)`, HNSW/cosine), and the blob name used by
+  the image proxy.
+- **`ref_*`** — reference tables backing the `/reference` vocabularies.
+
+Column selection is explicit (`SUMMARY_COLUMN_LIST` / `DETAIL_COLUMN_LIST` in
+`mappers.py`) so list and vector queries never drag along the large jsonb
+rollups or OCR text.
+
+## Troubleshooting
+
+**`Psycopg cannot use the 'ProactorEventLoop'`** — the process started without
+the Windows selector policy. Launch via `run.py`, or set
+`asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())` before
+opening the pool in a standalone script.
+
+**Authentication failures against Postgres** — confirm `az login` (locally) and
+that `POSTGRES_USER` exactly matches the Entra principal granted access. In
+Azure it must equal the managed identity name, `<namePrefix>-app-id`.
+
+**`relation "cola_search" does not exist`** — the materialised search tables have
+not been built in the target `POSTGRES_SCHEMA`.
+
+**HTTP 504 from a search** — the query exceeded
+`POSTGRES_STATEMENT_TIMEOUT_MS`. Usually a filter with no supporting index;
+narrow the search or check the index coverage for that column.
+
+**HTTP 429 from image search** — the per-client rate limit. Honour the
+`Retry-After` header, or raise `IMAGE_SEARCH_RATE_LIMIT`.
+
+**Image search returns 503** — the embedding provider is unavailable or
+`GEMINI_API_KEY` is unset. The underlying error is logged rather than returned.
 
 ---
 

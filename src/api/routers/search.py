@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from psycopg.sql import SQL, Literal
 
 from ..config import get_settings
@@ -18,11 +19,25 @@ from ..mappers import (
     summary_from_row,
 )
 from ..models import ColaSummary, SearchResponse
+from ..ratelimit import SlidingWindowLimiter, client_key
 from ..vectors import to_pgvector
 
 router = APIRouter(tags=["search"])
 
 logger = logging.getLogger(__name__)
+
+_limiter: SlidingWindowLimiter | None = None
+
+
+def _image_search_limiter() -> SlidingWindowLimiter:
+    global _limiter
+    if _limiter is None:
+        settings = get_settings()
+        _limiter = SlidingWindowLimiter(
+            settings.image_search_rate_limit,
+            settings.image_search_rate_window_seconds,
+        )
+    return _limiter
 
 # A COLA carries several images, and the commodity filter is applied after
 # de-duplication, so the ANN scan has to return more candidates than requested.
@@ -84,11 +99,25 @@ async def _nearest_by_vector(
 
 @router.post("/search/image", response_model=SearchResponse)
 async def search_by_image(
+    request: Request,
     file: UploadFile = File(...),
     commodity: str | None = Form(default=None),
     limit: int = Form(default=48, ge=1, le=48),
 ) -> SearchResponse:
     settings = get_settings()
+
+    # Checked before the body is read, so a flood costs neither memory nor an
+    # embedding call.
+    retry_after = _image_search_limiter().check(
+        client_key(request, settings.trust_forwarded_for)
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many image searches. Please wait a moment and try again.",
+            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
+        )
+
     data = await file.read(settings.max_upload_bytes + 1)
     if not data:
         raise HTTPException(status_code=400, detail="Empty image upload")
