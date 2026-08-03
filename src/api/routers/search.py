@@ -1,6 +1,7 @@
 """Vector similarity search — upload-image search and per-COLA similar labels."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
@@ -20,6 +21,8 @@ from ..models import ColaSummary, SearchResponse
 from ..vectors import to_pgvector
 
 router = APIRouter(tags=["search"])
+
+logger = logging.getLogger(__name__)
 
 # A COLA carries several images, and the commodity filter is applied after
 # de-duplication, so the ANN scan has to return more candidates than requested.
@@ -83,18 +86,21 @@ async def _nearest_by_vector(
 async def search_by_image(
     file: UploadFile = File(...),
     commodity: str | None = Form(default=None),
-    limit: int = Form(default=48),
+    limit: int = Form(default=48, ge=1, le=48),
 ) -> SearchResponse:
     settings = get_settings()
-    data = await file.read()
+    data = await file.read(settings.max_upload_bytes + 1)
     if not data:
         raise HTTPException(status_code=400, detail="Empty image upload")
+    if len(data) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail="Image exceeds the maximum upload size")
 
     try:
         embedder = get_embedder()
         vector = await embedder.embed_image(data, file.content_type or "image/jpeg")
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail=f"Embedding unavailable: {exc}") from exc
+    except Exception:  # noqa: BLE001
+        logger.exception("Image embedding failed")
+        raise HTTPException(status_code=503, detail="Embedding unavailable") from None
 
     if len(vector) != settings.embedding_dim:
         raise HTTPException(

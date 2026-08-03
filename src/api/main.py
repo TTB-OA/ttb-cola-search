@@ -6,10 +6,11 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg.errors import QueryCanceled
 
 from .blob import close_blob
 from .config import API_PREFIX, get_settings
@@ -55,6 +56,13 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)
+
+    @app.exception_handler(QueryCanceled)
+    async def _statement_timeout(request: Request, exc: QueryCanceled) -> JSONResponse:
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "The search took too long. Narrow your filters and try again."},
+        )
 
     spa_dir = _resolve_spa_dir(settings.spa_dir)
     if spa_dir is not None:

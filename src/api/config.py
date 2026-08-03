@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     postgres_pool_max: int = 16
     # Ceiling on any single statement, so a runaway query cannot pin a pool slot.
     postgres_statement_timeout_ms: int = 15000
+    # Image search reads the upload into memory before embedding it.
+    max_upload_bytes: int = 10 * 1024 * 1024
 
     # --- Blob storage (label images) ---------------------------------------
     blob_account_url: str | None = None
