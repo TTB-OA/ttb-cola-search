@@ -7,8 +7,13 @@ from urllib.parse import quote
 from .config import API_PREFIX
 from .models import ColaDetail, ColaSummary, ImageItem, ImageRef, PermitRef, Qualification
 
-# vw_colas columns needed to build a ColaSummary. Selected explicitly so list and
-# vector queries never drag along the view's large jsonb rollups (images,
+# Materialised, indexed search surface. vw_colas is still the upstream source
+# that maintains it, but the API never reads the view directly.
+SEARCH_TABLE = "cola_search"
+OCR_TABLE = "cola_search_ocr"
+
+# Columns needed to build a ColaSummary. Selected explicitly so list and
+# vector queries never drag along the large jsonb rollups (images,
 # analyses, analysis_items, ocr_text).
 SUMMARY_COLUMN_LIST: tuple[str, ...] = (
     "cola_id",

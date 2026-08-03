@@ -66,6 +66,8 @@ Table cola_images {
     (cola_id, file_name) [pk]
     download_status
     image_feature_vector_model
+    image_feature_vector [type: hnsw, note: 'cosine ANN']
+    text_feature_vector [type: hnsw, note: 'cosine ANN']
   }
 }
 
@@ -166,7 +168,7 @@ Table cola_submitters {
 Table cola_qualifications {
   cola_id                   bigint  [note: 'FK to colas']
   ref_qualification_id      integer [note: 'qualificationRef.refQualificationId [detail]']
-  appln_qualftn_id          integer [note: 'applnQualftnId [detail]']
+  appln_qualftn_id          bigint  [note: 'applnQualftnId [detail]']
   qualification_text        text    [note: 'qualificationRef.longDesc [detail]']
   qualification_comment_text text   [note: 'qualftnCommentText, per-application [detail]']
 
@@ -237,8 +239,8 @@ Table pipeline_day_status {
   db_count      integer     [note: 'actual, measured after the run']
   attempt_count integer
   last_run_name varchar
+  last_run_on   timestamptz [note: 'when this component last touched the day']
   last_error    text
-  updated_on    timestamptz
 
   indexes {
     (component, business_date) [pk]
@@ -255,6 +257,75 @@ Table schema_migrations {
   applied_by   varchar
 }
 
+// Materialised search surface, one row per COLA, maintained from vw_colas by
+// search_materialize.py. ocr_text lives in cola_search_ocr so label text never
+// bloats the hot row. Only the added/managed columns are listed; the rest mirror
+// vw_colas one-for-one.
+Table cola_search {
+  cola_id                   bigint      [pk, note: 'from vw_colas [local]']
+  completed_date            date        [note: 'mirrors colas.completed_date']
+  brand_name                text        [note: 'mirrors colas.brand_name']
+  fanciful_name             text        [note: 'mirrors colas.fanciful_name']
+  applicant_name            text        [note: 'permit or submitter name [local]']
+  ct_commodity              text        [note: 'wine | beer | distilled_spirits | unknown [local]']
+  ct_source                 text        [note: 'domestic | import | unknown [local]']
+  origin                    varchar     [note: 'mirrors colas origin label']
+  status                    varchar     [note: 'mirrors colas.status']
+  primary_permit_state_addr varchar     [note: 'primary permit state, indexed upper() [local]']
+  serial_num                varchar     [note: 'id-ish, exact/prefix btree [local]']
+  permit_num                varchar     [note: 'id-ish, exact/prefix btree [local]']
+  primary_permit_id         varchar     [note: 'id-ish, exact/prefix btree [local]']
+  submitter_id              varchar     [note: 'id-ish, exact/prefix btree [local]']
+  permits                   jsonb       [note: 'rolled-up permits array [local]']
+  search_tsv                tsvector    [note: 'generated: A brand/fanciful, B applicant/permit, C rest; GIN, websearch_to_tsquery [local]']
+  _loaded_at                timestamptz [note: 'as-of time this row was materialised [local]']
+
+  indexes {
+    (completed_date, cola_id)                                     [note: 'DESC NULLS LAST, matches newest-first sort']
+    (ct_commodity, completed_date, cola_id)                       [note: 'facet + newest-first']
+    (ct_source, completed_date, cola_id)                          [note: 'facet + newest-first']
+    (status, completed_date, cola_id)                             [note: 'facet + newest-first']
+    (origin, completed_date, cola_id)                             [note: 'facet + newest-first']
+    (brand_name, cola_id)
+    (applicant_name, cola_id)
+    `upper(primary_permit_state_addr)`
+    serial_num [note: 'varchar_pattern_ops']
+    permit_num [note: 'varchar_pattern_ops']
+    primary_permit_id [note: 'varchar_pattern_ops']
+    submitter_id [note: 'varchar_pattern_ops']
+    brand_name [type: gin, note: 'pg_trgm']
+    fanciful_name [type: gin, note: 'pg_trgm']
+    applicant_name [type: gin, note: 'pg_trgm']
+    permits [type: gin, note: 'jsonb_path_ops']
+    search_tsv [type: gin]
+  }
+
+  Note: 'Physical copy of vw_colas for indexing. Only the pk, indexed and managed columns are listed; the rest mirror vw_colas one-for-one. Never written by hand.'
+}
+
+Table cola_search_ocr {
+  cola_id    bigint      [pk]
+  ocr_text   text        [note: 'concatenated label OCR [local]']
+  ocr_tsv    tsvector    [note: 'generated tsvector over ocr_text, GIN [local]']
+  _loaded_at timestamptz [note: 'as-of time this row was materialised [local]']
+
+  indexes {
+    ocr_tsv [type: gin]
+  }
+}
+
+// Refresh queue for cola_search. AFTER-row triggers on colas and its child
+// tables push changed cola_ids here; search_materialize.py drains it so the
+// nightly job touches only what moved, regardless of which table changed.
+Table cola_search_dirty {
+  cola_id   bigint      [pk, note: 'COLA awaiting (re)materialisation [local]']
+  marked_at timestamptz [note: 'when it was queued; drained oldest-first [local]']
+
+  indexes {
+    (marked_at, cola_id)
+  }
+}
+
 Ref: cola_images.cola_id > colas.cola_id
 Ref: cola_image_analysis.(cola_id, file_name) > cola_images.(cola_id, file_name)
 Ref: image_analysis_items.(cola_id, file_name, analysis_model) > cola_image_analysis.(cola_id, file_name, analysis_model)
@@ -263,6 +334,9 @@ Ref: cola_permits.cola_id > colas.cola_id
 Ref: cola_submitters.cola_id - colas.cola_id
 Ref: cola_qualifications.cola_id > colas.cola_id
 Ref: cola_grape_varietals.cola_id > colas.cola_id
+Ref: cola_search.cola_id - colas.cola_id
+Ref: cola_search_ocr.cola_id - cola_search.cola_id
+Ref: cola_search_dirty.cola_id > colas.cola_id
 
 Ref: colas.status_code > ref_status_types.status_code
 Ref: colas.class_type_code > ref_product_class_types.class_type_code

@@ -15,7 +15,7 @@ import certifi
 from azure.identity.aio import DefaultAzureCredential
 from psycopg import AsyncConnection
 from psycopg.rows import dict_row
-from psycopg.sql import SQL, Identifier
+from psycopg.sql import SQL, Identifier, Literal
 from psycopg_pool import AsyncConnectionPool
 
 from .config import Settings, get_settings
@@ -90,12 +90,17 @@ def _base_kwargs(settings: Settings) -> dict[str, Any]:
 
 
 async def _configure(conn: AsyncConnection) -> None:
-    """Set the search_path on every pooled connection."""
+    """Set the search_path and statement timeout on every pooled connection."""
     settings = get_settings()
     async with conn.cursor() as cur:
         await cur.execute(
             SQL("SET search_path TO {}, public").format(
                 Identifier(settings.postgres_schema)
+            )
+        )
+        await cur.execute(
+            SQL("SET statement_timeout TO {}").format(
+                Literal(settings.postgres_statement_timeout_ms)
             )
         )
 

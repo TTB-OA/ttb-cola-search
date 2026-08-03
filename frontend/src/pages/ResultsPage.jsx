@@ -302,8 +302,10 @@ export default function ResultsPage() {
   const loading = isImg ? (pending && pending.file ? state.loading : false) : state.loading;
   const rows = (data && data.items) || [];
   const total = data ? data.total : 0;
+  const totalCapped = Boolean(data && data.totalIsCapped);
   const facets = (data && data.facets) || null;
-  const pageCount = Math.max(1, Math.ceil((total || 0) / PAGE_SIZE));
+  // The API refuses pages past 500; don't offer links the server will reject.
+  const pageCount = Math.min(500, Math.max(1, Math.ceil((total || 0) / PAGE_SIZE)));
 
   function patchParams(mutator) {
     const next = paramsToObject(searchParams);
@@ -446,7 +448,8 @@ export default function ResultsPage() {
               <div style={{ fontSize: 22, fontWeight: 800 }}>
                 {loading ? 'Searching…' : (
                   <>
-                    {total} {total === 1 ? 'result' : 'results'}
+                    {total.toLocaleString()}{totalCapped ? '+' : ''}{' '}
+                    {total === 1 ? 'result' : 'results'}
                   </>
                 )}
               </div>

@@ -1,6 +1,7 @@
 """COLA list/search and detail endpoints."""
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from typing import Any
 
@@ -10,6 +11,8 @@ from ..db import fetch_all, fetch_one
 from ..mappers import (
     COMMODITY_CODE,
     DETAIL_COLUMNS,
+    OCR_TABLE,
+    SEARCH_TABLE,
     SOURCE_CODE,
     SUMMARY_COLUMNS,
     commodity_label,
@@ -21,46 +24,39 @@ from ..models import ColaDetail, FacetBucket, Facets, SearchResponse
 
 router = APIRouter(tags=["colas"])
 
+# Exact totals stop here; past the cap the response reports a floor instead.
+COUNT_CAP = 10_000
+
+# cola_id breaks ties so LIMIT/OFFSET paging stays stable, and lines the sort up
+# with the composite indexes on cola_search.
 SORTS = {
-    "relevance": "completed_date DESC NULLS LAST",
-    "approvalDate": "completed_date DESC NULLS LAST",
-    "brand": "brand_name ASC NULLS LAST",
-    "applicant": "applicant_name ASC NULLS LAST",
+    "relevance": "completed_date DESC NULLS LAST, cola_id DESC",
+    "approvalDate": "completed_date DESC NULLS LAST, cola_id DESC",
+    "brand": "brand_name ASC NULLS LAST, cola_id ASC",
+    "applicant": "applicant_name ASC NULLS LAST, cola_id ASC",
 }
 
-# Columns scanned by the free-text `q` parameter.
-KEYWORD_COLUMNS = (
-    "brand_name",
-    "fanciful_name",
-    "applicant_name",
-    "class_type",
-    "origin",
-    "cola_id::text",
-    "serial_num",
-    "permit_num",
-    "primary_permit_id",
-    "primary_permit_name",
-    "primary_permit_city_addr",
-    "primary_permit_state_addr",
-    "submtr_frst_name",
-    "submtr_last_name",
-    "grape_varietal",
-)
+# Identifier columns the free-text box probes exactly, alongside the tsvector.
+_ID_COLUMNS = ("serial_num", "permit_num", "primary_permit_id")
 
-# Matches a permit id against the primary permit, the COLA's permit number, or
-# any permit in the view's `permits` rollup.
+# Permit id resolves against the COLA permit number, the primary permit, or the
+# GIN-indexed permits rollup.
 _PERMIT_ID_MATCH = (
-    "(permit_num ILIKE %s OR primary_permit_id ILIKE %s OR EXISTS ("
-    "  SELECT 1 FROM jsonb_array_elements(coalesce(permits, '[]'::jsonb)) pe"
-    "  WHERE pe->>'permit_id' ILIKE %s))"
+    "(permit_num LIKE %s OR primary_permit_id LIKE %s"
+    " OR permits @> jsonb_build_array(jsonb_build_object('permit_id', %s::text)))"
 )
 
-# Matches a permit/business name against the primary permit or any permit.
-_PERMIT_NAME_MATCH = (
-    "(primary_permit_name ILIKE %s OR EXISTS ("
-    "  SELECT 1 FROM jsonb_array_elements(coalesce(permits, '[]'::jsonb)) pe"
-    "  WHERE pe->>'permit_name' ILIKE %s))"
-)
+
+def _prefix(term: str) -> str:
+    """LIKE pattern for a prefix match, with wildcards in the term neutralised."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped}%"
+
+
+def _id_term(value: str) -> str:
+    # TTB identifiers are uppercase upstream, and varchar_pattern_ops compares
+    # bytes, so fold the input rather than the indexed column.
+    return value.strip().upper()
 
 
 def _build_filters(
@@ -88,15 +84,23 @@ def _build_filters(
     params: list[Any] = []
 
     if q:
-        like = f"%{q}%"
-        conditions.append(
-            "(" + " OR ".join(f"{c} ILIKE %s" for c in KEYWORD_COLUMNS) + ")"
-        )
-        params.extend([like] * len(KEYWORD_COLUMNS))
+        term = q.strip()
+        clause = ["search_tsv @@ websearch_to_tsquery('english', %s)"]
+        params.append(term)
+        clause.extend(f"{c} = %s" for c in _ID_COLUMNS)
+        params.extend([_id_term(term)] * len(_ID_COLUMNS))
+        if term.isdigit():
+            clause.append("cola_id = %s")
+            params.append(int(term))
+        conditions.append("(" + " OR ".join(clause) + ")")
     if ttb_id:
-        like = f"%{ttb_id}%"
-        conditions.append("(cola_id::text ILIKE %s OR serial_num ILIKE %s)")
-        params.extend([like, like])
+        term = _id_term(ttb_id)
+        if term.isdigit():
+            conditions.append("(cola_id = %s OR serial_num LIKE %s)")
+            params.extend([int(term), _prefix(term)])
+        else:
+            conditions.append("serial_num LIKE %s")
+            params.append(_prefix(term))
     if brand:
         conditions.append("brand_name ILIKE %s")
         params.append(f"%{brand}%")
@@ -107,11 +111,12 @@ def _build_filters(
         conditions.append("applicant_name ILIKE %s")
         params.append(f"%{applicant}%")
     if permit:
+        term = _id_term(permit)
         conditions.append(_PERMIT_ID_MATCH)
-        params.extend([f"%{permit}%"] * 3)
+        params.extend([_prefix(term), _prefix(term), term])
     if permit_name:
-        conditions.append(_PERMIT_NAME_MATCH)
-        params.extend([f"%{permit_name}%"] * 2)
+        conditions.append("primary_permit_name ILIKE %s")
+        params.append(f"%{permit_name}%")
     if permit_state:
         conditions.append("upper(primary_permit_state_addr) = upper(%s)")
         params.append(permit_state)
@@ -121,9 +126,9 @@ def _build_filters(
     if submitter:
         conditions.append(
             "(btrim(coalesce(submtr_frst_name, '') || ' ' || coalesce(submtr_last_name, '')) "
-            "ILIKE %s OR submitter_id ILIKE %s)"
+            "ILIKE %s OR submitter_id LIKE %s)"
         )
-        params.extend([f"%{submitter}%", f"%{submitter}%"])
+        params.extend([f"%{submitter}%", _prefix(_id_term(submitter))])
     if varietal:
         conditions.append("grape_varietal ILIKE %s")
         params.append(f"%{varietal}%")
@@ -131,8 +136,11 @@ def _build_filters(
         conditions.append("parsed_qualifications ILIKE %s")
         params.append(f"%{qualification}%")
     if label_text:
-        conditions.append("ocr_text ILIKE %s")
-        params.append(f"%{label_text}%")
+        conditions.append(
+            f"EXISTS (SELECT 1 FROM {OCR_TABLE} o WHERE o.cola_id = {SEARCH_TABLE}.cola_id "
+            "AND o.ocr_tsv @@ websearch_to_tsquery('english', %s))"
+        )
+        params.append(label_text.strip())
     if commodity:
         conditions.append("ct_commodity = %s")
         params.append(COMMODITY_CODE.get(commodity, commodity))
@@ -157,46 +165,61 @@ def _build_filters(
 
 
 async def _facets(where: str, params: list[Any]) -> Facets:
-    async def bucket(column: str) -> list[dict[str, Any]]:
-        return await fetch_all(
-            f"SELECT {column} AS value, COUNT(*) AS count FROM vw_colas {where} "
-            f"GROUP BY {column} ORDER BY count DESC",
-            params,
+    # One materialised CTE (PG materialises multiply-referenced CTEs by default)
+    # so the filtered set is scanned once instead of once per dimension.
+    rows = await fetch_all(
+        f"""--sql
+        WITH m AS (
+          SELECT ct_commodity, ct_source, origin, status, primary_permit_state_addr
+          FROM {SEARCH_TABLE} {where}
         )
+        SELECT 'commodity' AS dim, ct_commodity AS value, COUNT(*) AS count FROM m GROUP BY 1, 2
+        UNION ALL SELECT 'source', ct_source, COUNT(*) FROM m GROUP BY 1, 2
+        UNION ALL SELECT 'origin', origin, COUNT(*) FROM m GROUP BY 1, 2
+        UNION ALL SELECT 'status', status, COUNT(*) FROM m GROUP BY 1, 2
+        UNION ALL SELECT 'permitState', primary_permit_state_addr, COUNT(*) FROM m GROUP BY 1, 2
+        """,
+        params,
+    )
 
-    commodity_rows = await bucket("ct_commodity")
-    source_rows = await bucket("ct_source")
-    origin_rows = await bucket("origin")
-    status_rows = await bucket("status")
-    permit_state_rows = await bucket("primary_permit_state_addr")
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row["dim"], []).append(row)
+
+    def bucket(dim: str) -> list[dict[str, Any]]:
+        return sorted(grouped.get(dim, []), key=lambda r: r["count"], reverse=True)
 
     return Facets(
         commodity=[
             FacetBucket(value=commodity_label(r["value"]), count=r["count"])
-            for r in commodity_rows
+            for r in bucket("commodity")
             if r["value"] is not None
         ],
         source=[
             FacetBucket(value=source_label(r["value"]), count=r["count"])
-            for r in source_rows
+            for r in bucket("source")
             if r["value"] is not None
         ],
         origin=[
             FacetBucket(value=r["value"], count=r["count"])
-            for r in origin_rows
+            for r in bucket("origin")
             if r["value"]
         ],
         status=[
             FacetBucket(value=r["value"], count=r["count"])
-            for r in status_rows
+            for r in bucket("status")
             if r["value"]
         ],
         permit_state=[
             FacetBucket(value=r["value"], count=r["count"])
-            for r in permit_state_rows
+            for r in bucket("permitState")
             if r["value"] and r["value"].strip()
         ],
     )
+
+
+async def _no_facets() -> Facets | None:
+    return None
 
 
 @router.get("/colas", response_model=SearchResponse)
@@ -205,19 +228,23 @@ async def list_colas(
         default=None,
         title="Keyword search",
         description=(
-            "Free-text keyword search. The value is wrapped in wildcards (`%term%`) and "
-            "matched case-insensitively (SQL `ILIKE`) against several columns of the "
-            "`vw_colas` view at once: brand name, fanciful name, applicant name, "
-            "class/type, origin, the numeric COLA/TTB id, the serial number, the permit "
-            "number and primary permit id/name/city/state, the submitter's first and "
-            "last name, and the grape varietal list. A row is returned if the term "
-            "appears in any of those fields. Text recognized on the label images is not "
-            "scanned here — use `labelText` for that. Leave empty to browse all records "
-            "without keyword filtering."
+            "Free-text keyword search. The term is parsed as a web-style query "
+            "(`websearch_to_tsquery`) and matched against the indexed `search_tsv` "
+            "document, which is weighted brand/fanciful name first, then "
+            "applicant/permit holder, then the remaining descriptive fields. Quoted "
+            "phrases, `or`, and leading `-` for exclusion are supported. The term is "
+            "also compared exactly against the serial number, permit number and "
+            "primary permit id, and against the numeric COLA id when it is all digits. "
+            "Text recognized on the label images is not scanned here \u2014 use `labelText`. "
+            "Leave empty to browse all records without keyword filtering."
         ),
-        examples=["cabernet", "napa valley", "26J087"],
+        examples=["cabernet", '"napa valley"', "26J087"],
     ),
-    ttb_id: str | None = Query(default=None, alias="ttbId"),
+    ttb_id: str | None = Query(
+        default=None,
+        alias="ttbId",
+        description="TTB/COLA id or serial number. Serial numbers match on prefix.",
+    ),
     brand: str | None = None,
     fanciful: str | None = None,
     applicant: str | None = Query(
@@ -226,12 +253,12 @@ async def list_colas(
     ),
     permit: str | None = Query(
         default=None,
-        description="Permit or plant number. Matches the COLA permit number, the primary permit id, or any associated permit.",
+        description="Permit or plant number. Matches the COLA permit number or primary permit id on prefix, or any associated permit exactly.",
     ),
     permit_name: str | None = Query(
         default=None,
         alias="permitName",
-        description="Permit holder name. Matches the primary permit or any associated permit.",
+        description="Permit holder name of the primary permit (partial match).",
     ),
     permit_state: str | None = Query(
         default=None,
@@ -259,8 +286,8 @@ async def list_colas(
         default=None,
         alias="labelText",
         description=(
-            "Text recognized by OCR on the label artwork. Scans the aggregated "
-            "`ocr_text` column; slower than the other filters."
+            "Text recognized by OCR on the label artwork. Parsed as a web-style query "
+            "and matched against the indexed OCR document for the COLA."
         ),
     ),
     commodity: str | None = None,
@@ -273,7 +300,8 @@ async def list_colas(
         default="relevance",
         title="Result ordering",
         description=(
-            "Controls the `ORDER BY` applied to the matching rows. Accepted values:\n\n"
+            "Controls the `ORDER BY` applied to the matching rows. Every ordering is "
+            "tie-broken on `cola_id` so paging is stable. Accepted values:\n\n"
             "- `relevance` (default) — newest first by approval/completed date "
             "(`completed_date DESC`, nulls last). Currently an alias of `approvalDate`; "
             "reserved for future keyword-relevance ranking.\n"
@@ -286,19 +314,23 @@ async def list_colas(
         ),
         examples=["relevance", "approvalDate", "brand"],
     ),
-    page: int = Query(default=1, ge=1),
+    page: int = Query(
+        default=1,
+        ge=1,
+        le=500,
+        description="1-based page number. Deep paging is capped; narrow the filters instead.",
+    ),
     page_size: int = Query(default=24, ge=1, le=100, alias="pageSize"),
     facets: bool = Query(
         default=True,
         title="Include facet aggregations",
         description=(
             "When `true`, the response includes a `facets` object with aggregated counts "
-            "for the current result set (the same filters are applied). Each facet is a "
-            "`GROUP BY ... COUNT(*)` roll-up over the matching rows, ordered by count "
-            "descending, for five dimensions: commodity (wine/beer/distilled spirits), "
-            "source (domestic/import), origin, status, and permit state. These power the "
-            "sidebar filter counts in the UI. Set to `false` to skip the extra "
-            "aggregation queries when you only need the paged `items` list (slightly faster)."
+            "for the current result set (the same filters are applied). A single "
+            "`GROUP BY ... COUNT(*)` pass rolls up five dimensions: commodity "
+            "(wine/beer/distilled spirits), source (domestic/import), origin, status, "
+            "and permit state. These power the sidebar filter counts in the UI. Set to "
+            "`false` to skip the aggregation when you only need the paged `items` list."
         ),
     ),
 ) -> SearchResponse:
@@ -326,30 +358,39 @@ async def list_colas(
     order_by = SORTS.get(sort, SORTS["relevance"])
     offset = (page - 1) * page_size
 
-    total_row = await fetch_one(
-        f"SELECT COUNT(*) AS n FROM vw_colas {where}", params
+    # The count is bounded so a broad filter cannot force a full scan; anything
+    # past the cap is reported as a floor via total_is_capped.
+    count_sql = (
+        f"SELECT COUNT(*) AS n FROM (SELECT 1 FROM {SEARCH_TABLE} {where} LIMIT %s) t"
     )
-    total = int(total_row["n"]) if total_row else 0
+    rows_sql = (
+        f"SELECT {SUMMARY_COLUMNS} FROM {SEARCH_TABLE} {where} "
+        f"ORDER BY {order_by} LIMIT %s OFFSET %s"
+    )
 
-    rows = await fetch_all(
-        f"SELECT {SUMMARY_COLUMNS} FROM vw_colas {where} "
-        f"ORDER BY {order_by} LIMIT %s OFFSET %s",
-        [*params, page_size, offset],
+    total_row, rows, facet_data = await asyncio.gather(
+        fetch_one(count_sql, [*params, COUNT_CAP + 1]),
+        fetch_all(rows_sql, [*params, page_size, offset]),
+        _facets(where, params) if facets else _no_facets(),
     )
+
+    raw_total = int(total_row["n"]) if total_row else 0
+    capped = raw_total > COUNT_CAP
 
     return SearchResponse(
         items=[summary_from_row(r) for r in rows],
-        total=total,
+        total=COUNT_CAP if capped else raw_total,
+        total_is_capped=capped,
         page=page,
         page_size=page_size,
-        facets=(await _facets(where, params)) if facets else None,
+        facets=facet_data,
     )
 
 
 @router.get("/colas/{cola_id}", response_model=ColaDetail)
 async def get_cola(cola_id: int) -> ColaDetail:
     base = await fetch_one(
-        f"SELECT {DETAIL_COLUMNS} FROM vw_colas WHERE cola_id = %s", [cola_id]
+        f"SELECT {DETAIL_COLUMNS} FROM {SEARCH_TABLE} WHERE cola_id = %s", [cola_id]
     )
     if base is None:
         raise HTTPException(status_code=404, detail="COLA not found")

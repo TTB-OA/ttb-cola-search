@@ -29,7 +29,9 @@ class Settings(BaseSettings):
     postgres_sslrootcert: str | None = None
     postgres_connect_timeout: int = 30
     postgres_pool_min: int = 1
-    postgres_pool_max: int = 8
+    postgres_pool_max: int = 16
+    # Ceiling on any single statement, so a runaway query cannot pin a pool slot.
+    postgres_statement_timeout_ms: int = 15000
 
     # --- Blob storage (label images) ---------------------------------------
     blob_account_url: str | None = None

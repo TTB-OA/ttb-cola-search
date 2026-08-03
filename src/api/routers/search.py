@@ -4,15 +4,26 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from psycopg.sql import SQL, Literal
 
 from ..config import get_settings
-from ..db import fetch_all, fetch_one
+from ..db import fetch_one, get_pool
 from ..embedding import get_embedder
-from ..mappers import COMMODITY_CODE, SUMMARY_COLUMN_LIST, select_columns, summary_from_row
+from ..mappers import (
+    COMMODITY_CODE,
+    SEARCH_TABLE,
+    SUMMARY_COLUMN_LIST,
+    select_columns,
+    summary_from_row,
+)
 from ..models import ColaSummary, SearchResponse
 from ..vectors import to_pgvector
 
 router = APIRouter(tags=["search"])
+
+# A COLA carries several images, and the commodity filter is applied after
+# de-duplication, so the ANN scan has to return more candidates than requested.
+_ANN_OVERFETCH = 6
 
 
 async def _nearest_by_vector(
@@ -28,28 +39,43 @@ async def _nearest_by_vector(
         params.append(exclude_cola_id)
     inner_where = " AND ".join(filters)
 
-    outer_conditions: list[str] = []
-    if commodity_code:
-        outer_conditions.append("v.ct_commodity = %s")
+    candidates = limit * _ANN_OVERFETCH
+    # The ORDER BY must be the bare distance operator (not an alias) for the
+    # HNSW index to serve it; the literal is therefore bound twice.
+    params.extend([vector_literal, candidates])
 
-    # Best (smallest) distance per cola, then join back to the view.
     query = (
-        f"SELECT {select_columns(SUMMARY_COLUMN_LIST, 'v')}, d.dist FROM ("
-        "  SELECT DISTINCT ON (i.cola_id) i.cola_id, "
-        "         (i.image_feature_vector <=> %s::vector) AS dist "
-        f"  FROM cola_images i WHERE {inner_where} "
-        "  ORDER BY i.cola_id, dist"
-        ") d JOIN vw_colas v ON v.cola_id = d.cola_id "
+        f"""--sql
+        WITH knn AS (
+          SELECT i.cola_id, (i.image_feature_vector <=> %s::vector) AS dist
+          FROM cola_images i
+          WHERE {inner_where}
+          ORDER BY i.image_feature_vector <=> %s::vector
+          LIMIT %s
+        ), best AS (
+          SELECT DISTINCT ON (cola_id) cola_id, dist FROM knn ORDER BY cola_id, dist
+        )
+        SELECT {select_columns(SUMMARY_COLUMN_LIST, 'v')}, b.dist
+        FROM best b JOIN {SEARCH_TABLE} v ON v.cola_id = b.cola_id
+        """
     )
-    if outer_conditions:
-        query += "WHERE " + " AND ".join(outer_conditions) + " "
-    query += "ORDER BY d.dist LIMIT %s"
-
     if commodity_code:
+        query += " WHERE v.ct_commodity = %s"
         params.append(commodity_code)
+    query += " ORDER BY b.dist LIMIT %s"
     params.append(limit)
 
-    rows = await fetch_all(query, params)
+    # ef_search has to exceed the candidate LIMIT or HNSW recall collapses.
+    ef_search = max(64, candidates)
+    async with get_pool().connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search))
+                )
+                await cur.execute(query, params)
+                rows = await cur.fetchall()
+
     return [summary_from_row(r, score=round(1.0 - float(r["dist"]), 4)) for r in rows]
 
 
