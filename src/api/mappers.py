@@ -188,6 +188,68 @@ def image_ref_from_row(row: dict[str, Any]) -> ImageRef:
     )
 
 
+# Face ordering used for both image thumbnails and extracted-text grouping.
+FACE_ORDER = {"front": 0, "back": 1, "neck": 2}
+
+
+def _polygon_points(raw: Any) -> list[tuple[float, float]]:
+    """Accept either a flat [x1,y1,x2,y2,...] list or a list of {x, y} points."""
+    if not isinstance(raw, list) or not raw:
+        return []
+    if isinstance(raw[0], dict):
+        pts = [
+            (p.get("x"), p.get("y"))
+            for p in raw
+            if isinstance(p, dict) and isinstance(p.get("x"), (int, float)) and isinstance(p.get("y"), (int, float))
+        ]
+        return [(float(x), float(y)) for x, y in pts]
+    nums = [float(v) for v in raw if isinstance(v, (int, float))]
+    if len(nums) < 4:
+        return []
+    return list(zip(nums[0::2], nums[1::2]))
+
+
+def normalized_box(
+    bounding_box: Any, width_px: int | None, height_px: int | None
+) -> dict[str, float] | None:
+    """Return {x, y, w, h} as percentages of the image, or None when unmappable.
+
+    Document Intelligence stores {page, unit, polygon} with absolute pixel
+    coordinates, which the UI cannot position without the image dimensions.
+    """
+    if not isinstance(bounding_box, dict):
+        return None
+
+    # Already-normalized rectangles pass straight through.
+    if all(isinstance(bounding_box.get(k), (int, float)) for k in ("x", "y", "w", "h")):
+        return {k: float(bounding_box[k]) for k in ("x", "y", "w", "h")}
+
+    points = _polygon_points(bounding_box.get("polygon"))
+    if not points or not width_px or not height_px:
+        return None
+
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+
+    unit = str(bounding_box.get("unit") or "pixel").lower()
+    if unit != "pixel":
+        return None
+
+    def pct(value: float, extent: int) -> float:
+        return round(max(0.0, min(100.0, value / extent * 100)), 3)
+
+    x_pct = pct(x0, width_px)
+    y_pct = pct(y0, height_px)
+    return {
+        "x": x_pct,
+        "y": y_pct,
+        "w": round(min(100.0 - x_pct, pct(x1 - x0, width_px)), 3),
+        "h": round(min(100.0 - y_pct, pct(y1 - y0, height_px)), 3),
+    }
+
+
 def image_item_from_row(row: dict[str, Any]) -> ImageItem:
     return ImageItem(
         face=image_face(row.get("img_type")) if row.get("img_type") else (row.get("file_name") or "front"),
@@ -195,8 +257,21 @@ def image_item_from_row(row: dict[str, Any]) -> ImageItem:
         type=(row.get("analysis_item_type") or "text"),
         text=row.get("text") or "",
         conf=row.get("model_confidence"),
-        box=row.get("bounding_box"),
+        box=normalized_box(row.get("bounding_box"), row.get("width_px"), row.get("height_px")),
         model=row.get("analysis_model"),
+    )
+
+
+def _item_sort_key(item: ImageItem) -> tuple[int, str, float, float]:
+    box = item.box or {}
+    top = box.get("y")
+    left = box.get("x")
+    face = item.face or ""
+    return (
+        FACE_ORDER.get(face, len(FACE_ORDER)),
+        face,
+        float(top) if isinstance(top, (int, float)) else float("inf"),
+        float(left) if isinstance(left, (int, float)) else float("inf"),
     )
 
 
@@ -243,7 +318,7 @@ def detail_from_rows(
         submitter_phone=base.get("tel_no"),
         submitter_fax=base.get("fax_no"),
         images=[image_ref_from_row(r) for r in images],
-        image_items=[image_item_from_row(r) for r in items],
+        image_items=sorted((image_item_from_row(r) for r in items), key=_item_sort_key),
         details_url=base.get("cola_details_url"),
         form_url=base.get("cola_form_url"),
     )

@@ -53,10 +53,39 @@ function hasBox(item) {
   return b && ['x', 'y', 'w', 'h'].every((k) => typeof b[k] === 'number');
 }
 
-function BoundingBox({ item }) {
+// Label images are letterboxed by object-fit: contain inside a fixed 4/5 stage,
+// so percentages of the image must be remapped onto the rendered image rect.
+const STAGE_ASPECT = 4 / 5;
+
+function boxStyle(item, img) {
   const b = item.box;
+  const iw = img && img.widthPx;
+  const ih = img && img.heightPx;
+  let sx = 100;
+  let sy = 100;
+  let ox = 0;
+  let oy = 0;
+  if (iw && ih) {
+    const ia = iw / ih;
+    if (ia > STAGE_ASPECT) {
+      sy = (STAGE_ASPECT / ia) * 100;
+      oy = (100 - sy) / 2;
+    } else {
+      sx = (ia / STAGE_ASPECT) * 100;
+      ox = (100 - sx) / 2;
+    }
+  }
+  return {
+    left: ox + (b.x * sx) / 100 + '%',
+    top: oy + (b.y * sy) / 100 + '%',
+    width: (b.w * sx) / 100 + '%',
+    height: (b.h * sy) / 100 + '%',
+  };
+}
+
+function BoundingBox({ item, img }) {
   return (
-    <div className="bbox" style={{ left: b.x + '%', top: b.y + '%', width: b.w + '%', height: b.h + '%' }}>
+    <div className="bbox" style={boxStyle(item, img)}>
       <span className="bbox-tag">
         {String(item.type || '').replace(/_/g, ' ')}
         {item.conf != null ? ` · ${Math.round(item.conf * 100)}%` : ''}
@@ -81,7 +110,8 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
     };
   }, [face, faces]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const cur = imagesByFace[face] && imagesByFace[face][0];
+  const faceImages = imagesByFace[face] || [];
+  const cur = (hlItem && faceImages.find((im) => im.fileName === hlItem.file)) || faceImages[0];
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="Full-size label image">
       <button className="lb-close" onClick={onClose} aria-label="Close">
@@ -99,7 +129,7 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
         )}
         <div className="lb-stage">
           <LabelThumb rec={rec} src={cur && cur.url} />
-          {hlItem && hlItem.face === face && hasBox(hlItem) && <BoundingBox item={hlItem} />}
+          {hlItem && hlItem.face === face && hasBox(hlItem) && <BoundingBox item={hlItem} img={cur} />}
           <div className="lb-cap">
             <b>{rec.brand}</b> — {face} label · TTB ID {rec.ttbId}
           </div>
@@ -136,7 +166,8 @@ export default function DetailPage() {
   const q = (searchParams.get('q') || '').trim().toLowerCase();
 
   const detailState = useAsync((signal) => api.getCola(id, signal), [id]);
-  const similarState = useAsync((signal) => api.similar(id, 8, signal), [id]);
+  const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id]);
+  const othersState = useAsync((signal) => api.similar(id, 8, signal, 'others'), [id]);
   const rec = detailState.data;
 
   const images = useMemo(() => (rec && rec.images) || [], [rec]);
@@ -162,6 +193,21 @@ export default function DetailPage() {
     () => (q ? items.filter((it) => (it.text || '').toLowerCase().includes(q)) : []),
     [items, q]
   );
+
+  // Group extracted text by image face, reading order within each group.
+  const itemGroups = useMemo(() => {
+    const byFace = new Map();
+    items.forEach((it) => {
+      const f = it.face || 'other';
+      if (!byFace.has(f)) byFace.set(f, []);
+      byFace.get(f).push(it);
+    });
+    const pos = (it, k) => (it.box && typeof it.box[k] === 'number' ? it.box[k] : Infinity);
+    return orderFaces([...byFace.keys()]).map((face) => ({
+      face,
+      items: [...byFace.get(face)].sort((a, b) => pos(a, 'y') - pos(b, 'y') || pos(a, 'x') - pos(b, 'x')),
+    }));
+  }, [items]);
 
   useEffect(() => {
     const first = matchedItems.length ? matchedItems[0] : null;
@@ -199,9 +245,13 @@ export default function DetailPage() {
     );
   }
 
-  const similar = (similarState.data || []).filter((r) => String(r.id) !== String(rec.id));
-  const currentImage = imagesByFace[activeImg] && imagesByFace[activeImg][0];
-  const onOpen = (rid) => navigate(`/cola/${rid}`);
+  const dropSelf = (list) => (list || []).filter((r) => String(r.id) !== String(rec.id));
+  const memberSimilar = dropSelf(memberState.data);
+  const othersSimilar = dropSelf(othersState.data);
+  const activeFaceImages = imagesByFace[activeImg] || [];
+  const currentImage =
+    (hlItem && activeFaceImages.find((im) => im.fileName === hlItem.file)) || activeFaceImages[0];
+  const onOpen = (rid) => navigate(`/cola/${rid}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
 
   return (
     <div className="detail-page">
@@ -252,7 +302,9 @@ export default function DetailPage() {
               <div className="lv-main">
                 <div className="lv-stage" style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
                   <LabelThumb rec={rec} src={currentImage && currentImage.url} style={{ aspectRatio: '4/5' }} />
-                  {hlItem && activeImg === hlItem.face && hasBox(hlItem) && <BoundingBox item={hlItem} />}
+                  {hlItem && activeImg === hlItem.face && hasBox(hlItem) && (
+                    <BoundingBox item={hlItem} img={currentImage} />
+                  )}
                   <button className="lv-expand" onClick={() => setLightbox(true)} title="View full size" aria-label="View full size">
                     <Icon name="expand" size={16} /> Full size
                   </button>
@@ -419,47 +471,73 @@ export default function DetailPage() {
                   No text has been extracted from this label's images yet.
                 </div>
               ) : (
-                <div className="ocr-list">
-                  {items.map((it, i) => {
-                    const isMatch = q && (it.text || '').toLowerCase().includes(q);
-                    const on = hlItem === it;
-                    return (
-                      <button
-                        key={i}
-                        className={'ocr-row' + (on ? ' on' : '') + (isMatch ? ' hit' : '')}
-                        onClick={() => {
-                          if (on) {
-                            setHlItem(null);
-                          } else {
-                            setHlItem(it);
-                            setActiveImg(it.face);
-                          }
-                        }}
-                      >
-                        <span className="ocr-face-tag">{it.face}</span>
-                        <span className="ocr-type">{String(it.type || '').replace(/_/g, ' ')}</span>
-                        <span className="ocr-text">
-                          {isMatch ? <Highlight text={it.text} q={searchParams.get('q')} /> : it.text}
-                        </span>
-                        {it.conf != null && <span className="ocr-conf mono">{Math.round(it.conf * 100)}%</span>}
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <p className="ocr-hint">
+                    <Icon name="info" size={13} />
+                    <span>Select any text below to highlight where it appears on the label image.</span>
+                  </p>
+                  <div className="ocr-groups">
+                    {itemGroups.map((group) => (
+                      <div className="ocr-group" key={group.face}>
+                        <div className="ocr-group-head">
+                          <span className="ocr-face-tag">{group.face}</span>
+                          <span className="ocr-group-count">{group.items.length}</span>
+                        </div>
+                        <div className="ocr-flow">
+                          {group.items.map((it, i) => {
+                            const isMatch = q && (it.text || '').toLowerCase().includes(q);
+                            const on = hlItem === it;
+                            return (
+                              <button
+                                key={i}
+                                className={'ocr-chip' + (on ? ' on' : '') + (isMatch ? ' hit' : '')}
+                                title={it.conf != null ? `${Math.round(it.conf * 100)}% confidence` : undefined}
+                                onClick={() => {
+                                  if (on) {
+                                    setHlItem(null);
+                                  } else {
+                                    setHlItem(it);
+                                    setActiveImg(it.face);
+                                  }
+                                }}
+                              >
+                                {isMatch ? <Highlight text={it.text} q={searchParams.get('q')} /> : it.text}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           </div>
         </div>
 
         {/* similar labels */}
-        {similar.length > 0 && (
+        {memberSimilar.length > 0 && (
           <section style={{ marginTop: 40 }}>
-            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar labels</h2>
+            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs from this industry member</h2>
             <p className="muted" style={{ margin: '0 0 16px', fontSize: 14 }}>
-              Visually similar approved labels — useful for trade-dress comparison.
+              Visually similar approved labels filed under permit {rec.permit || '—'}.
             </p>
             <div className="recent-grid">
-              {similar.map((r) => (
+              {memberSimilar.map((r) => (
+                <SimilarCard key={r.id} r={r} onOpen={onOpen} />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {othersSimilar.length > 0 && (
+          <section style={{ marginTop: 40 }}>
+            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs from other industry members</h2>
+            <p className="muted" style={{ margin: '0 0 16px', fontSize: 14 }}>
+              Visually similar approved labels from other permit holders — useful for trade-dress comparison.
+            </p>
+            <div className="recent-grid">
+              {othersSimilar.map((r) => (
                 <SimilarCard key={r.id} r={r} onOpen={onOpen} />
               ))}
             </div>

@@ -357,7 +357,11 @@ export default function ResultsPage() {
   const activeFacet = (group) => criteria[FACET_PARAM[group]] || null;
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
   const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
-  const onOpen = (id) => navigate(`/cola/${id}`);
+  // Carry the search term so the detail page can highlight matching label text.
+  const onOpen = (id) => {
+    const term = (criteria.q || '').trim();
+    navigate(`/cola/${id}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+  };
 
   // Image mode with no stashed file (e.g. deep link / refresh): prompt to restart.
   if (isImg && (!pending || !pending.file)) {

@@ -50,12 +50,24 @@ async def _nearest_by_vector(
     limit: int,
     commodity_code: str | None,
     exclude_cola_id: int | None,
+    permit_num: str | None = None,
+    permit_mode: str | None = None,
 ) -> list[ColaSummary]:
     params: list[Any] = [vector_literal]
     filters = ["i.image_feature_vector IS NOT NULL"]
     if exclude_cola_id is not None:
         filters.append("i.cola_id <> %s")
         params.append(exclude_cola_id)
+    # Same-member results are far too sparse to survive a global ANN scan, so the
+    # candidate set is narrowed to the permit holder before ranking by distance.
+    # The inverse case filters inside the scan too, otherwise same-member rows
+    # consume the candidate budget and starve the result set.
+    if permit_mode and permit_num:
+        op = "IN" if permit_mode == "same" else "NOT IN"
+        filters.append(
+            f"i.cola_id {op} (SELECT cola_id FROM {SEARCH_TABLE} WHERE permit_num = %s)"
+        )
+        params.append(permit_num)
     inner_where = " AND ".join(filters)
 
     candidates = limit * _ANN_OVERFETCH
@@ -78,9 +90,12 @@ async def _nearest_by_vector(
         FROM best b JOIN {SEARCH_TABLE} v ON v.cola_id = b.cola_id
         """
     )
+    outer: list[str] = []
     if commodity_code:
-        query += " WHERE v.ct_commodity = %s"
+        outer.append("v.ct_commodity = %s")
         params.append(commodity_code)
+    if outer:
+        query += " WHERE " + " AND ".join(outer)
     query += " ORDER BY b.dist LIMIT %s"
     params.append(limit)
 
@@ -148,6 +163,14 @@ async def search_by_image(
 async def similar_colas(
     cola_id: int,
     limit: int = Query(default=12, ge=1, le=48),
+    scope: str = Query(
+        default="all",
+        pattern="^(all|member|others)$",
+        description=(
+            "Restrict visually similar labels by industry member: 'member' keeps only "
+            "COLAs sharing this permit number, 'others' excludes them, 'all' ignores the permit."
+        ),
+    ),
 ) -> list[ColaSummary]:
     seed = await fetch_one(
         "SELECT image_feature_vector::text AS vec FROM cola_images "
@@ -157,6 +180,24 @@ async def similar_colas(
     )
     if seed is None or not seed.get("vec"):
         return []
+
+    permit_num: str | None = None
+    permit_mode: str | None = None
+    if scope != "all":
+        # permit_num is populated for every record, unlike primary_permit_id.
+        row = await fetch_one(
+            f"SELECT permit_num FROM {SEARCH_TABLE} WHERE cola_id = %s", [cola_id]
+        )
+        permit_num = (row or {}).get("permit_num")
+        if not permit_num:
+            return []
+        permit_mode = "same" if scope == "member" else "other"
+
     return await _nearest_by_vector(
-        seed["vec"], limit=limit, commodity_code=None, exclude_cola_id=cola_id
+        seed["vec"],
+        limit=limit,
+        commodity_code=None,
+        exclude_cola_id=cola_id,
+        permit_num=permit_num,
+        permit_mode=permit_mode,
     )

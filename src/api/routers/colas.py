@@ -59,6 +59,11 @@ def _id_term(value: str) -> str:
     return value.strip().upper()
 
 
+def _default_date_from(today: date | None = None) -> date:
+    d = today or date.today()
+    return date(d.year - 2, 1, 1)
+
+
 def _build_filters(
     q: str | None,
     ttb_id: str | None,
@@ -300,7 +305,17 @@ async def list_colas(
     source: str | None = None,
     origin: str | None = None,
     status: str | None = None,
-    date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
+    date_from: Annotated[
+        date | None,
+        Query(
+            alias="dateFrom",
+            description=(
+                "Approval/completed date lower bound (`YYYY-MM-DD`). When both "
+                "`dateFrom` and `dateTo` are omitted, searches default to Jan 1 of "
+                "the year two years before the current year (last three calendar years)."
+            ),
+        ),
+    ] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
     sort: str = Query(
         default="relevance",
@@ -340,6 +355,10 @@ async def list_colas(
         ),
     ),
 ) -> SearchResponse:
+    effective_date_from = date_from
+    if date_from is None and date_to is None:
+        effective_date_from = _default_date_from()
+
     where, params = _build_filters(
         q,
         ttb_id,
@@ -349,7 +368,7 @@ async def list_colas(
         source,
         origin,
         status,
-        date_from,
+        effective_date_from,
         date_to,
         applicant=applicant,
         permit=permit,
@@ -410,7 +429,7 @@ async def get_cola(cola_id: int) -> ColaDetail:
     )
     items = await fetch_all(
         "SELECT i.cola_id, i.file_name, i.analysis_item_type, i.text, i.model_confidence, "
-        "i.bounding_box, i.analysis_model, img.img_type "
+        "i.bounding_box, i.analysis_model, img.img_type, img.width_px, img.height_px "
         "FROM image_analysis_items i "
         "LEFT JOIN cola_images img ON img.cola_id = i.cola_id AND img.file_name = i.file_name "
         "WHERE i.cola_id = %s ORDER BY i.id",

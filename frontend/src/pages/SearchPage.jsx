@@ -9,6 +9,10 @@ import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
+function defaultDateFrom() {
+  return `${new Date().getFullYear() - 2}-01-01`;
+}
+
 const EMPTY = {
   text: '',
   ttbId: '',
@@ -27,7 +31,7 @@ const EMPTY = {
   source: '',
   origin: '',
   status: 'Approved',
-  dateFrom: '',
+  dateFrom: defaultDateFrom(),
   dateTo: '',
   mode: 'text',
   image: null,
@@ -456,6 +460,9 @@ export default function SearchPage() {
                     <div className="hint" style={{ marginTop: 8 }}>
                       One box searches across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
                     </div>
+                    <div className="hint" style={{ marginTop: 6 }}>
+                      Defaults: Status is Approved and approval date starts at {defaultDateFrom()} (last three calendar years). Expand in Advanced search.
+                    </div>
                   </div>
 
                   <div className="row between" style={{ marginTop: 16 }}>
@@ -508,6 +515,13 @@ export default function SearchPage() {
             Browse all approvals <Icon name="arrowRt" size={16} />
           </button>
         </div>
+        {recentState.loading && <div className="muted">Loading recent approvals...</div>}
+        {recentState.error && !recentState.loading && (
+          <div className="info-note">
+            <Icon name="info" size={18} />
+            <div>Recent approvals are temporarily unavailable. Try reloading the page.</div>
+          </div>
+        )}
         <div className={'recent-grid' + (isMobile ? ' compact' : '')}>
           {recent.map((r) => (
             <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${r.id}`)}>
