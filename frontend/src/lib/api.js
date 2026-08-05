@@ -53,8 +53,8 @@ export const api = {
 
   getCola: (id, signal) => request(`/colas/${encodeURIComponent(id)}`, { signal }),
 
-  similar: (id, limit = 8, signal) =>
-    request(`/colas/${encodeURIComponent(id)}/similar${toQuery({ limit })}`, { signal }),
+  similar: (id, limit = 8, signal, scope) =>
+    request(`/colas/${encodeURIComponent(id)}/similar${toQuery({ limit, scope })}`, { signal }),
 
   searchByImage: ({ file, commodity, limit = 24 }, signal) => {
     const form = new FormData();

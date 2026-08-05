@@ -61,9 +61,6 @@ param geminiApiKey string = ''
 @description('Comma-separated CORS origins. Same-origin SPA needs none; "*" is fine while iterating.')
 param corsOrigins string = '*'
 
-@description('Recreate the vw_colas database views on startup.')
-param initViews bool = true
-
 param minReplicas int = 1
 param maxReplicas int = 3
 param containerCpu string = '0.5'
@@ -187,7 +184,6 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'EMBEDDING_MODEL', value: embeddingModel }
               { name: 'EMBEDDING_DIM', value: string(embeddingDim) }
               { name: 'CORS_ORIGINS', value: corsOrigins }
-              { name: 'INIT_VIEWS', value: string(initViews) }
             ],
             empty(geminiApiKey) ? [] : [
               { name: 'GEMINI_API_KEY', secretRef: 'gemini-api-key' }

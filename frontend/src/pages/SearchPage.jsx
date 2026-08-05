@@ -7,36 +7,66 @@ import { api, toQuery } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
+
+function defaultDateFrom() {
+  return `${new Date().getFullYear() - 2}-01-01`;
+}
 
 const EMPTY = {
   text: '',
   ttbId: '',
   brand: '',
   fanciful: '',
+  applicant: '',
+  permit: '',
+  permitName: '',
+  permitState: '',
+  permitCity: '',
+  submitter: '',
+  varietal: '',
+  qualification: '',
+  labelText: '',
   commodity: '',
   source: '',
   origin: '',
-  status: '',
-  dateFrom: '',
+  status: 'Approved',
+  dateFrom: defaultDateFrom(),
   dateTo: '',
   mode: 'text',
   image: null,
   sort: 'relevance',
 };
 
+// Draft keys that map 1:1 onto API/URL query params.
+const PASSTHROUGH_KEYS = [
+  'ttbId',
+  'brand',
+  'fanciful',
+  'applicant',
+  'permit',
+  'permitName',
+  'permitState',
+  'permitCity',
+  'submitter',
+  'varietal',
+  'qualification',
+  'labelText',
+  'commodity',
+  'source',
+  'origin',
+  'status',
+  'dateFrom',
+  'dateTo',
+];
+
 // Turn the form draft into the API/URL query object (camelCase matches the API).
 function draftToParams(draft) {
   const p = {};
   if (draft.text) p.q = draft.text;
-  if (draft.ttbId) p.ttbId = draft.ttbId;
-  if (draft.brand) p.brand = draft.brand;
-  if (draft.fanciful) p.fanciful = draft.fanciful;
-  if (draft.commodity) p.commodity = draft.commodity;
-  if (draft.source) p.source = draft.source;
-  if (draft.origin) p.origin = draft.origin;
-  if (draft.status) p.status = draft.status;
-  if (draft.dateFrom) p.dateFrom = draft.dateFrom;
-  if (draft.dateTo) p.dateTo = draft.dateTo;
+  PASSTHROUGH_KEYS.forEach((k) => {
+    if (draft[k]) p[k] = draft[k];
+  });
   if (draft.sort && draft.sort !== 'relevance') p.sort = draft.sort;
   return p;
 }
@@ -60,6 +90,7 @@ function AdvancedFields({ draft, set, refData }) {
   const domestic = refData.domesticOrigins || [];
   const imported = refData.importedOrigins || [];
   const statuses = refData.statuses || [];
+  const permitStates = refData.permitStates || [];
   return (
     <div className="adv-grid">
       <div className="field">
@@ -163,6 +194,102 @@ function AdvancedFields({ draft, set, refData }) {
       <div className="field">
         <label>Approval date — to</label>
         <input type="date" className="input" value={draft.dateTo} onChange={(e) => set('dateTo', e.target.value)} />
+      </div>
+
+      <div className="field adv-span">
+        <div className="adv-subhead">Applicant, permit &amp; submitter</div>
+      </div>
+      <div className="field">
+        <label>Applicant / business</label>
+        <div className="hint">Permit holder, or the submitter when no permit is on file</div>
+        <input
+          className="input"
+          placeholder="e.g. Cedar Hollow Winery"
+          value={draft.applicant}
+          onChange={(e) => set('applicant', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Permit / plant number</label>
+        <div className="hint">Matches any permit associated with the COLA</div>
+        <input
+          className="input mono"
+          placeholder="e.g. BWN-CA-1234"
+          value={draft.permit}
+          onChange={(e) => set('permit', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Permit holder name</label>
+        <input
+          className="input"
+          placeholder="e.g. Cedar Hollow LLC"
+          value={draft.permitName}
+          onChange={(e) => set('permitName', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Permit city</label>
+        <input
+          className="input"
+          placeholder="e.g. Napa"
+          value={draft.permitCity}
+          onChange={(e) => set('permitCity', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Permit state</label>
+        <select className="select" value={draft.permitState} onChange={(e) => set('permitState', e.target.value)}>
+          <option value="">Any state</option>
+          {permitStates.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field">
+        <label>Submitter</label>
+        <div className="hint">Name or submitter ID on the application</div>
+        <input
+          className="input"
+          placeholder="e.g. Jordan Reyes"
+          value={draft.submitter}
+          onChange={(e) => set('submitter', e.target.value)}
+        />
+      </div>
+
+      <div className="field adv-span">
+        <div className="adv-subhead">Product detail &amp; label text</div>
+      </div>
+      <div className="field">
+        <label>Grape varietal</label>
+        <input
+          className="input"
+          placeholder="e.g. Cabernet Sauvignon"
+          value={draft.varietal}
+          onChange={(e) => set('varietal', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Qualification text</label>
+        <div className="hint">Conditions recorded on the approval</div>
+        <input
+          className="input"
+          placeholder="e.g. alcohol content"
+          value={draft.qualification}
+          onChange={(e) => set('qualification', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Text on the label</label>
+        <div className="hint">Searches text recognized on label artwork — slower</div>
+        <input
+          className="input"
+          placeholder="e.g. estate bottled"
+          value={draft.labelText}
+          onChange={(e) => set('labelText', e.target.value)}
+        />
       </div>
     </div>
   );
@@ -271,6 +398,7 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
 
 export default function SearchPage() {
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const [draft, setDraft] = useState(EMPTY);
   const [advanced, setAdvanced] = useState(false);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
@@ -280,7 +408,7 @@ export default function SearchPage() {
   const categories = ref.categories || [];
 
   const recentState = useAsync(
-    (signal) => api.searchColas({ sort: 'approvalDate', pageSize: 6, facets: false }, signal),
+    (signal) => api.searchColas({ sort: 'approvalDate', status: 'Approved', pageSize: 6, facets: false }, signal),
     []
   );
   const recent = (recentState.data && recentState.data.items) || [];
@@ -320,7 +448,7 @@ export default function SearchPage() {
                       <input
                         className="input"
                         style={{ fontSize: 17 }}
-                        placeholder="Brand, fanciful name, TTB ID, applicant, origin…"
+                        placeholder="Brand, fanciful name, TTB ID, applicant, permit, submitter, origin…"
                         value={draft.text}
                         onChange={(e) => set('text', e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && submitText()}
@@ -330,7 +458,10 @@ export default function SearchPage() {
                       </button>
                     </div>
                     <div className="hint" style={{ marginTop: 8 }}>
-                      One box searches across brand, product, applicant, class/type, origin, and TTB ID.
+                      One box searches across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
+                    </div>
+                    <div className="hint" style={{ marginTop: 6 }}>
+                      Defaults: Status is Approved and approval date starts at {defaultDateFrom()} (last three calendar years). Expand in Advanced search.
                     </div>
                   </div>
 
@@ -380,13 +511,20 @@ export default function SearchPage() {
       <section className="wrap" style={{ marginTop: 44 }}>
         <div className="row between" style={{ marginBottom: 16 }}>
           <h2 style={{ fontSize: 20 }}>Recently approved</h2>
-          <button className="linkbtn" onClick={() => navigate({ pathname: '/results', search: toQuery({ sort: 'approvalDate' }) })}>
+          <button className="linkbtn" onClick={() => navigate({ pathname: '/results', search: toQuery({ sort: 'approvalDate', status: 'Approved' }) })}>
             Browse all approvals <Icon name="arrowRt" size={16} />
           </button>
         </div>
-        <div className="recent-grid">
+        {recentState.loading && <div className="muted">Loading recent approvals...</div>}
+        {recentState.error && !recentState.loading && (
+          <div className="info-note">
+            <Icon name="info" size={18} />
+            <div>Recent approvals are temporarily unavailable. Try reloading the page.</div>
+          </div>
+        )}
+        <div className={'recent-grid' + (isMobile ? ' compact' : '')}>
           {recent.map((r) => (
-            <button key={r.id} className="recent-card" onClick={() => navigate(`/cola/${r.id}`)}>
+            <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${r.id}`)}>
               <LabelThumb rec={r} />
               <div className="recent-meta">
                 <div className="row between gap-8">

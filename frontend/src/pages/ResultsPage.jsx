@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -9,14 +9,41 @@ import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { takePendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const PAGE_SIZE = 24;
 
 // URL params that are search filters (as opposed to view/paging state).
-const FILTER_KEYS = ['q', 'ttbId', 'brand', 'fanciful', 'commodity', 'source', 'origin', 'status', 'dateFrom', 'dateTo'];
+const FILTER_KEYS = [
+  'q',
+  'ttbId',
+  'brand',
+  'fanciful',
+  'applicant',
+  'permit',
+  'permitName',
+  'permitCity',
+  'permitState',
+  'submitter',
+  'varietal',
+  'qualification',
+  'labelText',
+  'commodity',
+  'source',
+  'origin',
+  'status',
+  'dateFrom',
+  'dateTo',
+];
 
 // Map a facet group name to the single-value URL/API param it controls.
-const FACET_PARAM = { commodity: 'commodity', source: 'source', origin: 'origin', status: 'status' };
+const FACET_PARAM = {
+  commodity: 'commodity',
+  source: 'source',
+  origin: 'origin',
+  status: 'status',
+  permitState: 'permitState',
+};
 
 function paramsToObject(sp) {
   const o = {};
@@ -69,7 +96,7 @@ function GalleryView({ rows, criteria, isImg, onOpen }) {
             </div>
             <div className="g-meta mono">{r.ttbId}</div>
             <div className="g-meta">
-              {r.origin} · {fmtDate(r.approvalDate)}
+              {r.originFlag ? r.originFlag + ' ' : ''}{r.origin} · {fmtDate(r.approvalDate)}
             </div>
           </div>
         </button>
@@ -98,8 +125,17 @@ function ListView({ rows, criteria, isImg, onOpen }) {
             </div>
             <div className="l-meta">
               <span className="mono">{r.ttbId}</span>
-              <span>{r.origin}</span>
-              <span>{r.applicant}</span>
+              <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
+              <span>
+                <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+              </span>
+              {r.permitId && <span className="mono">{r.permitId}</span>}
+              {r.permitState && (
+                <span>
+                  {r.permitCity ? r.permitCity + ', ' : ''}
+                  {r.permitState}
+                </span>
+              )}
             </div>
           </div>
           <div className="l-side">
@@ -126,6 +162,7 @@ function TableView({ rows, criteria, isImg, onOpen }) {
             <th style={{ width: 52 }}></th>
             <th>Brand / Fanciful</th>
             <th>Class / Type</th>
+            <th>Applicant / Permit</th>
             <th>Origin</th>
             <th>TTB ID</th>
             <th>Approved</th>
@@ -155,7 +192,15 @@ function TableView({ rows, criteria, isImg, onOpen }) {
                   {r.classSub}
                 </div>
               </td>
-              <td>{r.origin}</td>
+              <td>
+                <div>
+                  <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+                </div>
+                <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
+                  {[r.permitId, r.permitState].filter(Boolean).join(' · ')}
+                </div>
+              </td>
+              <td>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</td>
               <td className="mono" style={{ fontSize: 12.5 }}>
                 {r.ttbId}
               </td>
@@ -178,6 +223,15 @@ const CHIP_LABELS = {
   ttbId: 'TTB/Serial',
   brand: 'Brand',
   fanciful: 'Product',
+  applicant: 'Applicant',
+  permit: 'Permit',
+  permitName: 'Permit holder',
+  permitCity: 'Permit city',
+  permitState: 'Permit state',
+  submitter: 'Submitter',
+  varietal: 'Varietal',
+  qualification: 'Qualification',
+  labelText: 'Label text',
   commodity: 'Commodity',
   source: 'Source',
   origin: 'Origin',
@@ -210,11 +264,19 @@ function ActiveChips({ criteria, onClearKey }) {
 export default function ResultsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isMobile = useIsMobile();
   const criteria = paramsToObject(searchParams);
   const isImg = criteria.mode === 'image';
   const page = Math.max(1, parseInt(criteria.page || '1', 10) || 1);
 
-  const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || 'gallery');
+  const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || (window.matchMedia('(max-width: 720px)').matches ? 'list' : 'gallery'));
+
+  // Default to compact list on mobile only when no explicit user preference is stored.
+  useEffect(() => {
+    if (isMobile && !localStorage.getItem('cola.view')) {
+      setViewState('list');
+    }
+  }, [isMobile]);
   const setView = (v) => {
     setViewState(v);
     localStorage.setItem('cola.view', v);
@@ -249,8 +311,10 @@ export default function ResultsPage() {
   const loading = isImg ? (pending && pending.file ? state.loading : false) : state.loading;
   const rows = (data && data.items) || [];
   const total = data ? data.total : 0;
+  const totalCapped = Boolean(data && data.totalIsCapped);
   const facets = (data && data.facets) || null;
-  const pageCount = Math.max(1, Math.ceil((total || 0) / PAGE_SIZE));
+  // The API refuses pages past 500; don't offer links the server will reject.
+  const pageCount = Math.min(500, Math.max(1, Math.ceil((total || 0) / PAGE_SIZE)));
 
   function patchParams(mutator) {
     const next = paramsToObject(searchParams);
@@ -293,7 +357,11 @@ export default function ResultsPage() {
   const activeFacet = (group) => criteria[FACET_PARAM[group]] || null;
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
   const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
-  const onOpen = (id) => navigate(`/cola/${id}`);
+  // Carry the search term so the detail page can highlight matching label text.
+  const onOpen = (id) => {
+    const term = (criteria.q || '').trim();
+    navigate(`/cola/${id}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+  };
 
   // Image mode with no stashed file (e.g. deep link / refresh): prompt to restart.
   if (isImg && (!pending || !pending.file)) {
@@ -373,6 +441,13 @@ export default function ResultsPage() {
                 <FacetGroup title="Source" buckets={facets.source} selected={activeFacet('source')} onSelect={(v) => selectFacet('source', v)} />
                 <hr className="divider" />
                 <FacetGroup title="Origin" buckets={facets.origin} selected={activeFacet('origin')} onSelect={(v) => selectFacet('origin', v)} />
+                <hr className="divider" />
+                <FacetGroup
+                  title="Permit state"
+                  buckets={facets.permitState}
+                  selected={activeFacet('permitState')}
+                  onSelect={(v) => selectFacet('permitState', v)}
+                />
               </>
             ) : (
               <div className="muted" style={{ fontSize: 13 }}>Loading filters…</div>
@@ -386,7 +461,8 @@ export default function ResultsPage() {
               <div style={{ fontSize: 22, fontWeight: 800 }}>
                 {loading ? 'Searching…' : (
                   <>
-                    {total} {total === 1 ? 'result' : 'results'}
+                    {total.toLocaleString()}{totalCapped ? '+' : ''}{' '}
+                    {total === 1 ? 'result' : 'results'}
                   </>
                 )}
               </div>
@@ -411,6 +487,7 @@ export default function ResultsPage() {
                     <option value="relevance">Relevance</option>
                     <option value="approvalDate">Newest approval</option>
                     <option value="brand">Brand (A–Z)</option>
+                    <option value="applicant">Applicant (A–Z)</option>
                   </select>
                 </div>
               )}

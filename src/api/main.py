@@ -6,14 +6,15 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from psycopg.errors import QueryCanceled
 
 from .blob import close_blob
 from .config import API_PREFIX, get_settings
-from .db import close_pool, init_views, open_pool
+from .db import close_pool, open_pool
 from .routers import colas, health, images, reference, search
 
 # psycopg's async driver cannot run on Windows' default ProactorEventLoop; select
@@ -25,8 +26,6 @@ if sys.platform == "win32":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await open_pool()
-    if get_settings().init_views:
-        await init_views()
     try:
         yield
     finally:
@@ -57,6 +56,13 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)
+
+    @app.exception_handler(QueryCanceled)
+    async def _statement_timeout(request: Request, exc: QueryCanceled) -> JSONResponse:
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "The search took too long. Narrow your filters and try again."},
+        )
 
     spa_dir = _resolve_spa_dir(settings.spa_dir)
     if spa_dir is not None:

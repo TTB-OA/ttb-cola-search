@@ -1,4 +1,31 @@
-.venv
-.vscode
+# Local secrets
 .env
-data/
+config/.env
+*.pem
+*.key
+*_secret*
+*credentials*
+
+# Runtime outputs
+rpt/
+reports/
+logs/
+raw_images/
+*.log
+*.csv
+!*.example.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/

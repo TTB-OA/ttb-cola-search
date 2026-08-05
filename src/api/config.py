@@ -29,7 +29,20 @@ class Settings(BaseSettings):
     postgres_sslrootcert: str | None = None
     postgres_connect_timeout: int = 30
     postgres_pool_min: int = 1
-    postgres_pool_max: int = 8
+    postgres_pool_max: int = 16
+    # Ceiling on any single statement, so a runaway query cannot pin a pool slot.
+    postgres_statement_timeout_ms: int = 15000
+    # Image search reads the upload into memory before embedding it.
+    max_upload_bytes: int = 10 * 1024 * 1024
+
+    # --- Rate limiting ------------------------------------------------------
+    # Image search calls a metered embedding API, so cap it per client. The
+    # limiter is per replica, so the real ceiling is this times the replica count.
+    image_search_rate_limit: int = 10
+    image_search_rate_window_seconds: int = 60
+    # Only enable behind a reverse proxy that overwrites X-Forwarded-For;
+    # otherwise clients can spoof the header and reset their own bucket.
+    trust_forwarded_for: bool = True
 
     # --- Blob storage (label images) ---------------------------------------
     blob_account_url: str | None = None
@@ -44,8 +57,6 @@ class Settings(BaseSettings):
     # --- API ----------------------------------------------------------------
     api_title: str = "TTB COLA Search API"
     cors_origins: str = "*"
-    # Create/refresh the vw_colas database views on application startup.
-    init_views: bool = True
     # Directory of the built Vite SPA (dist). When set and present, FastAPI
     # serves the SPA at "/" so the app runs single-origin (no CORS in prod).
     # In the container this is set to the copied build output; unset locally.

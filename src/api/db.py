@@ -8,30 +8,24 @@ as its password, so long-lived pools survive token expiry.
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
-from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import certifi
 from azure.identity.aio import DefaultAzureCredential
 from psycopg import AsyncConnection
+from psycopg.abc import QueryNoTemplate
 from psycopg.rows import dict_row
-from psycopg.sql import SQL, Identifier
+from psycopg.sql import SQL, Identifier, Literal
 from psycopg_pool import AsyncConnectionPool
 
 from .config import Settings, get_settings
-
-logger = logging.getLogger(__name__)
 
 # Scope for AAD tokens used to authenticate to Azure Database for PostgreSQL.
 # The resource is ossrdbms-aad.database.windows.net (equivalent to the Azure CLI
 # `--resource-type oss-rdbms`); the ...postgres.azure.com identifier is not
 # provisioned in all tenants and fails token acquisition with AADSTS500011.
 PG_AAD_SCOPE = "https://ossrdbms-aad.database.windows.net/.default"
-
-# Repository resources directory (src/api/db.py -> src -> repo root -> resources).
-_RESOURCES_DIR = Path(__file__).resolve().parents[2] / "resources"
 
 
 class _TokenProvider:
@@ -97,12 +91,17 @@ def _base_kwargs(settings: Settings) -> dict[str, Any]:
 
 
 async def _configure(conn: AsyncConnection) -> None:
-    """Set the search_path on every pooled connection."""
+    """Set the search_path and statement timeout on every pooled connection."""
     settings = get_settings()
     async with conn.cursor() as cur:
         await cur.execute(
             SQL("SET search_path TO {}, public").format(
                 Identifier(settings.postgres_schema)
+            )
+        )
+        await cur.execute(
+            SQL("SET statement_timeout TO {}").format(
+                Literal(settings.postgres_statement_timeout_ms)
             )
         )
 
@@ -137,46 +136,33 @@ def get_pool() -> AsyncConnectionPool:
 
 
 async def open_pool() -> None:
+    # Do not block application startup on the first physical connection.
+    # The pool will connect lazily on demand, and /health already reports a
+    # degraded database state when the backend is unreachable.
     await get_pool().open(wait=False)
 
 
-async def run_sql_script(path: Path) -> None:
-    """Execute a .sql script file on a pooled connection."""
-    sql = path.read_text(encoding="utf-8")
-    async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(sql)  # type: ignore[arg-type]
-
-
-async def init_views() -> None:
-    """Create/refresh the vw_colas views (both schemas) at startup.
-
-    Failures are logged but do not abort startup, so the app (and its health
-    endpoint) can still come up when the database is briefly unreachable.
-    """
-    script = _RESOURCES_DIR / "pg_views.sql"
-    try:
-        await run_sql_script(script)
-        logger.info("Initialized database views from %s", script.name)
-    except Exception:  # noqa: BLE001 - startup must not hard-fail on view init
-        logger.exception("Failed to initialize database views from %s", script.name)
-
-
 async def close_pool() -> None:
-    global _pool
+    global _pool, _token_provider
     if _pool is not None:
         await _pool.close()
         _pool = None
     if _token_provider is not None:
         await _token_provider.close()
+        _token_provider = None
 
 
 async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
     async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(query, params)  # type: ignore[arg-type]
-        return await cur.fetchall()
+        await cur.execute(cast(QueryNoTemplate, query), params)
+        rows = await cur.fetchall()
+        # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
+        return cast(list[dict[str, Any]], rows)
 
 
 async def fetch_one(query: str, params: list[Any] | None = None) -> dict[str, Any] | None:
     async with get_pool().connection() as conn, conn.cursor() as cur:
-        await cur.execute(query, params)  # type: ignore[arg-type]
-        return await cur.fetchone()
+        await cur.execute(cast(QueryNoTemplate, query), params)
+        row = await cur.fetchone()
+        # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
+        return cast(dict[str, Any] | None, row)

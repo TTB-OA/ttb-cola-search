@@ -13,6 +13,8 @@ import os
 import sys
 
 if sys.platform == "win32":
+    # ty: ignore[deprecated] Required on Windows until uvicorn/psycopg startup
+    # can be switched to a non-policy event loop selection path.
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import uvicorn
