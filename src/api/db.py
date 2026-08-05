@@ -136,16 +136,20 @@ def get_pool() -> AsyncConnectionPool:
 
 
 async def open_pool() -> None:
+    # Do not block application startup on the first physical connection.
+    # The pool will connect lazily on demand, and /health already reports a
+    # degraded database state when the backend is unreachable.
     await get_pool().open(wait=False)
 
 
 async def close_pool() -> None:
-    global _pool
+    global _pool, _token_provider
     if _pool is not None:
         await _pool.close()
         _pool = None
     if _token_provider is not None:
         await _token_provider.close()
+        _token_provider = None
 
 
 async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:

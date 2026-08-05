@@ -167,11 +167,17 @@ def _build_filters(
 async def _facets(where: str, params: list[Any]) -> Facets:
     # One materialised CTE (PG materialises multiply-referenced CTEs by default)
     # so the filtered set is scanned once instead of once per dimension.
+    #
+    # The CTE is bounded by the same COUNT_CAP as the total. A broad term such as
+    # "vodka" matches tens of thousands of rows, and the bitmap heap fetch for all
+    # of them costs far more than the statement timeout allows. Capping the scan
+    # keeps the aggregation bounded; past the cap the counts are a floor, which
+    # total_is_capped already reports for the same result set.
     rows = await fetch_all(
         f"""--sql
         WITH m AS (
           SELECT ct_commodity, ct_source, origin, status, primary_permit_state_addr
-          FROM {SEARCH_TABLE} {where}
+          FROM {SEARCH_TABLE} {where} LIMIT %s
         )
         SELECT 'commodity' AS dim, ct_commodity AS value, COUNT(*) AS count FROM m GROUP BY 1, 2
         UNION ALL SELECT 'source', ct_source, COUNT(*) FROM m GROUP BY 1, 2
@@ -179,7 +185,7 @@ async def _facets(where: str, params: list[Any]) -> Facets:
         UNION ALL SELECT 'status', status, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'permitState', primary_permit_state_addr, COUNT(*) FROM m GROUP BY 1, 2
         """,
-        params,
+        [*params, COUNT_CAP],
     )
 
     grouped: dict[str, list[dict[str, Any]]] = {}
