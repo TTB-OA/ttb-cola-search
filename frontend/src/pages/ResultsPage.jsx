@@ -468,7 +468,7 @@ export default function ResultsPage() {
         </div>
       </div>
 
-      <div className="wrap results-layout">
+      <div className={`wrap results-layout${isImg ? ' no-facets' : ''}`}>
         {!isImg && (
           <aside className="facets panel" data-tour="results-facets">
             <div className="row between" style={{ marginBottom: 6 }}>
