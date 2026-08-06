@@ -415,7 +415,7 @@ export default function ResultsPage() {
 
       <div className="wrap results-layout">
         {!isImg && (
-          <aside className="facets panel">
+          <aside className="facets panel" data-tour="results-facets">
             <div className="row between" style={{ marginBottom: 6 }}>
               <div className="section-title">Refine results</div>
               {hasActiveFacets && (
@@ -472,7 +472,7 @@ export default function ResultsPage() {
                 </div>
               )}
             </div>
-            <div className="row gap-16 wrap-flex">
+            <div className="row gap-16 wrap-flex" data-tour="results-views">
               {!isImg && (
                 <div className="row gap-8">
                   <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>

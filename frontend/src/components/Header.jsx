@@ -1,7 +1,9 @@
 import { Link, NavLink } from 'react-router-dom';
 import Icon from './Icon.jsx';
+import { useTour } from './Tour.jsx';
 
 export default function Header() {
+  const { start } = useTour();
   return (
     <header className="site-header">
       <div className="wrap">
@@ -37,6 +39,9 @@ export default function Header() {
           >
             COLA Resources <Icon name="external" size={14} />
           </a>
+          <button type="button" className="nav-tour" data-tour="tour-button" onClick={start}>
+            <Icon name="info" size={14} /> Tour
+          </button>
         </nav>
       </div>
     </header>

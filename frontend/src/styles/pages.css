@@ -211,6 +211,38 @@
 [data-density="comfy"] .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 30px; }
 [data-density="comfy"] .g-body { padding: 18px 20px 20px; }
 
+/* ---------- Guided tour ---------- */
+.tour-blocker { position: fixed; inset: 0; z-index: 300; background: transparent; }
+.tour-blocker.dim { background: rgba(22,46,81,.58); }
+.tour-spot {
+  position: fixed; z-index: 301; pointer-events: none; border-radius: 6px;
+  box-shadow: 0 0 0 9999px rgba(22,46,81,.58), 0 0 0 2px var(--accent), 0 0 0 7px rgba(0,94,162,.25);
+  transition: top .2s ease, left .2s ease, width .2s ease, height .2s ease;
+}
+.tour-pop {
+  position: fixed; z-index: 302; background: var(--white); border-radius: var(--radius-md);
+  border-top: 4px solid var(--accent); box-shadow: var(--shadow-3);
+  padding: 18px 22px 16px; transition: opacity .15s ease, top .2s ease, left .2s ease;
+}
+.tour-pop:focus { outline: none; }
+.tour-x {
+  position: absolute; top: 8px; right: 8px; background: none; border: 0; cursor: pointer;
+  color: var(--base); padding: 6px; border-radius: 50%; display: grid; place-items: center;
+}
+.tour-x:hover { background: var(--gray-2); color: var(--ink); }
+.tour-step-count { font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+.tour-title { font-size: 18px; margin-top: 5px; padding-right: 24px; }
+.tour-body { margin: 8px 0 16px; font-size: 14px; line-height: 1.55; color: var(--base-darker); }
+.tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tour-dots { display: flex; gap: 5px; }
+.tour-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--base-lighter); }
+.tour-dot.on { background: var(--accent); }
+.tour-buttons { display: flex; align-items: center; gap: 10px; }
+.tour-skip { font-size: 13px; }
+@media (prefers-reduced-motion: reduce) {
+  .tour-spot, .tour-pop { transition: none; }
+}
+
 /* ============================================================
    Responsive
    ============================================================ */

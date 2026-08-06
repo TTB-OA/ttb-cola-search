@@ -1,0 +1,144 @@
+// Step definitions for the product tour. `target` is a CSS selector resolved at
+// runtime; `route` moves the app to the page a step lives on (a function when
+// the path depends on a sample record). Steps flagged `requireTarget` are
+// dropped when their element is missing; others fall back to a centered card.
+const SEEN_KEY = 'ttb-cola:tour-seen:v1';
+
+export const RESULTS_ROUTE = '/results?sort=approvalDate&status=Approved';
+
+export const TOUR_STEPS = [
+  {
+    id: 'welcome',
+    route: '/',
+    placement: 'center',
+    title: 'Welcome to the Public COLA Registry',
+    body:
+      'Search every Certificate of Label Approval issued for wine, malt beverages, and distilled spirits — including the approved label artwork. Here is a quick look at what you can do.',
+  },
+  {
+    id: 'search',
+    route: '/',
+    target: '[data-tour="search-box"]',
+    placement: 'bottom',
+    title: 'Start with one search box',
+    body:
+      'Brand, product name, applicant, permit, submitter, class/type, origin, and TTB ID are all searched at once. Results default to approved labels from the last three calendar years.',
+  },
+  {
+    id: 'quick-filters',
+    route: '/',
+    target: '[data-tour="quick-filters"]',
+    placement: 'bottom',
+    requireTarget: true,
+    title: 'Narrow by commodity',
+    body: 'Limit results to wine, malt beverage, or distilled spirits before you search.',
+  },
+  {
+    id: 'advanced',
+    route: '/',
+    target: '[data-tour="advanced-toggle"]',
+    placement: 'left',
+    requireTarget: true,
+    title: 'Go deeper with advanced search',
+    body:
+      'Open advanced search for field-level control: TTB ID or serial number, permit number and permit holder location, varietal, qualifications, approval date range, and text found on the label itself.',
+  },
+  {
+    id: 'image',
+    route: '/',
+    target: '[data-tour="image-tab"]',
+    placement: 'bottom',
+    requireTarget: true,
+    title: 'Or search by label image',
+    body:
+      'Upload a label image and we rank approved artwork by visual similarity — color palette, composition, and graphic elements.',
+  },
+  {
+    id: 'recent',
+    route: '/',
+    target: '[data-tour="recent"]',
+    placement: 'top',
+    requireTarget: true,
+    title: 'Browse the newest approvals',
+    body: 'Recently approved labels are always on the home page. Next, a look at a full result set.',
+  },
+  {
+    id: 'results-facets',
+    route: RESULTS_ROUTE,
+    target: '[data-tour="results-facets"]',
+    placement: 'right',
+    skipMobile: true,
+    title: 'Refine without starting over',
+    body:
+      'Results are faceted by commodity, status, source, origin, and permit state. Counts update as you drill in, and every active filter becomes a chip you can remove individually.',
+  },
+  {
+    id: 'results-views',
+    route: RESULTS_ROUTE,
+    target: '[data-tour="results-views"]',
+    placement: 'bottom',
+    title: 'Sort and switch views',
+    body:
+      'Re-sort by relevance, newest approval, brand, or applicant, and switch between gallery, list, and table views. Your view preference is remembered.',
+  },
+  {
+    id: 'detail-images',
+    route: (ctx) => `/cola/${ctx.colaId}`,
+    target: '[data-tour="detail-images"]',
+    placement: 'right',
+    title: 'Every approved label image',
+    body:
+      'Open a result to see the artwork exactly as approved — brand, back, neck, and keg collar faces included. Select a face to enlarge it, or open the full-size viewer.',
+  },
+  {
+    id: 'detail-fields',
+    route: (ctx) => `/cola/${ctx.colaId}`,
+    target: '[data-tour="detail-fields"]',
+    placement: 'left',
+    title: 'The complete certificate record',
+    body:
+      'Label identity, origin and status, application and permit details, submitter contact information, every associated permit, and any qualifications TTB attached to the approval.',
+  },
+  {
+    id: 'detail-ocr',
+    route: (ctx) => `/cola/${ctx.colaId}`,
+    target: '[data-tour="detail-ocr"]',
+    placement: 'left',
+    title: 'Text read from the label images',
+    body:
+      'Text detected on the artwork is listed here and can be searched from advanced search. Select a phrase to highlight exactly where it appears on the label.',
+  },
+  {
+    id: 'detail-similar',
+    route: (ctx) => `/cola/${ctx.colaId}`,
+    target: '[data-tour="detail-similar"]',
+    placement: 'right',
+    title: 'Related approvals',
+    body:
+      'Each record links to similar COLAs from the same industry member and from other industry members — useful for comparing prior approvals and trade dress.',
+  },
+  {
+    id: 'replay',
+    target: '[data-tour="tour-button"]',
+    placement: 'bottom',
+    requireTarget: true,
+    title: "You're all set",
+    body: 'Replay this tour anytime from the Tour link in the header.',
+  },
+];
+
+export function hasSeenTour() {
+  try {
+    return window.localStorage.getItem(SEEN_KEY) === '1';
+  } catch {
+    return true; // storage blocked: don't nag on every visit
+  }
+}
+
+export function markTourSeen() {
+  try {
+    window.localStorage.setItem(SEEN_KEY, '1');
+  } catch {
+    /* ignore */
+  }
+}

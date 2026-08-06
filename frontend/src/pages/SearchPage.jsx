@@ -77,7 +77,7 @@ function ModeTabs({ mode, setMode }) {
       <button className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>
         <Icon name="search" /> Text search
       </button>
-      <button className={mode === 'image' ? 'active' : ''} onClick={() => setMode('image')}>
+      <button className={mode === 'image' ? 'active' : ''} onClick={() => setMode('image')} data-tour="image-tab">
         <Icon name="image" /> Search by image
       </button>
     </div>
@@ -443,7 +443,7 @@ export default function SearchPage() {
                 <>
                   <div className="field" style={{ margin: 0 }}>
                     <span className="lbl">Search all label records</span>
-                    <div className="input-group">
+                    <div className="input-group" data-tour="search-box">
                       <input
                         className="input"
                         style={{ fontSize: 17 }}
@@ -465,7 +465,7 @@ export default function SearchPage() {
                   </div>
 
                   <div className="row between" style={{ marginTop: 16 }}>
-                    <div className="chips">
+                    <div className="chips" data-tour="quick-filters">
                       <span className="muted" style={{ fontSize: 13, fontWeight: 600, alignSelf: 'center' }}>
                         Quick filter:
                       </span>
@@ -479,7 +479,7 @@ export default function SearchPage() {
                         </button>
                       ))}
                     </div>
-                    <button className="linkbtn" onClick={() => setAdvanced(!advanced)}>
+                    <button className="linkbtn" data-tour="advanced-toggle" onClick={() => setAdvanced(!advanced)}>
                       <Icon name="sliders" size={16} /> {advanced ? 'Hide advanced search' : 'Advanced search'}
                     </button>
                   </div>
@@ -521,7 +521,7 @@ export default function SearchPage() {
             <div>Recent approvals are temporarily unavailable. Try reloading the page.</div>
           </div>
         )}
-        <div className={'recent-grid' + (isMobile ? ' compact' : '')}>
+        <div className={'recent-grid' + (isMobile ? ' compact' : '')} data-tour="recent">
           {recent.map((r) => (
             <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${r.id}`)}>
               <LabelThumb rec={r} />

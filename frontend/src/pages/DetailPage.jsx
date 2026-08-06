@@ -18,9 +18,9 @@ function Field({ label, children, mono }) {
   );
 }
 
-function SimilarCard({ r, onOpen }) {
+function SimilarCard({ r, onOpen, tourAnchor }) {
   return (
-    <button className="recent-card" onClick={() => onOpen(r.id)}>
+    <button className="recent-card" onClick={() => onOpen(r.id)} data-tour={tourAnchor || undefined}>
       <div style={{ position: 'relative' }}>
         <LabelThumb rec={r} />
         {r.score != null && (
@@ -298,7 +298,7 @@ export default function DetailPage() {
         <div className="detail-grid">
           {/* label images */}
           <div>
-            <div className="panel label-viewer">
+            <div className="panel label-viewer" data-tour="detail-images">
               <div className="lv-main">
                 <div className="lv-stage" style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
                   <LabelThumb rec={rec} src={currentImage && currentImage.url} style={{ aspectRatio: '4/5' }} />
@@ -331,7 +331,7 @@ export default function DetailPage() {
 
           {/* fields */}
           <div>
-            <div className="panel d-panel">
+            <div className="panel d-panel" data-tour="detail-fields">
               <h3 className="d-section">Label identity</h3>
               <div className="d-fields">
                 <Field label="Brand name">{rec.brand}</Field>
@@ -445,7 +445,7 @@ export default function DetailPage() {
             </div>
 
             {/* extracted label text */}
-            <div className="panel d-panel" style={{ marginTop: 20 }}>
+            <div className="panel d-panel" style={{ marginTop: 20 }} data-tour="detail-ocr">
               <div className="row between" style={{ marginBottom: 4 }}>
                 <h3 className="d-section" style={{ margin: 0, border: 0, paddingBottom: 4 }}>
                   Text detected on label images
@@ -523,8 +523,8 @@ export default function DetailPage() {
               Visually similar approved labels filed under permit {rec.permit || '—'}.
             </p>
             <div className="recent-grid">
-              {memberSimilar.map((r) => (
-                <SimilarCard key={r.id} r={r} onOpen={onOpen} />
+              {memberSimilar.map((r, i) => (
+                <SimilarCard key={r.id} r={r} onOpen={onOpen} tourAnchor={i === 0 ? 'detail-similar' : undefined} />
               ))}
             </div>
           </section>
@@ -537,8 +537,13 @@ export default function DetailPage() {
               Visually similar approved labels from other permit holders — useful for trade-dress comparison.
             </p>
             <div className="recent-grid">
-              {othersSimilar.map((r) => (
-                <SimilarCard key={r.id} r={r} onOpen={onOpen} />
+              {othersSimilar.map((r, i) => (
+                <SimilarCard
+                  key={r.id}
+                  r={r}
+                  onOpen={onOpen}
+                  tourAnchor={i === 0 && memberSimilar.length === 0 ? 'detail-similar' : undefined}
+                />
               ))}
             </div>
           </section>
