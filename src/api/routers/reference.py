@@ -16,31 +16,56 @@ router = APIRouter(tags=["reference"])
 CATEGORIES = ["Wine", "Malt Beverage", "Distilled Spirits"]
 SOURCES = ["Domestic", "Imported"]
 
-# Distinct-value roll-ups still cost a full scan, so serve them from process
-# memory between refreshes rather than on every SPA load.
+# Distinct-value roll-ups are cheap per call but not free, so serve them from
+# process memory between refreshes rather than on every SPA load.
 CACHE_TTL_SECONDS = 3600
 _cache: tuple[float, ReferenceData] | None = None
 
 
+def _loose_distinct(cte: str, expr: str) -> str:
+    """Distinct values of `expr` via a loose index scan ("skip scan").
+
+    Each expression below leads a btree on the search table, so the walk jumps
+    from one distinct value to the next instead of aggregating every row. A
+    plain GROUP BY here is a 3M-row sequential scan that blows the statement
+    timeout. `cte` must be the name this body is bound to, so the recursive
+    term references itself.
+    """
+    return f"""
+        (SELECT {expr} AS v FROM {SEARCH_TABLE}
+          WHERE {expr} IS NOT NULL ORDER BY 1 LIMIT 1)
+        UNION ALL
+        SELECT (SELECT {expr} FROM {SEARCH_TABLE}
+                 WHERE {expr} > {cte}.v ORDER BY 1 LIMIT 1)
+          FROM {cte} WHERE {cte}.v IS NOT NULL
+    """
+
+
 async def _load_reference() -> ReferenceData:
-    # Single materialised CTE so the table is scanned once for all dimensions.
+    # origin functionally determines ct_source, so one probe per origin (via the
+    # same index) reproduces the old max(ct_source) rollup.
     rows = await fetch_all(
         f"""--sql
-        WITH m AS (
-          SELECT origin, ct_source, status, ct_commodity, primary_permit_state_addr
-          FROM {SEARCH_TABLE}
-        )
-        SELECT 'origin' AS dim, origin AS value, max(ct_source) AS extra FROM m
-          WHERE origin IS NOT NULL AND btrim(origin) <> '' GROUP BY 1, 2
+        WITH RECURSIVE
+        t AS ({_loose_distinct("t", "origin")}),
+        s AS ({_loose_distinct("s", "status")}),
+        c AS ({_loose_distinct("c", "ct_commodity")}),
+        p AS ({_loose_distinct("p", "upper(primary_permit_state_addr::text)")})
+        SELECT 'origin' AS dim, t.v AS value, src.ct_source AS extra
+          FROM t
+          LEFT JOIN LATERAL (
+            SELECT ct_source FROM {SEARCH_TABLE} WHERE origin = t.v LIMIT 1
+          ) src ON TRUE
+          WHERE t.v IS NOT NULL AND btrim(t.v) <> ''
         UNION ALL
-        SELECT 'status', status, NULL::text FROM m
-          WHERE status IS NOT NULL AND btrim(status) <> '' GROUP BY 1, 2
+        SELECT 'status', s.v, NULL::text FROM s
+          WHERE s.v IS NOT NULL AND btrim(s.v) <> ''
         UNION ALL
-        SELECT 'commodity', ct_commodity, NULL::text FROM m
-          WHERE ct_commodity IS NOT NULL GROUP BY 1, 2
+        SELECT 'commodity', c.v, NULL::text FROM c
+          WHERE c.v IS NOT NULL
         UNION ALL
-        SELECT 'permitState', upper(primary_permit_state_addr), NULL::text FROM m
-          WHERE btrim(coalesce(primary_permit_state_addr, '')) <> '' GROUP BY 1, 2
+        SELECT 'permitState', p.v, NULL::text FROM p
+          WHERE p.v IS NOT NULL AND btrim(p.v) <> ''
         """
     )
 

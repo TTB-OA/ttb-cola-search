@@ -205,8 +205,11 @@ opening the pool in a standalone script.
 that `POSTGRES_USER` exactly matches the Entra principal granted access. In
 Azure it must equal the managed identity name, `<namePrefix>-app-id`.
 
-**`relation "cola_search" does not exist`** — the materialised search tables have
-not been built in the target `POSTGRES_SCHEMA`.
+**`relation "cola_search" does not exist`** — either the materialised search
+tables have not been built in the target `POSTGRES_SCHEMA`, or the connecting
+role lacks `USAGE` on that schema. Postgres silently drops schemas the role
+cannot access from `search_path`, so a missing grant reports as a missing table.
+Check with `has_schema_privilege('<role>', '<schema>', 'USAGE')`.
 
 **HTTP 504 from a search** — the query exceeded
 `POSTGRES_STATEMENT_TIMEOUT_MS`. Usually a filter with no supporting index;
