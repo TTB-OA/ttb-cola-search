@@ -37,6 +37,7 @@ const EMPTY = {
   dateTo: '',
   mode: 'text',
   image: null,
+  description: '',
   sort: 'relevance',
 };
 
@@ -73,15 +74,25 @@ function draftToParams(draft) {
   return p;
 }
 
+const MODES = [
+  { id: 'text', icon: 'search', label: 'Text search' },
+  { id: 'image', icon: 'image', label: 'Search by image', tour: 'image-tab' },
+  { id: 'describe', icon: 'sparkle', label: 'Describe a label', tour: 'describe-tab' },
+];
+
 function ModeTabs({ mode, setMode }) {
   return (
     <div className="seg" role="tablist" style={{ marginBottom: 22 }}>
-      <button className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>
-        <Icon name="search" /> Text search
-      </button>
-      <button className={mode === 'image' ? 'active' : ''} onClick={() => setMode('image')} data-tour="image-tab">
-        <Icon name="image" /> Search by image
-      </button>
+      {MODES.map((m) => (
+        <button
+          key={m.id}
+          className={mode === m.id ? 'active' : ''}
+          onClick={() => setMode(m.id)}
+          data-tour={m.tour}
+        >
+          <Icon name={m.icon} /> {m.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -398,6 +409,58 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
   );
 }
 
+const DESCRIBE_MIN = 3;
+
+function DescribeSearch({ draft, set, refData, onSubmit }) {
+  const categories = refData.categories || [];
+  const ready = draft.description.trim().length >= DESCRIBE_MIN;
+
+  return (
+    <div>
+      <div className="field" style={{ margin: 0 }}>
+        <span className="lbl">Describe the label artwork</span>
+        <textarea
+          className="input"
+          rows={3}
+          style={{ resize: 'vertical' }}
+          placeholder="a dark green bottle with a gold eagle crest and art-deco lettering"
+          value={draft.description}
+          onChange={(e) => set('description', e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready) onSubmit();
+          }}
+        />
+      </div>
+
+      <div className="row gap-16 wrap-flex" style={{ marginTop: 18, alignItems: 'center' }}>
+        <div className="field" style={{ margin: 0, minWidth: 220 }}>
+          <span className="lbl">Restrict to commodity (optional)</span>
+          <select className="select" value={draft.commodity} onChange={(e) => set('commodity', e.target.value)}>
+            <option value="">All commodities</option>
+            {categories.map((c) => (
+              <option key={c} value={c}>
+                {c}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}></div>
+        <button className="btn lg" disabled={!ready} onClick={onSubmit}>
+          <Icon name="sparkle" /> Find matching labels
+        </button>
+      </div>
+
+      <div className="info-note" style={{ marginTop: 20 }}>
+        <Icon name="info" size={18} />
+        <div>
+          Your description is matched against label artwork, not label wording. Describing colors, shapes, and motifs
+          works better than naming a brand. To search the text printed on a label, use Text search instead.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SearchPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -431,6 +494,13 @@ export default function SearchPage() {
     navigate({ pathname: '/results', search: toQuery({ mode: 'image', commodity: draft.commodity }) });
   }
 
+  function submitDescribe() {
+    const q = draft.description.trim();
+    if (q.length < DESCRIBE_MIN) return;
+    track('describe_search_submitted', { length: q.length, commodity: draft.commodity || null });
+    navigate({ pathname: '/results', search: toQuery({ mode: 'describe', q, commodity: draft.commodity }) });
+  }
+
   return (
     <div>
       <section className="hero">
@@ -442,7 +512,7 @@ export default function SearchPage() {
             <h1 className="hero-title">Search the public COLA registry</h1>
             <p className="hero-sub">
               Find approved alcohol beverage labels across wine, malt beverages, and distilled spirits. Search by any
-              field, or upload a label image to find visually similar approvals.
+              field, upload a label image, or describe the artwork you have in mind.
             </p>
 
             <div className="panel search-card">
@@ -515,8 +585,10 @@ export default function SearchPage() {
                     </div>
                   )}
                 </>
-              ) : (
+              ) : draft.mode === 'image' ? (
                 <ImageSearch draft={draft} set={set} refData={ref} onSubmit={submitImage} />
+              ) : (
+                <DescribeSearch draft={draft} set={set} refData={ref} onSubmit={submitDescribe} />
               )}
             </div>
           </div>

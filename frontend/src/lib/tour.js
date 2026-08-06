@@ -53,9 +53,9 @@ export const TOUR_STEPS = [
     target: '[data-tour="image-tab"]',
     placement: 'bottom',
     requireTarget: true,
-    title: 'Or search by label image',
+    title: 'Or search by artwork',
     body:
-      'Upload a label image and we rank approved artwork by visual similarity — color palette, composition, and graphic elements.',
+      'Upload a label image and we rank approved artwork by visual similarity — color palette, composition, and graphic elements. No image handy? The next tab lets you describe the label in plain language instead.',
   },
   {
     id: 'recent',

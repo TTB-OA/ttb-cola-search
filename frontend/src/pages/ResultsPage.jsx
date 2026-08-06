@@ -94,19 +94,29 @@ function FacetSelect({ title, buckets, selected, allLabel, onChange }) {
   );
 }
 
+// Cross-modal scores are compressed into a narrow band, so describe mode ranks
+// results rather than claiming a match percentage the numbers can't support.
+function RankBadge({ n }) {
+  return <span className="rank-badge mono">#{n}</span>;
+}
+
 /* ---------- views ---------- */
-function GalleryView({ rows, criteria, isImg, onOpen }) {
+function GalleryView({ rows, criteria, isVector, showRank, onOpen }) {
   return (
     <div className="gallery-grid">
       {rows.map((r, i) => (
         <button key={r.id} className="g-card" onClick={() => onOpen(r.id, i)}>
           <div className="g-thumb">
             <LabelThumb rec={r} />
-            {isImg && r.score != null && (
-              <span className="g-score">
-                <Icon name="sparkle" size={12} />
-                {toPct(r.score)}%
-              </span>
+            {showRank ? (
+              <span className="g-score">#{i + 1}</span>
+            ) : (
+              isVector && r.score != null && (
+                <span className="g-score">
+                  <Icon name="sparkle" size={12} />
+                  {toPct(r.score)}%
+                </span>
+              )
             )}
           </div>
           <div className="g-body">
@@ -131,7 +141,7 @@ function GalleryView({ rows, criteria, isImg, onOpen }) {
   );
 }
 
-function ListView({ rows, criteria, isImg, onOpen }) {
+function ListView({ rows, criteria, isVector, showRank, onOpen }) {
   return (
     <div className="list-view">
       {rows.map((r, i) => (
@@ -165,7 +175,7 @@ function ListView({ rows, criteria, isImg, onOpen }) {
             </div>
           </div>
           <div className="l-side">
-            {isImg && r.score != null ? <ScoreMeter score={r.score} /> : <StatusBadge status={r.status} />}
+            {showRank ? <RankBadge n={i + 1} /> : isVector && r.score != null ? <ScoreMeter score={r.score} /> : <StatusBadge status={r.status} />}
             <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
               Approved {fmtDate(r.approvalDate)}
             </div>
@@ -179,7 +189,7 @@ function ListView({ rows, criteria, isImg, onOpen }) {
   );
 }
 
-function TableView({ rows, criteria, isImg, onOpen }) {
+function TableView({ rows, criteria, isVector, showRank, onOpen }) {
   return (
     <div className="table-wrap panel">
       <table className="data-table">
@@ -192,7 +202,7 @@ function TableView({ rows, criteria, isImg, onOpen }) {
             <th>Origin</th>
             <th>TTB ID</th>
             <th>Approved</th>
-            <th>{isImg ? 'Match' : 'Status'}</th>
+              <th>{showRank ? 'Rank' : isVector ? 'Match' : 'Status'}</th>
             <th></th>
           </tr>
         </thead>
@@ -231,7 +241,7 @@ function TableView({ rows, criteria, isImg, onOpen }) {
                 {r.ttbId}
               </td>
               <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.approvalDate)}</td>
-              <td>{isImg && r.score != null ? <ScoreMeter score={r.score} compact /> : <StatusBadge status={r.status} />}</td>
+              <td>{showRank ? <RankBadge n={i + 1} /> : isVector && r.score != null ? <ScoreMeter score={r.score} compact /> : <StatusBadge status={r.status} />}</td>
               <td>
                 <Icon name="chevRight" size={16} className="muted" />
               </td>
@@ -292,7 +302,11 @@ export default function ResultsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
   const criteria = paramsToObject(searchParams);
-  const isImg = criteria.mode === 'image';
+  const mode = criteria.mode || 'text';
+  const isImg = mode === 'image';
+  const isDescribe = mode === 'describe';
+  // Both are ANN searches over label vectors: scored, unfaceted, unpaged.
+  const isVector = isImg || isDescribe;
   const page = Math.max(1, parseInt(criteria.page || '1', 10) || 1);
 
   const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || (window.matchMedia('(max-width: 720px)').matches ? 'list' : 'gallery'));
@@ -306,7 +320,7 @@ export default function ResultsPage() {
   const setView = (v) => {
     setViewState(v);
     localStorage.setItem('cola.view', v);
-    track('view_mode_changed', { view: v, mode: isImg ? 'image' : 'text' });
+    track('view_mode_changed', { view: v, mode });
   };
 
   // Image-search payload was stashed by the search form (a File can't ride in a URL).
@@ -337,7 +351,7 @@ export default function ResultsPage() {
   }, [searchParams.toString()]);
 
   const textState = useAsync((signal) => api.searchColas(textParams, signal), [searchParams.toString()], {
-    skip: isImg,
+    skip: isVector,
   });
 
   const imageState = useAsync(
@@ -346,10 +360,19 @@ export default function ResultsPage() {
     { skip: !isImg || !pending || !pending.file }
   );
 
-  const state = isImg ? imageState : textState;
+  const describeState = useAsync(
+    (signal) => api.searchByDescription({ q: criteria.q, commodity: criteria.commodity, limit: PAGE_SIZE }, signal),
+    [searchParams.toString()],
+    { skip: !isDescribe }
+  );
+
+  const state = isImg ? imageState : isDescribe ? describeState : textState;
   const data = state.data;
   const loading = isImg ? (pending && pending.file ? state.loading : false) : state.loading;
   const rows = (data && data.items) || [];
+  // `q` is the artwork description in describe mode, so highlighting it against
+  // brand and applicant text would just be noise.
+  const highlightCriteria = isDescribe ? { ...criteria, q: '' } : criteria;
   const total = data ? data.total : 0;
   const totalCapped = Boolean(data && data.totalIsCapped);
   const facets = (data && data.facets) || null;
@@ -409,11 +432,11 @@ export default function ResultsPage() {
   const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
   // Carry the search term so the detail page can highlight matching label text.
   const onOpen = (id, rank) => {
-    const term = (criteria.q || '').trim();
+    const term = isDescribe ? '' : (criteria.q || '').trim();
     track('result_clicked', {
       rank: typeof rank === 'number' ? (page - 1) * PAGE_SIZE + rank + 1 : -1,
       view,
-      mode: isImg ? 'image' : 'text',
+      mode,
     });
     navigate(`/cola/${id}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
   };
@@ -462,14 +485,26 @@ export default function ResultsPage() {
                 </div>
               </div>
             </div>
+          ) : isDescribe ? (
+            <div className="img-query">
+              <div className="iq-thumb">
+                <Icon name="sparkle" size={22} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700 }}>Labels matching your description</div>
+                <div className="muted" style={{ fontSize: 13 }}>
+                  “{criteria.q}” · closest artwork first
+                </div>
+              </div>
+            </div>
           ) : (
             <ActiveChips criteria={criteria} onClearKey={clearKey} />
           )}
         </div>
       </div>
 
-      <div className={`wrap results-layout${isImg ? ' no-facets' : ''}`}>
-        {!isImg && (
+      <div className={`wrap results-layout${isVector ? ' no-facets' : ''}`}>
+        {!isVector && (
           <aside className="facets panel" data-tour="results-facets">
             <div className="row between" style={{ marginBottom: 6 }}>
               <div className="section-title">Refine results</div>
@@ -526,12 +561,12 @@ export default function ResultsPage() {
               </div>
               {!loading && (
                 <div className="muted" style={{ fontSize: 13.5 }}>
-                  {isImg ? 'Similar labels in the registry' : 'Matching certificates of label approval'}
+                  {isVector ? 'Similar labels in the registry' : 'Matching certificates of label approval'}
                 </div>
               )}
             </div>
             <div className="row gap-16 wrap-flex" data-tour="results-views">
-              {!isImg && (
+              {!isVector && (
                 <div className="row gap-8">
                   <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
                     Sort
@@ -588,15 +623,19 @@ export default function ResultsPage() {
             <div className="empty panel">
               <Icon name="search" size={34} className="muted" />
               <h3 style={{ marginTop: 12 }}>No matching labels</h3>
-              <p className="muted">Try removing a filter or broadening your search terms.</p>
+              <p className="muted">
+                {isDescribe
+                  ? 'Try describing colors, shapes, and motifs rather than naming a brand.'
+                  : 'Try removing a filter or broadening your search terms.'}
+              </p>
               <button className="btn secondary sm" onClick={() => navigate('/')}>
                 Modify search
               </button>
             </div>
           ) : (
             <>
-              <View rows={rows} criteria={criteria} isImg={isImg} onOpen={onOpen} />
-              {!isImg && pageCount > 1 && (
+              <View rows={rows} criteria={highlightCriteria} isVector={isVector} showRank={isDescribe} onOpen={onOpen} />
+              {!isVector && pageCount > 1 && (
                 <div className="row between" style={{ marginTop: 24, alignItems: 'center' }}>
                   <button className="btn secondary sm" disabled={page <= 1} onClick={() => goPage(page - 1)}>
                     <Icon name="chevLeft" size={16} /> Previous

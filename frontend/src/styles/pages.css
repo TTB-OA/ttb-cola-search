@@ -130,6 +130,7 @@
 .score-bar { height: 6px; border-radius: 3px; background: var(--base-lightest); margin-top: 5px; overflow: hidden; }
 .score-bar span { display: block; height: 100%; border-radius: 3px; }
 .score-pill { font-size: 13px; }
+.rank-badge { display: inline-block; font-size: 13px; font-weight: 700; color: var(--base-darker); background: var(--base-lightest); border-radius: 999px; padding: 3px 10px; }
 
 /* ---------- Empty ---------- */
 .empty { padding: 56px 24px; text-align: center; }

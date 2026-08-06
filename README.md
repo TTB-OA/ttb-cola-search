@@ -15,8 +15,11 @@ by label content, and by image similarity.
 | Hosting | One container on Azure Container Apps |
 
 Text search uses Postgres full-text (`tsvector` + GIN); image similarity uses
-pgvector HNSW over 768-dimension embeddings. The container serves the built SPA
-and the API from the same origin, so production needs no CORS.
+pgvector HNSW over 768-dimension embeddings. `gemini-embedding-2` maps text and
+images into a single embedding space, so a plain-language description of label
+artwork can be matched against the stored image vectors directly — that is what
+`/search/describe` does, with no separate index. The container serves the built
+SPA and the API from the same origin, so production needs no CORS.
 
 Postgres and Blob Storage are reached with Entra tokens via
 `DefaultAzureCredential` — a user-assigned managed identity in Azure, your
@@ -113,7 +116,7 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `EMBEDDING_PROVIDER` | `gemini` | |
 | `EMBEDDING_MODEL` | `gemini-embedding-2` | |
 | `EMBEDDING_DIM` | `768` | must match the `vector(n)` column |
-| `GEMINI_API_KEY` | — | unset disables image search |
+| `GEMINI_API_KEY` | — | unset disables image and description search |
 
 **API and limits**
 
@@ -123,7 +126,7 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `CORS_ORIGINS` | `*` | unused in production (single-origin) |
 | `SPA_DIR` | unset | path to `frontend/dist`; set in the container |
 | `MAX_UPLOAD_BYTES` | `10485760` | image upload cap; over it returns HTTP 413 |
-| `IMAGE_SEARCH_RATE_LIMIT` | `10` | image searches allowed per window, per client |
+| `IMAGE_SEARCH_RATE_LIMIT` | `10` | embedding-backed searches allowed per window, per client; one bucket shared by `/search/image` and `/search/describe` |
 | `IMAGE_SEARCH_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 + `Retry-After` |
 | `TRUST_FORWARDED_FOR` | `true` | set `false` if not behind a trusted reverse proxy |
 
@@ -166,6 +169,7 @@ All routes are mounted under `/api`.
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
 | `POST` | `/search/image` | Reverse image search from an upload |
+| `GET` | `/search/describe` | Cross-modal search: a plain-language artwork description matched against label image embeddings |
 | `POST` | `/events` | Collects UI interaction events from the SPA; returns 204 |
 | `GET` | `/analytics/dashboard` | Aggregate usage numbers for the `/analytics` page; 404 unless enabled |
 

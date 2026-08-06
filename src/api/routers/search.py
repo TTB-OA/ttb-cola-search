@@ -1,8 +1,10 @@
-"""Vector similarity search — upload-image search and per-COLA similar labels."""
+"""Vector similarity search — upload-image search, text-description search, and
+per-COLA similar labels."""
 from __future__ import annotations
 
 import logging
 import math
+from collections import OrderedDict
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
@@ -31,7 +33,8 @@ logger = logging.getLogger(__name__)
 _limiter: SlidingWindowLimiter | None = None
 
 
-def _image_search_limiter() -> SlidingWindowLimiter:
+def _embedding_search_limiter() -> SlidingWindowLimiter:
+    """One bucket shared by every route that spends a metered embedding call."""
     global _limiter
     if _limiter is None:
         settings = get_settings()
@@ -44,6 +47,27 @@ def _image_search_limiter() -> SlidingWindowLimiter:
 # A COLA carries several images, and the commodity filter is applied after
 # de-duplication, so the ANN scan has to return more candidates than requested.
 _ANN_OVERFETCH = 6
+
+_QUERY_VECTOR_CACHE_SIZE = 256
+_query_vector_cache: OrderedDict[str, str] = OrderedDict()
+
+
+def normalize_query(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def cached_query_vector(key: str) -> str | None:
+    literal = _query_vector_cache.get(key)
+    if literal is not None:
+        _query_vector_cache.move_to_end(key)
+    return literal
+
+
+def store_query_vector(key: str, literal: str) -> None:
+    _query_vector_cache[key] = literal
+    _query_vector_cache.move_to_end(key)
+    while len(_query_vector_cache) > _QUERY_VECTOR_CACHE_SIZE:
+        _query_vector_cache.popitem(last=False)
 
 
 async def _nearest_by_vector(
@@ -110,6 +134,31 @@ async def _nearest_by_vector(
     return [summary_from_row(r, score=round(1.0 - float(r["dist"]), 4)) for r in rows]
 
 
+def _enforce_embedding_limit(request: Request, noun: str) -> None:
+    settings = get_settings()
+    retry_after = _embedding_search_limiter().check(
+        client_key(request, settings.trust_forwarded_for)
+    )
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many {noun}. Please wait a moment and try again.",
+            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
+        )
+
+
+def _check_dim(vector: list[float]) -> None:
+    dim = get_settings().embedding_dim
+    if len(vector) != dim:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Embedding dimension {len(vector)} does not match configured "
+                f"column dimension {dim}"
+            ),
+        )
+
+
 @router.post("/search/image", response_model=SearchResponse)
 async def search_by_image(
     request: Request,
@@ -121,15 +170,7 @@ async def search_by_image(
 
     # Checked before the body is read, so a flood costs neither memory nor an
     # embedding call.
-    retry_after = _image_search_limiter().check(
-        client_key(request, settings.trust_forwarded_for)
-    )
-    if retry_after is not None:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many image searches. Please wait a moment and try again.",
-            headers={"Retry-After": str(max(1, math.ceil(retry_after)))},
-        )
+    _enforce_embedding_limit(request, "image searches")
 
     data = await file.read(settings.max_upload_bytes + 1)
     if not data:
@@ -144,18 +185,58 @@ async def search_by_image(
         logger.exception("Image embedding failed")
         raise HTTPException(status_code=503, detail="Embedding unavailable") from None
 
-    if len(vector) != settings.embedding_dim:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Embedding dimension {len(vector)} does not match configured "
-                f"column dimension {settings.embedding_dim}"
-            ),
-        )
+    _check_dim(vector)
 
     commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
     items = await _nearest_by_vector(
         to_pgvector(vector), limit=limit, commodity_code=commodity_code, exclude_cola_id=None
+    )
+    return SearchResponse(items=items, total=len(items), page=1, page_size=limit)
+
+
+@router.get("/search/describe", response_model=SearchResponse)
+async def search_by_description(
+    request: Request,
+    q: str = Query(
+        ...,
+        min_length=3,
+        max_length=400,
+        description="Natural-language description of the label artwork.",
+    ),
+    commodity: str | None = Query(default=None),
+    limit: int = Query(default=48, ge=1, le=48),
+) -> SearchResponse:
+    """Cross-modal search: the description is embedded into the same 768-d space as
+    the stored label artwork, so text queries rank directly against image vectors.
+    """
+    _enforce_embedding_limit(request, "searches")
+
+    text = q.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Empty description")
+
+    # Consulted after the limiter so a cache hit cannot be used to bypass it.
+    key = normalize_query(text)
+    vector_literal = cached_query_vector(key)
+
+    if vector_literal is None:
+        try:
+            embedder = get_embedder()
+            # No "task:" instruction prefix here. That formatting is for text-to-text
+            # retrieval; the stored image vectors were embedded raw, and prefixing the
+            # query moves it out of the cross-modal regime.
+            vector = await embedder.embed_text(text)
+        except Exception:
+            logger.exception("Text embedding failed")
+            raise HTTPException(status_code=503, detail="Embedding unavailable") from None
+
+        _check_dim(vector)
+        vector_literal = to_pgvector(vector)
+        store_query_vector(key, vector_literal)
+
+    commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
+    items = await _nearest_by_vector(
+        vector_literal, limit=limit, commodity_code=commodity_code, exclude_cola_id=None
     )
     return SearchResponse(items=items, total=len(items), page=1, page_size=limit)
 

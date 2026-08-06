@@ -70,6 +70,10 @@ export const api = {
     return request('/search/image', { method: 'POST', body: form, signal });
   },
 
+  // GET, so the whole query lives in the URL and results stay deep-linkable.
+  searchByDescription: ({ q, commodity, limit = 24 }, signal) =>
+    request(`/search/describe${toQuery({ q, commodity, limit })}`, { signal }),
+
   // Unlisted usage dashboard. 404s unless the deployment enables it.
   analyticsDashboard: (params, signal) =>
     request(`/analytics/dashboard${toQuery(params)}`, { signal }),
