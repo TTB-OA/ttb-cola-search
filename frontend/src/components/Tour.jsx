@@ -5,9 +5,9 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { TOUR_STEPS, hasSeenTour, markTourSeen } from '../lib/tour.js';
+import { DEMO_QUERY, TOUR_STEPS, hasSeenTour, markTourSeen } from '../lib/tour.js';
 
-const TourContext = createContext({ active: false, start: () => {} });
+const TourContext = createContext({ active: false, start: () => {}, demoText: '' });
 
 export function useTour() {
   return useContext(TourContext);
@@ -265,6 +265,7 @@ export function TourProvider({ children }) {
   const [steps, setSteps] = useState(null);
   const [index, setIndex] = useState(0);
   const [pending, setPending] = useState(false);
+  const [demoText, setDemoText] = useState('');
   const colaIdRef = useRef(undefined); // undefined = not fetched, null = unavailable
   const fetchingRef = useRef(false);
   const triggerRef = useRef('auto');
@@ -297,6 +298,7 @@ export function TourProvider({ children }) {
     }
     setPending(false);
     setSteps(null);
+    setDemoText('');
     markTourSeen();
   }, []);
 
@@ -373,6 +375,25 @@ export function TourProvider({ children }) {
     if (location.pathname !== path) navigate(route);
   }, [steps, index, location.pathname, navigate]);
 
+  // The search box is a controlled input the overlay blocks, so "typing" the
+  // sample query means feeding the page state a character at a time.
+  useEffect(() => {
+    const step = steps && steps[index];
+    if (!step || step.id !== 'search') return undefined;
+    if (prefersReducedMotion()) {
+      setDemoText(DEMO_QUERY);
+      return undefined;
+    }
+    setDemoText('');
+    let n = 0;
+    const id = setInterval(() => {
+      n += 1;
+      setDemoText(DEMO_QUERY.slice(0, n));
+      if (n >= DEMO_QUERY.length) clearInterval(id);
+    }, 90);
+    return () => clearInterval(id);
+  }, [steps, index]);
+
   const next = useCallback(() => {
     setIndex((i) => {
       if (!steps) return i;
@@ -383,7 +404,7 @@ export function TourProvider({ children }) {
   const prev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), []);
 
   return (
-    <TourContext.Provider value={{ active: !!steps, start }}>
+    <TourContext.Provider value={{ active: !!steps, start, demoText }}>
       {children}
       {steps && <TourOverlay steps={steps} index={index} onNext={next} onPrev={prev} onClose={stop} />}
     </TourContext.Provider>

@@ -14,6 +14,7 @@ from ..db import fetch_one, get_pool
 from ..embedding import get_embedder
 from ..mappers import (
     COMMODITY_CODE,
+    IMAGE_TYPE_RANK_SQL,
     SEARCH_TABLE,
     SUMMARY_COLUMN_LIST,
     select_columns,
@@ -175,7 +176,7 @@ async def similar_colas(
     seed = await fetch_one(
         "SELECT image_feature_vector::text AS vec FROM cola_images "
         "WHERE cola_id = %s AND image_feature_vector IS NOT NULL "
-        "ORDER BY CASE upper(coalesce(img_type,'')) WHEN 'FRONT' THEN 0 ELSE 1 END LIMIT 1",
+        f"ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name LIMIT 1",
         [cola_id],
     )
     if seed is None or not seed.get("vec"):

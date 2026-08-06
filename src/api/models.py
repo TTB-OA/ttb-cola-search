@@ -1,7 +1,7 @@
 """API response models. Field names serialize to camelCase to match the UI."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -130,3 +130,75 @@ class ReferenceData(ApiModel):
     domestic_origins: list[str] = []
     imported_origins: list[str] = []
     permit_states: list[str] = []
+
+
+# ---------------------------------------------------------------------------
+# Usage dashboard
+# ---------------------------------------------------------------------------
+class NamedCount(ApiModel):
+    label: str
+    count: int
+
+
+class TimePoint(ApiModel):
+    """One bucket of a time series. Extra keys vary by panel."""
+
+    t: datetime
+    values: dict[str, float] = {}
+
+
+class LatencyRow(ApiModel):
+    endpoint: str
+    requests: int
+    p50: float
+    p95: float
+    p99: float
+
+
+class TopCola(ApiModel):
+    cola_id: str
+    views: int
+    # Filled in from the database; absent if the record no longer resolves.
+    brand_name: str | None = None
+    origin: str | None = None
+
+
+class DashboardPanels(ApiModel):
+    """Every panel is optional: one failed query must not blank the page."""
+
+    usage_over_time: list[TimePoint] | None = None
+    zero_results_over_time: list[TimePoint] | None = None
+    filter_usage: list[NamedCount] | None = None
+    paging_depth: list[NamedCount] | None = None
+    sort_usage: list[NamedCount] | None = None
+    top_colas: list[TopCola] | None = None
+    commodity_usage: list[NamedCount] | None = None
+    origin_usage: list[NamedCount] | None = None
+    latency: list[LatencyRow] | None = None
+    reliability: list[TimePoint] | None = None
+    status_codes: list[NamedCount] | None = None
+    image_search_over_time: list[TimePoint] | None = None
+    upload_sizes: list[NamedCount] | None = None
+
+
+class DashboardTotals(ApiModel):
+    searches: int = 0
+    detail_views: int = 0
+    similar_requests: int = 0
+    image_searches: int = 0
+    sessions: int = 0
+    zero_result_rate: float = 0.0
+    failure_rate: float = 0.0
+    p95_ms: float = 0.0
+
+
+class DashboardData(ApiModel):
+    range: str
+    generated_at: datetime
+    # True when this response came from the server-side cache rather than a
+    # fresh Log Analytics query.
+    cached: bool = False
+    totals: DashboardTotals = DashboardTotals()
+    panels: DashboardPanels = DashboardPanels()
+    # Panels whose query failed, so the UI can say so instead of showing zero.
+    unavailable: list[str] = []

@@ -110,6 +110,29 @@ def image_face(img_type: str | None) -> str:
     return (img_type or "other").strip().lower()
 
 
+# Display order for label artwork: the brand/keg-collar face first, then the back,
+# then everything else. cola_images.img_type stores "Brand (front) or keg collar"
+# as a single value, so these match on substrings rather than equality. strpos
+# rather than LIKE, since psycopg reads '%' in a parameterised query as a placeholder.
+IMAGE_TYPE_RANK_SQL = (
+    "CASE "
+    "WHEN strpos(upper(coalesce(img_type,'')), 'FRONT') > 0 "
+    "OR strpos(upper(coalesce(img_type,'')), 'KEG') > 0 THEN 0 "
+    "WHEN strpos(upper(coalesce(img_type,'')), 'BACK') > 0 THEN 1 "
+    "ELSE 2 END"
+)
+
+
+def face_rank(face: str | None) -> int:
+    """Python mirror of IMAGE_TYPE_RANK_SQL, applied to an `image_face()` value."""
+    f = (face or "").lower()
+    if "front" in f or "keg" in f:
+        return 0
+    if "back" in f:
+        return 1
+    return 2
+
+
 def image_url(cola_id: int, file_name: str) -> str:
     return f"{API_PREFIX}/colas/{cola_id}/images/{quote(file_name)}"
 
@@ -188,10 +211,6 @@ def image_ref_from_row(row: dict[str, Any]) -> ImageRef:
     )
 
 
-# Face ordering used for both image thumbnails and extracted-text grouping.
-FACE_ORDER = {"front": 0, "back": 1, "neck": 2}
-
-
 def _polygon_points(raw: Any) -> list[tuple[float, float]]:
     """Accept either a flat [x1,y1,x2,y2,...] list or a list of {x, y} points."""
     if not isinstance(raw, list) or not raw:
@@ -268,7 +287,7 @@ def _item_sort_key(item: ImageItem) -> tuple[int, str, float, float]:
     left = box.get("x")
     face = item.face or ""
     return (
-        FACE_ORDER.get(face, len(FACE_ORDER)),
+        face_rank(face),
         face,
         float(top) if isinstance(top, (int, float)) else float("inf"),
         float(left) if isinstance(left, (int, float)) else float("inf"),

@@ -108,6 +108,8 @@ async def collect_events(request: Request) -> Response:
         salt=settings.analytics_salt,
     )
     for event in batch.events:
-        emit(event.name, {**event.props, "session_id": session_id, "origin": "client"})
+        # `event_source`, not `origin`: the search filter of that name would
+        # otherwise overwrite it on the server side.
+        emit(event.name, {**event.props, "session_id": session_id, "event_source": "client"})
 
     return Response(status_code=204)

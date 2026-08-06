@@ -8,6 +8,15 @@ export function fmtDate(iso) {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+// Same, but with the month spelled out. Parsed as local parts because a bare
+// YYYY-MM-DD string is treated as UTC and slips back a day west of Greenwich.
+export function fmtDateLong(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+  if (!m) return fmtDate(iso);
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
 // Map a commodity/category label to the CSS tag class used by styles.css.
 export function tagClass(category) {
   switch ((category || '').toLowerCase()) {
@@ -52,14 +61,17 @@ export function placeholderStyle(rec) {
   return set[idx];
 }
 
-// Faces we cycle through in the label viewer, in preferred display order.
-export const FACE_ORDER = ['front', 'back', 'neck', 'other'];
+// Label faces display brand/keg-collar first, then back, then everything else.
+// `face` is a lowercased img_type, and "brand (front) or keg collar" is a single
+// stored value, so match on substrings rather than equality.
+export function faceRank(face) {
+  const f = (face || '').toLowerCase();
+  if (f.includes('front') || f.includes('keg')) return 0;
+  if (f.includes('back')) return 1;
+  return 2;
+}
 
 export function orderFaces(faces) {
   const uniq = Array.from(new Set(faces.filter(Boolean)));
-  return uniq.sort((a, b) => {
-    const ia = FACE_ORDER.indexOf(a);
-    const ib = FACE_ORDER.indexOf(b);
-    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-  });
+  return uniq.sort((a, b) => faceRank(a) - faceRank(b) || a.localeCompare(b));
 }

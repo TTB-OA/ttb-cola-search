@@ -144,6 +144,11 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
 | `ANALYTICS_CAPTURE_QUERY_TEXT` | `false` | records raw `q` text when on — needs privacy sign-off |
 | `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
+| `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the unlisted `/analytics` page; see below before enabling |
+| `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
+| `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range |
+| `ANALYTICS_DASHBOARD_RATE_LIMIT` | `30` | dashboard requests per window, per client |
+| `ANALYTICS_DASHBOARD_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 |
 
 See [Analytics](#analytics) for what is collected and how to query it.
 
@@ -162,6 +167,7 @@ All routes are mounted under `/api`.
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
 | `POST` | `/search/image` | Reverse image search from an upload |
 | `POST` | `/events` | Collects UI interaction events from the SPA; returns 204 |
+| `GET` | `/analytics/dashboard` | Aggregate usage numbers for the `/analytics` page; 404 unless enabled |
 
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `permit`, `permitName`, `permitState`, `permitCity`, `submitter`,
@@ -227,6 +233,9 @@ vendor as a side effect of the routing scheme.
 | `_analytics` middleware in `main.py` | Emits one event per tracked API route |
 | `src/api/routers/events.py` | Allowlisted collector for UI events the server cannot infer |
 | `frontend/src/lib/analytics.js` | Batches client events, flushes on a timer and on tab hide |
+| `src/api/insights.py` | Reads aggregates back out of Log Analytics for the dashboard |
+| `src/api/routers/insights.py` | Serves `/api/analytics/dashboard`; caches and rate-limits |
+| `frontend/src/pages/AnalyticsPage.jsx` | The unlisted `/analytics` page |
 
 Server-derived events (`search_performed`, `detail_viewed`, `similar_requested`,
 `image_search_performed`) need no client cooperation, so they survive ad
@@ -259,6 +268,56 @@ dominate ingestion cost while telling us nothing.
 
 [`docs/analytics-queries.md`](docs/analytics-queries.md) has ready-made KQL for
 the search funnel, zero-result rate, filter popularity, and latency percentiles.
+
+### Usage dashboard (`/analytics`)
+
+Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
+aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
+and sort popularity, most-viewed records, latency percentiles, and image-search
+volume. It reads Log Analytics directly; the application database is touched
+only to turn the top COLA ids into brand names.
+
+Enabling it takes three things:
+
+1. `ANALYTICS_DASHBOARD_ENABLED=true` (Bicep parameter `analyticsDashboardEnabled`).
+2. `LOG_ANALYTICS_WORKSPACE_ID` — Bicep passes `logs.properties.customerId`
+   automatically. This is the workspace GUID, not the ARM resource id.
+3. A **Log Analytics Reader** grant for the app's managed identity. There are no
+   role assignments in `infra/main.bicep`, so this is a manual step:
+
+   ```bash
+   az role assignment create \
+     --assignee "$(az deployment group show -g <rg> -n <deployment> \
+        --query properties.outputs.managedIdentityPrincipalId.value -o tsv)" \
+     --role "Log Analytics Reader" \
+     --scope "$(az deployment group show -g <rg> -n <deployment> \
+        --query properties.outputs.logAnalyticsWorkspaceResourceId.value -o tsv)"
+   ```
+
+Things worth knowing before you turn it on:
+
+- **Unlisted is not access control.** The page is absent from the header and the
+  sitemap, but `GET /api/analytics/dashboard` is reachable by anyone who guesses
+  the URL. It returns aggregates only — no record-level or visitor-level data —
+  but if that is not acceptable, put Container Apps EasyAuth in front of the app
+  rather than relying on obscurity. Disabled deployments return **404**, not 403,
+  so they do not advertise the feature.
+- **History is bounded by retention.** `infra/main.bicep` extends `AppEvents`,
+  `AppRequests` and `AppDependencies` to `appInsightsRetentionDays` (90 by
+  default). For workspace-based Application Insights the *table* retention wins,
+  so without that block the 30-day workspace default would silently cap the
+  90-day range.
+- **"Most-viewed records" starts empty.** `detail_viewed` only began carrying
+  `cola_id` in the release that added this dashboard, and the change is not
+  retroactive.
+- **"Failed requests" is not uptime.** No availability test is configured, so the
+  panel is a request failure rate — it cannot see an outage in which the app
+  never received the request. The UI labels it accordingly.
+- Results are cached for `ANALYTICS_DASHBOARD_CACHE_SECONDS` per time range, and
+  only one refresh per range runs at a time. Every miss is a billed Log Analytics
+  query. Ingestion also lags a few minutes, so the newest bucket is incomplete.
+- A panel whose query fails is reported in `unavailable` and rendered empty,
+  never as zero. One bad panel does not fail the page.
 
 > **Open question — DAP.** Federal public websites are generally expected to
 > carry the GSA Digital Analytics Program tag (OMB M-23-22 / 21st Century IDEA).

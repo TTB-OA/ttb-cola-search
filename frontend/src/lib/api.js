@@ -69,6 +69,10 @@ export const api = {
     form.append('limit', String(limit));
     return request('/search/image', { method: 'POST', body: form, signal });
   },
+
+  // Unlisted usage dashboard. 404s unless the deployment enables it.
+  analyticsDashboard: (params, signal) =>
+    request(`/analytics/dashboard${toQuery(params)}`, { signal }),
 };
 
 export { ApiError };

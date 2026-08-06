@@ -9,6 +9,7 @@ from src.api.analytics import (
     hash_identifier,
     route_key,
     session_id_from,
+    shape_detail_event,
     shape_image_search_event,
     shape_search_event,
     shape_similar_event,
@@ -83,6 +84,15 @@ def test_similar_event_defaults():
         "scope": "member",
         "limit": 8,
     }
+
+
+def test_detail_event_records_which_record_was_viewed():
+    assert shape_detail_event({"cola_id": 26208001000457}) == {"cola_id": "26208001000457"}
+
+
+def test_detail_event_omits_a_missing_id():
+    assert shape_detail_event({}) == {}
+    assert shape_detail_event({"cola_id": ""}) == {}
 
 
 @pytest.mark.parametrize(

@@ -77,6 +77,9 @@ param telemetrySamplingRatio string = '1.0'
 @secure()
 param analyticsSalt string = ''
 
+@description('Serve the unlisted /analytics usage dashboard. The endpoint has no authentication, so it is opt-in.')
+param analyticsDashboardEnabled bool = false
+
 param minReplicas int = 1
 param maxReplicas int = 3
 param containerCpu string = '0.5'
@@ -126,6 +129,19 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
     publicNetworkAccessForQuery: 'Enabled'
   }
 }
+
+// For workspace-based components the workspace/table retention wins, so the
+// component's RetentionInDays alone would silently cap history at the workspace
+// default. Only the tables the dashboard reads are extended.
+resource retainedTables 'Microsoft.OperationalInsights/workspaces/tables@2022-10-01' = [
+  for table in ['AppEvents', 'AppRequests', 'AppDependencies']: {
+    parent: logs
+    name: table
+    properties: {
+      retentionInDays: appInsightsRetentionDays
+    }
+  }
+]
 
 // ---------------------------------------------------------------------------
 // User-assigned managed identity (app runtime: Postgres + Blob auth)
@@ -235,6 +251,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'CORS_ORIGINS', value: corsOrigins }
               { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
               { name: 'TELEMETRY_SAMPLING_RATIO', value: telemetrySamplingRatio }
+              // Workspace GUID, not a credential: the dashboard still needs a
+              // Log Analytics Reader grant on the workspace to query it.
+              { name: 'LOG_ANALYTICS_WORKSPACE_ID', value: logs.properties.customerId }
+              { name: 'ANALYTICS_DASHBOARD_ENABLED', value: string(analyticsDashboardEnabled) }
             ],
             empty(analyticsSalt) ? [] : [
               { name: 'ANALYTICS_SALT', secretRef: 'analytics-salt' }
@@ -271,6 +291,8 @@ output containerAppName string = app.name
 output containerAppFqdn string = app.properties.configuration.ingress.fqdn
 output appInsightsName string = appInsights.name
 output logAnalyticsWorkspaceName string = logs.name
+output logAnalyticsWorkspaceId string = logs.properties.customerId
+output logAnalyticsWorkspaceResourceId string = logs.id
 output managedIdentityName string = identity.name
 output managedIdentityClientId string = identity.properties.clientId
 output managedIdentityPrincipalId string = identity.properties.principalId

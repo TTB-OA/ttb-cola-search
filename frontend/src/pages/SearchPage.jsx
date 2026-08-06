@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { CatTag } from '../components/Badges.jsx';
+import { useTour } from '../components/Tour.jsx';
 import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { fmtDate } from '../lib/format.js';
+import { fmtDate, fmtDateLong } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
@@ -414,6 +415,12 @@ export default function SearchPage() {
   );
   const recent = (recentState.data && recentState.data.items) || [];
 
+  // The tour types a sample query into the box, and clears it when it ends.
+  const { demoText } = useTour();
+  useEffect(() => {
+    setDraft((d) => (d.text === demoText ? d : { ...d, text: demoText }));
+  }, [demoText]);
+
   function submitText() {
     navigate({ pathname: '/results', search: toQuery(draftToParams({ ...draft, mode: 'text' })) });
   }
@@ -462,7 +469,7 @@ export default function SearchPage() {
                       Search across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
                     </div>
                     <div className="hint" style={{ marginTop: 6 }}>
-                      Defaults to approved labels approved after {defaultDateFrom()} (last three calendar years). Expand in Advanced search.
+                      Defaults to COLAs approved after {fmtDateLong(defaultDateFrom())} (last three calendar years). Expand in Advanced search.
                     </div>
                   </div>
 

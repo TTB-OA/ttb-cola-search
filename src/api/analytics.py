@@ -135,6 +135,12 @@ def shape_similar_event(params: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
+def shape_detail_event(path_params: Mapping[str, Any]) -> dict[str, Any]:
+    """Attributes for a detail view. The id is public data, not an identifier."""
+    cola_id = str(path_params.get("cola_id") or "").strip()
+    return {"cola_id": cola_id[:32]} if cola_id else {}
+
+
 def shape_image_search_event(
     content_length: int | None, content_type: str | None
 ) -> dict[str, Any]:

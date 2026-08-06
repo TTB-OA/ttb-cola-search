@@ -16,8 +16,9 @@ KQL for the Application Insights component (`<namePrefix>-appi`). Run these from
 Event attributes land in `customDimensions`, which is dynamic — always cast
 before comparing or aggregating (`toint()`, `tobool()`, `tostring()`).
 
-Every event carries `session_id`, `origin` (`server` or `client`), and for
-server-derived events `status_code` and `duration_ms`.
+Every event carries `session_id`, `event_source` (`server` or `client`), and for
+server-derived events `status_code` and `duration_ms`. Note that `origin` is a
+search *filter* name (country/state of origin), not the event source.
 
 ## Product usage
 
@@ -178,7 +179,7 @@ users actually wait on:
 
 ```kusto
 customEvents
-| where timestamp > ago(7d) and tostring(customDimensions.origin) == "server"
+| where timestamp > ago(7d) and tostring(customDimensions.event_source) == "server"
 | summarize
     p50 = percentile(toint(customDimensions.duration_ms), 50),
     p95 = percentile(toint(customDimensions.duration_ms), 95),

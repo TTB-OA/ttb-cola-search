@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     # present. Rotate to break linkability across deployments.
     analytics_salt: str = ""
 
+    # --- Usage dashboard ----------------------------------------------------
+    # The /analytics page is unlisted, not authenticated, so it stays opt-in.
+    analytics_dashboard_enabled: bool = False
+    # Log Analytics workspace GUID (customerId). Not carried by the App Insights
+    # connection string, so it is passed separately.
+    log_analytics_workspace_id: str | None = None
+    # Dashboard numbers move slowly and every miss costs a Log Analytics query.
+    analytics_dashboard_cache_seconds: int = 900
+    analytics_dashboard_rate_limit: int = 30
+    analytics_dashboard_rate_window_seconds: int = 60
+
     # --- API ----------------------------------------------------------------
     api_title: str = "TTB COLA Search API"
     cors_origins: str = "*"

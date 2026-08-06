@@ -69,6 +69,31 @@ function FacetGroup({ title, buckets, selected, onSelect }) {
   );
 }
 
+/* ---------- facet pick list ---------- */
+// Origin and permit state can each return 50+ buckets, too many for checkboxes
+// in a 250px rail.
+function FacetSelect({ title, buckets, selected, allLabel, onChange }) {
+  const list = buckets || [];
+  if (!list.length && !selected) return null;
+  // A selected value can drop out of the buckets once other filters narrow the
+  // set; keep it listed so the control never misreports itself as unfiltered.
+  const options = selected && !list.some((b) => b.value === selected) ? [{ value: selected, count: 0 }, ...list] : list;
+  const sorted = [...options].sort((a, b) => a.value.localeCompare(b.value));
+  return (
+    <div className="facet">
+      <div className="facet-title">{title}</div>
+      <select className="select facet-select" aria-label={title} value={selected || ''} onChange={(e) => onChange(e.target.value)}>
+        <option value="">{allLabel}</option>
+        {sorted.map((b) => (
+          <option key={b.value} value={b.value}>
+            {b.count ? `${b.value} (${b.count.toLocaleString()})` : b.value}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /* ---------- views ---------- */
 function GalleryView({ rows, criteria, isImg, onOpen }) {
   return (
@@ -346,6 +371,16 @@ export default function ResultsPage() {
     });
   }
 
+  // Pick lists set outright rather than toggling: '' is the "all" option.
+  function setFacet(group, value) {
+    patchParams((p) => {
+      const key = FACET_PARAM[group];
+      if (value) p[key] = value;
+      else delete p[key];
+      delete p.page;
+    });
+  }
+
   function clearKey(k) {
     patchParams((p) => {
       delete p[k];
@@ -455,18 +490,21 @@ export default function ResultsPage() {
             {facets ? (
               <>
                 <FacetGroup title="Commodity" buckets={facets.commodity} selected={activeFacet('commodity')} onSelect={(v) => selectFacet('commodity', v)} />
-                <hr className="divider" />
                 <FacetGroup title="Status" buckets={facets.status} selected={activeFacet('status')} onSelect={(v) => selectFacet('status', v)} />
-                <hr className="divider" />
                 <FacetGroup title="Source" buckets={facets.source} selected={activeFacet('source')} onSelect={(v) => selectFacet('source', v)} />
-                <hr className="divider" />
-                <FacetGroup title="Origin" buckets={facets.origin} selected={activeFacet('origin')} onSelect={(v) => selectFacet('origin', v)} />
-                <hr className="divider" />
-                <FacetGroup
+                <FacetSelect
+                  title="Origin"
+                  buckets={facets.origin}
+                  selected={activeFacet('origin')}
+                  allLabel="All origins"
+                  onChange={(v) => setFacet('origin', v)}
+                />
+                <FacetSelect
                   title="Permit state"
                   buckets={facets.permitState}
                   selected={activeFacet('permitState')}
-                  onSelect={(v) => selectFacet('permitState', v)}
+                  allLabel="All permit states"
+                  onChange={(v) => setFacet('permitState', v)}
                 />
               </>
             ) : (

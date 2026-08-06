@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from api import main  # noqa: E402
 from api.analytics import EVENT_BY_ROUTE, route_key  # noqa: E402
+from api.config import get_settings  # noqa: E402
 from api.main import app  # noqa: E402
 from api.routers import events as events_router  # noqa: E402
 
@@ -57,7 +60,7 @@ def test_accepts_an_allowlisted_event(client, captured):
     assert record.event == "tour_completed"
     assert record.steps == 7
     assert record.session_id == SESSION
-    assert record.origin == "client"
+    assert record.event_source == "client"
 
 
 def test_rejects_unknown_event_names(client, captured):
@@ -126,6 +129,23 @@ def test_middleware_resolves_route_templates_at_runtime(client, captured, monkey
     assert post(client, '{"events":[{"name":"print_clicked"}]}').status_code == 204
 
     probe = next(r for r in captured if r.event == "probe")
-    assert probe.origin == "server"
+    assert probe.event_source == "server"
     assert probe.status_code == 204
     assert probe.duration_ms >= 0
+
+
+def test_detail_events_carry_the_record_id(captured):
+    """The id lives in the path, not the query string, so it needs its own branch."""
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/colas/26208001000457",
+        "query_string": b"",
+        "headers": [(b"x-client-session", SESSION.encode())],
+        "path_params": {"cola_id": 26208001000457},
+        "route": type("R", (), {"path": "/colas/{cola_id}"})(),
+    }
+    main._record_event(Request(scope), 200, time.perf_counter(), get_settings())
+
+    record = next(r for r in captured if r.event == "detail_viewed")
+    assert record.cola_id == "26208001000457"

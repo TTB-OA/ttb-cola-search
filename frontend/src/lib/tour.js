@@ -4,7 +4,11 @@
 // dropped when their element is missing; others fall back to a centered card.
 const SEEN_KEY = 'ttb-cola:tour-seen:v1';
 
-export const RESULTS_ROUTE = '/results?sort=approvalDate&status=Approved';
+// Typed into the search box during the `search` step, then carried into the
+// results route so the results/facets steps show a real, filtered result set.
+export const DEMO_QUERY = 'cape may';
+
+export const RESULTS_ROUTE = `/results?q=${encodeURIComponent(DEMO_QUERY)}&sort=approvalDate&status=Approved`;
 
 export const TOUR_STEPS = [
   {
@@ -22,7 +26,7 @@ export const TOUR_STEPS = [
     placement: 'bottom',
     title: 'Start with one search box',
     body:
-      'Brand, product name, applicant, permit, submitter, class/type, origin, and TTB ID are all searched at once. Results default to approved labels from the last three calendar years.',
+      'Brand, product name, applicant, permit, submitter, class/type, origin, and TTB ID are all searched at once — watch us try one. Results default to approved labels from the last three calendar years.',
   },
   {
     id: 'quick-filters',
@@ -70,7 +74,7 @@ export const TOUR_STEPS = [
     skipMobile: true,
     title: 'Refine without starting over',
     body:
-      'Results are faceted by commodity, status, source, origin, and permit state. Counts update as you drill in, and every active filter becomes a chip you can remove individually.',
+      'Results are faceted by commodity, status, and source, with pick lists for origin and permit state. Counts update as you drill in, and every active filter becomes a chip you can remove individually.',
   },
   {
     id: 'results-views',

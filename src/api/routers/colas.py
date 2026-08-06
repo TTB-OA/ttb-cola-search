@@ -11,6 +11,7 @@ from ..db import fetch_all, fetch_one
 from ..mappers import (
     COMMODITY_CODE,
     DETAIL_COLUMNS,
+    IMAGE_TYPE_RANK_SQL,
     OCR_TABLE,
     SEARCH_TABLE,
     SOURCE_CODE,
@@ -430,9 +431,7 @@ async def get_cola(cola_id: int) -> ColaDetail:
 
     images = await fetch_all(
         "SELECT cola_id, file_name, img_type, width_px, height_px FROM cola_images "
-        "WHERE cola_id = %s ORDER BY "
-        "CASE upper(coalesce(img_type,'')) WHEN 'FRONT' THEN 0 WHEN 'BACK' THEN 1 "
-        "WHEN 'NECK' THEN 2 ELSE 3 END, file_name",
+        f"WHERE cola_id = %s ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name",
         [cola_id],
     )
     items = await fetch_all(

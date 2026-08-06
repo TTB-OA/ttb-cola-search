@@ -6,6 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from ..blob import stream_blob
 from ..db import fetch_one
+from ..mappers import IMAGE_TYPE_RANK_SQL
 
 router = APIRouter(tags=["images"])
 
@@ -15,8 +16,7 @@ async def get_image(cola_id: int, file_name: str):
     if file_name == "primary":
         row = await fetch_one(
             "SELECT file_name, blob_name, blob_url FROM cola_images WHERE cola_id = %s "
-            "ORDER BY CASE upper(coalesce(img_type,'')) WHEN 'FRONT' THEN 0 ELSE 1 END, "
-            "file_name LIMIT 1",
+            f"ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name LIMIT 1",
             [cola_id],
         )
     else:

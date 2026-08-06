@@ -18,6 +18,7 @@ from .analytics import (
     emit,
     route_key,
     session_id_from,
+    shape_detail_event,
     shape_image_search_event,
     shape_search_event,
     shape_similar_event,
@@ -25,7 +26,8 @@ from .analytics import (
 from .blob import close_blob
 from .config import API_PREFIX, Settings, get_settings
 from .db import close_pool, open_pool
-from .routers import colas, events, health, images, reference, search
+from .insights import close_insights
+from .routers import colas, events, health, images, insights, reference, search
 from .telemetry import configure_telemetry
 
 # psycopg's async driver cannot run on Windows' default ProactorEventLoop; select
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI):
     finally:
         await close_pool()
         await close_blob()
+        await close_insights()
 
 
 def create_app() -> FastAPI:
@@ -76,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)
     app.include_router(events.router, prefix=API_PREFIX)
+    app.include_router(insights.router, prefix=API_PREFIX)
 
     @app.exception_handler(QueryCanceled)
     async def _statement_timeout(request: Request, exc: QueryCanceled) -> JSONResponse:
@@ -113,7 +117,9 @@ def _record_event(
                 trust_forwarded_for=settings.trust_forwarded_for,
                 salt=settings.analytics_salt,
             ),
-            "origin": "server",
+            # Not "origin": that is also the name of a search filter, and the
+            # shaped attributes below would overwrite it.
+            "event_source": "server",
             "status_code": status_code,
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }
@@ -122,6 +128,8 @@ def _record_event(
             attrs |= shape_search_event(
                 params, capture_query_text=settings.analytics_capture_query_text
             )
+        elif name == "detail_viewed":
+            attrs |= shape_detail_event(request.scope.get("path_params") or {})
         elif name == "similar_requested":
             attrs |= shape_similar_event(params)
         elif name == "image_search_performed":
