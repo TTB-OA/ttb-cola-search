@@ -290,7 +290,7 @@ textarea.input { height: auto; }
 .label-thumb { container-type: inline-size; }
 
 /* Real label photo variant (falls back to procedural placeholder on error) */
-.label-thumb.label-photo { background: var(--base-lightest); }
+.label-thumb.label-photo { background: var(--white); padding: 6px; }
 .label-thumb.label-photo img {
   width: 100%; height: 100%; object-fit: contain; display: block;
 }

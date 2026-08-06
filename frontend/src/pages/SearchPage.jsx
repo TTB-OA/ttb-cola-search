@@ -388,8 +388,7 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
         <Icon name="info" size={18} />
         <div>
           Visual similarity search compares the dominant color palette, composition, and graphic elements of your image
-          against approved label artwork. Results are ranked by a visual match score and are intended to surface
-          potentially conflicting or similar trade dress.
+          against approved label artwork. Results are ranked by a visual match score.
         </div>
       </div>
     </div>
@@ -458,10 +457,10 @@ export default function SearchPage() {
                       </button>
                     </div>
                     <div className="hint" style={{ marginTop: 8 }}>
-                      One box searches across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
+                      Search across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
                     </div>
                     <div className="hint" style={{ marginTop: 6 }}>
-                      Defaults: Status is Approved and approval date starts at {defaultDateFrom()} (last three calendar years). Expand in Advanced search.
+                      Defaults to approved labels approved after {defaultDateFrom()} (last three calendar years). Expand in Advanced search.
                     </div>
                   </div>
 

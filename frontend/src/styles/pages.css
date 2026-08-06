@@ -65,6 +65,7 @@
   height: auto;
   min-height: 0;
 }
+.recent-card.compact .label-thumb.label-photo { padding: 0; }
 .recent-card.compact .label-thumb.label-photo img { object-fit: cover; }
 .recent-card.compact .recent-meta { padding: 10px 12px; }
 
@@ -115,6 +116,7 @@
 .data-table tbody tr:hover { background: var(--accent-lighter); }
 .data-table td { padding: 10px 14px; vertical-align: middle; }
 .t-thumb { width: 36px; height: 45px; border-radius: 2px; overflow: hidden; border: 1px solid var(--base-lighter); }
+.t-thumb .label-thumb.label-photo { padding: 2px; }
 .t-thumb .label-thumb .lt-inner { display: none; }
 
 /* ---------- Score meter ---------- */
@@ -230,6 +232,7 @@
   .l-row { grid-template-columns: 96px 1fr; }
   .l-thumb { width: 96px; }
   .l-thumb .label-thumb { aspect-ratio: 16 / 10; }
+  .l-thumb .label-thumb.label-photo { padding: 0; }
   .l-thumb .label-thumb.label-photo img { object-fit: cover; }
   .l-side { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 14px; text-align: left; }
 }
