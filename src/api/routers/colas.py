@@ -5,7 +5,7 @@ import asyncio
 from datetime import date
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..db import fetch_all, fetch_one
 from ..mappers import (
@@ -235,6 +235,7 @@ async def _no_facets() -> Facets | None:
 
 @router.get("/colas", response_model=SearchResponse)
 async def list_colas(
+    request: Request,
     q: str | None = Query(
         default=None,
         title="Keyword search",
@@ -401,6 +402,13 @@ async def list_colas(
 
     raw_total = int(total_row["n"]) if total_row else 0
     capped = raw_total > COUNT_CAP
+
+    # Read back by the analytics middleware; the response body is not inspected.
+    request.state.analytics = {
+        "result_total": COUNT_CAP if capped else raw_total,
+        "zero_results": raw_total == 0,
+        "total_is_capped": capped,
+    }
 
     return SearchResponse(
         items=[summary_from_row(r) for r in rows],

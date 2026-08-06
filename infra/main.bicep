@@ -61,6 +61,22 @@ param geminiApiKey string = ''
 @description('Comma-separated CORS origins. Same-origin SPA needs none; "*" is fine while iterating.')
 param corsOrigins string = '*'
 
+// --- Telemetry / analytics -------------------------------------------------
+@description('Days to retain Application Insights data (30-730).')
+@minValue(30)
+@maxValue(730)
+param appInsightsRetentionDays int = 90
+
+@description('Daily ingestion cap in GB for the Log Analytics workspace. -1 disables the cap.')
+param logsDailyQuotaGb int = 1
+
+@description('Fraction of requests traced (0.0-1.0). Lower this if ingestion cost climbs.')
+param telemetrySamplingRatio string = '1.0'
+
+@description('Salt for hashing client addresses into pseudonymous session ids. Rotate to break linkability. Never store raw addresses.')
+@secure()
+param analyticsSalt string = ''
+
 param minReplicas int = 1
 param maxReplicas int = 3
 param containerCpu string = '0.5'
@@ -70,6 +86,7 @@ param containerMemory string = '1.0Gi'
 // Names
 // ---------------------------------------------------------------------------
 var logName = '${namePrefix}-logs'
+var appInsightsName = '${namePrefix}-appi'
 var envName = '${namePrefix}-env'
 var identityName = '${namePrefix}-app-id'
 var appName = '${namePrefix}-app'
@@ -85,6 +102,28 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
       name: 'PerGB2018'
     }
     retentionInDays: 30
+    // Ingestion is billed per GB; the cap is the backstop if a traffic spike or a
+    // chatty new event floods the workspace.
+    workspaceCapping: {
+      dailyQuotaGb: logsDailyQuotaGb
+    }
+  }
+}
+
+// Workspace-based Application Insights: requests, dependencies and the custom
+// usage events land in the same workspace as the container console logs.
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: appInsightsName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: logs.id
+    IngestionMode: 'LogAnalytics'
+    RetentionInDays: appInsightsRetentionDays
+    // DisableIpMasking is deliberately unset: client addresses stay masked.
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
   }
 }
 
@@ -148,6 +187,16 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             name: 'acr-password'
             value: acrPassword
           }
+          {
+            name: 'appinsights-connection-string'
+            value: appInsights.properties.ConnectionString
+          }
+        ],
+        empty(analyticsSalt) ? [] : [
+          {
+            name: 'analytics-salt'
+            value: analyticsSalt
+          }
         ],
         empty(geminiApiKey) ? [] : [
           {
@@ -184,6 +233,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'EMBEDDING_MODEL', value: embeddingModel }
               { name: 'EMBEDDING_DIM', value: string(embeddingDim) }
               { name: 'CORS_ORIGINS', value: corsOrigins }
+              { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
+              { name: 'TELEMETRY_SAMPLING_RATIO', value: telemetrySamplingRatio }
+            ],
+            empty(analyticsSalt) ? [] : [
+              { name: 'ANALYTICS_SALT', secretRef: 'analytics-salt' }
             ],
             empty(geminiApiKey) ? [] : [
               { name: 'GEMINI_API_KEY', secretRef: 'gemini-api-key' }
@@ -215,6 +269,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
 // ---------------------------------------------------------------------------
 output containerAppName string = app.name
 output containerAppFqdn string = app.properties.configuration.ingress.fqdn
+output appInsightsName string = appInsights.name
+output logAnalyticsWorkspaceName string = logs.name
 output managedIdentityName string = identity.name
 output managedIdentityClientId string = identity.properties.clientId
 output managedIdentityPrincipalId string = identity.properties.principalId

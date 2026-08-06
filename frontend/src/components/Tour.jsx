@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { api } from '../lib/api.js';
+import { track } from '../lib/analytics.js';
 import { TOUR_STEPS, hasSeenTour, markTourSeen } from '../lib/tour.js';
 
 const TourContext = createContext({ active: false, start: () => {} });
@@ -266,14 +267,34 @@ export function TourProvider({ children }) {
   const [pending, setPending] = useState(false);
   const colaIdRef = useRef(undefined); // undefined = not fetched, null = unavailable
   const fetchingRef = useRef(false);
+  const triggerRef = useRef('auto');
+  const viewedRef = useRef(null);
+
+  // Read by stop(), which is shared by the close button, Skip, backdrop, Escape
+  // and Done — the only way to tell completion from abandonment.
+  const stepsRef = useRef(null);
+  const indexRef = useRef(0);
+  stepsRef.current = steps;
+  indexRef.current = index;
 
   // The tour opens on the home page, then walks the user through results and detail.
   const start = useCallback(() => {
+    triggerRef.current = 'manual';
     setPending(true);
     if (location.pathname !== '/') navigate('/');
   }, [location.pathname, navigate]);
 
   const stop = useCallback(() => {
+    const resolved = stepsRef.current;
+    if (resolved && resolved.length) {
+      const i = indexRef.current;
+      const step = resolved[i];
+      track(i >= resolved.length - 1 ? 'tour_completed' : 'tour_dismissed', {
+        step: step ? step.id : 'unknown',
+        step_number: i + 1,
+        step_count: resolved.length,
+      });
+    }
     setPending(false);
     setSteps(null);
     markTourSeen();
@@ -282,6 +303,20 @@ export function TourProvider({ children }) {
   useEffect(() => {
     if (!hasSeenTour()) setPending(true);
   }, []);
+
+  // Steps are filtered at runtime, so record the resolved step id rather than
+  // the index. The ref guard keeps StrictMode's double effect from double counting.
+  useEffect(() => {
+    if (!steps || !steps[index]) return;
+    const key = `${steps.length}:${index}:${steps[index].id}`;
+    if (viewedRef.current === key) return;
+    viewedRef.current = key;
+    track('tour_step_viewed', {
+      step: steps[index].id,
+      step_number: index + 1,
+      step_count: steps.length,
+    });
+  }, [steps, index]);
 
   // Resolve step targets once the home page has rendered and we know whether a
   // sample record is available for the detail-page steps.
@@ -323,6 +358,8 @@ export function TourProvider({ children }) {
       });
       setIndex(0);
       setSteps(resolved);
+      track('tour_started', { trigger: triggerRef.current, step_count: resolved.length });
+      triggerRef.current = 'auto';
     }, 120);
     return () => clearInterval(id);
   }, [pending, location.pathname]);

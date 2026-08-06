@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     embedding_dim: int = 768
     gemini_api_key: str | None = None
 
+    # --- Telemetry / analytics ---------------------------------------------
+    # Absent connection string == telemetry disabled, which is what local dev
+    # and the test suite rely on. Never fail startup over telemetry.
+    applicationinsights_connection_string: str | None = None
+    telemetry_enabled: bool = True
+    telemetry_sampling_ratio: float = 1.0
+    # Free-text search input is user-supplied content on a public site; only
+    # derived attributes (length, term count) are recorded unless this is on.
+    analytics_capture_query_text: bool = False
+    # Salt for hashing the client address when no client-supplied session id is
+    # present. Rotate to break linkability across deployments.
+    analytics_salt: str = ""
+
     # --- API ----------------------------------------------------------------
     api_title: str = "TTB COLA Search API"
     cors_origins: str = "*"

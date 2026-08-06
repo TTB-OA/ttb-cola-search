@@ -36,7 +36,7 @@ src/api/            FastAPI app
   embedding/        provider registry + implementations
 frontend/           Vite SPA
 infra/              Bicep for Container Apps
-resources/          schema definitions (pcr_schema.dbml is the source of truth)
+docs/               schema definitions (pcr_schema.dbml is the source of truth)
 tests/              pytest suite
 ```
 
@@ -135,6 +135,18 @@ All settings are read from the environment or `.env` (case-insensitive). See
 > is only consulted when `TRUST_FORWARDED_FOR` is on, because clients can
 > otherwise spoof it to reset their own bucket.
 
+**Telemetry and analytics**
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | unset disables all export; Bicep injects it in Azure |
+| `TELEMETRY_ENABLED` | `true` | master switch |
+| `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
+| `ANALYTICS_CAPTURE_QUERY_TEXT` | `false` | records raw `q` text when on — needs privacy sign-off |
+| `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
+
+See [Analytics](#analytics) for what is collected and how to query it.
+
 
 ## API endpoints
 
@@ -149,6 +161,7 @@ All routes are mounted under `/api`.
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
 | `POST` | `/search/image` | Reverse image search from an upload |
+| `POST` | `/events` | Collects UI interaction events from the SPA; returns 204 |
 
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `permit`, `permitName`, `permitState`, `permitCity`, `submitter`,
@@ -173,7 +186,7 @@ A few semantics are worth knowing before writing queries against it:
 
 ## Data model
 
-[`resources/pcr_schema.dbml`](resources/pcr_schema.dbml) is the source of truth.
+[`docs/pcr_schema.dbml`](docs/pcr_schema.dbml) is the source of truth.
 The API reads a small number of objects:
 
 - **`cola_search`** — a materialised, indexed copy of `vw_colas`, one row per
@@ -193,6 +206,64 @@ The API reads a small number of objects:
 Column selection is explicit (`SUMMARY_COLUMN_LIST` / `DETAIL_COLUMN_LIST` in
 `mappers.py`) so list and vector queries never drag along the large jsonb
 rollups or OCR text.
+
+## Analytics
+
+Usage and operational telemetry go to Application Insights (workspace-based, in
+the same Log Analytics workspace as the container logs). There is **no browser
+analytics SDK, no third-party script and no cookie** — everything is either
+derived server-side or posted by the SPA to our own `POST /api/events`.
+
+That shape was chosen deliberately. Search terms appear in the URL
+(`/results?q=…`), so a page-view-based tracker would ship user-typed text to a
+vendor as a side effect of the routing scheme.
+
+**How it fits together**
+
+| Piece | Role |
+| --- | --- |
+| `src/api/telemetry.py` | Configures Azure Monitor OpenTelemetry — requests, Postgres dependencies, logs |
+| `src/api/analytics.py` | Shapes events; no I/O, so it is unit-testable |
+| `_analytics` middleware in `main.py` | Emits one event per tracked API route |
+| `src/api/routers/events.py` | Allowlisted collector for UI events the server cannot infer |
+| `frontend/src/lib/analytics.js` | Batches client events, flushes on a timer and on tab hide |
+
+Server-derived events (`search_performed`, `detail_viewed`, `similar_requested`,
+`image_search_performed`) need no client cooperation, so they survive ad
+blockers. Client events cover only interactions that produce no request —
+opening the advanced panel, switching label faces, or following the outbound
+COLA download link.
+
+**What is recorded**
+
+- Which filters were used, as *names* (`filters_used=brand,commodity`), plus the
+  filter count, sort, page, page size, and result total.
+- Values only for closed vocabularies (`commodity`, `source`, `origin`,
+  `status`) — these are drawn from a fixed reference list.
+- For free text: `has_query`, `query_length`, and `term_count` — the shape of the
+  query, not its content.
+- Latency, status code, and a session identifier.
+
+**What is not recorded**
+
+- The text typed into `q` or any other free-text field, unless
+  `ANALYTICS_CAPTURE_QUERY_TEXT` is explicitly enabled.
+- IP addresses. `DisableIpMasking` is left off in Bicep, so Azure masks them.
+- Anything durable about a visitor. The session id comes from `sessionStorage`
+  and dies with the tab; when the SPA cannot supply one, the fallback is a
+  salted hash that becomes unlinkable as soon as `ANALYTICS_SALT` is rotated.
+
+Health checks and image-blob requests are excluded from tracing
+(`EXCLUDED_URLS`) — the blob proxy alone is one request per thumbnail and would
+dominate ingestion cost while telling us nothing.
+
+[`docs/analytics-queries.md`](docs/analytics-queries.md) has ready-made KQL for
+the search funnel, zero-result rate, filter popularity, and latency percentiles.
+
+> **Open question — DAP.** Federal public websites are generally expected to
+> carry the GSA Digital Analytics Program tag (OMB M-23-22 / 21st Century IDEA).
+> That is a third-party script and is *not* included here. Confirm with the web
+> governance team whether this registry is in scope before launch.
 
 ## Troubleshooting
 

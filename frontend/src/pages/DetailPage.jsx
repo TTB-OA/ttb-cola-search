@@ -6,6 +6,7 @@ import { StatusBadge, CatTag } from '../components/Badges.jsx';
 import Highlight from '../components/Highlight.jsx';
 import { toPct } from '../components/ScoreMeter.jsx';
 import { api } from '../lib/api.js';
+import { track } from '../lib/analytics.js';
 import { fmtDate, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
 
@@ -284,11 +285,24 @@ export default function DetailPage() {
             </div>
           </div>
           <div className="row gap-8">
-            <button className="btn secondary sm" onClick={() => window.print()}>
+            <button
+              className="btn secondary sm"
+              onClick={() => {
+                track('print_clicked', {});
+                window.print();
+              }}
+            >
               <Icon name="print" size={16} /> Print
             </button>
             {rec.formUrl && (
-              <a className="btn sm" href={rec.formUrl} target="_blank" rel="noreferrer">
+              // Leaves our origin, so this is the only place the download is visible.
+              <a
+                className="btn sm"
+                href={rec.formUrl}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => track('cola_form_downloaded', {})}
+              >
                 <Icon name="download" size={16} /> Download COLA
               </a>
             )}
@@ -305,7 +319,7 @@ export default function DetailPage() {
                   {hlItem && activeImg === hlItem.face && hasBox(hlItem) && (
                     <BoundingBox item={hlItem} img={currentImage} />
                   )}
-                  <button className="lv-expand" onClick={() => setLightbox(true)} title="View full size" aria-label="View full size">
+                  <button className="lv-expand" onClick={() => { track('lightbox_opened', { face: activeImg }); setLightbox(true); }} title="View full size" aria-label="View full size">
                     <Icon name="expand" size={16} /> Full size
                   </button>
                 </div>
@@ -314,7 +328,7 @@ export default function DetailPage() {
                 {faces.map((f) => {
                   const img = imagesByFace[f] && imagesByFace[f][0];
                   return (
-                    <button key={f} className={'lv-thumb' + (activeImg === f ? ' on' : '')} onClick={() => setActiveImg(f)}>
+                    <button key={f} className={'lv-thumb' + (activeImg === f ? ' on' : '')} onClick={() => { track('label_face_switched', { face: f }); setActiveImg(f); }}>
                       <LabelThumb rec={rec} src={img && img.url} />
                       <span className="lv-cap">{f}</span>
                     </button>
@@ -493,6 +507,7 @@ export default function DetailPage() {
                                 className={'ocr-chip' + (on ? ' on' : '') + (isMatch ? ' hit' : '')}
                                 title={it.conf != null ? `${Math.round(it.conf * 100)}% confidence` : undefined}
                                 onClick={() => {
+                                  track('ocr_chip_clicked', { on: !on, face: it.face });
                                   if (on) {
                                     setHlItem(null);
                                   } else {

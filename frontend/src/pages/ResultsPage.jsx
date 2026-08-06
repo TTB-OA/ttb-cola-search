@@ -7,7 +7,8 @@ import Highlight from '../components/Highlight.jsx';
 import ScoreMeter, { toPct } from '../components/ScoreMeter.jsx';
 import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
-import { takePendingImageSearch } from '../lib/imageSearchStore.js';
+import { clearPendingImageSearch, readPendingImageSearch } from '../lib/imageSearchStore.js';
+import { track } from '../lib/analytics.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
@@ -72,8 +73,8 @@ function FacetGroup({ title, buckets, selected, onSelect }) {
 function GalleryView({ rows, criteria, isImg, onOpen }) {
   return (
     <div className="gallery-grid">
-      {rows.map((r) => (
-        <button key={r.id} className="g-card" onClick={() => onOpen(r.id)}>
+      {rows.map((r, i) => (
+        <button key={r.id} className="g-card" onClick={() => onOpen(r.id, i)}>
           <div className="g-thumb">
             <LabelThumb rec={r} />
             {isImg && r.score != null && (
@@ -108,8 +109,8 @@ function GalleryView({ rows, criteria, isImg, onOpen }) {
 function ListView({ rows, criteria, isImg, onOpen }) {
   return (
     <div className="list-view">
-      {rows.map((r) => (
-        <button key={r.id} className="l-row" onClick={() => onOpen(r.id)}>
+      {rows.map((r, i) => (
+        <button key={r.id} className="l-row" onClick={() => onOpen(r.id, i)}>
           <div className="l-thumb">
             <LabelThumb rec={r} />
           </div>
@@ -171,8 +172,8 @@ function TableView({ rows, criteria, isImg, onOpen }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.id} onClick={() => onOpen(r.id)}>
+          {rows.map((r, i) => (
+            <tr key={r.id} onClick={() => onOpen(r.id, i)}>
               <td>
                 <div className="t-thumb">
                   <LabelThumb rec={r} />
@@ -280,10 +281,24 @@ export default function ResultsPage() {
   const setView = (v) => {
     setViewState(v);
     localStorage.setItem('cola.view', v);
+    track('view_mode_changed', { view: v, mode: isImg ? 'image' : 'text' });
   };
 
   // Image-search payload was stashed by the search form (a File can't ride in a URL).
-  const [pending] = useState(() => (isImg ? takePendingImageSearch() : null));
+  const [pending] = useState(() => {
+    if (!isImg) return null;
+    const stashed = readPendingImageSearch();
+    // No file means a deep link, refresh or back-nav dropped it — a dead end
+    // the server cannot see, since no request is ever made.
+    if (!stashed || !stashed.file) track('image_search_state_lost', {});
+    return stashed;
+  });
+
+  // Held in state now, so drop the module-level reference: otherwise a later
+  // visit to /results?mode=image would re-run this stale search.
+  useEffect(() => {
+    clearPendingImageSearch();
+  }, []);
 
   // Build the text-search query object passed to the API.
   const textParams = useMemo(() => {
@@ -358,8 +373,13 @@ export default function ResultsPage() {
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
   const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
   // Carry the search term so the detail page can highlight matching label text.
-  const onOpen = (id) => {
+  const onOpen = (id, rank) => {
     const term = (criteria.q || '').trim();
+    track('result_clicked', {
+      rank: typeof rank === 'number' ? (page - 1) * PAGE_SIZE + rank + 1 : -1,
+      view,
+      mode: isImg ? 'image' : 'text',
+    });
     navigate(`/cola/${id}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
   };
 

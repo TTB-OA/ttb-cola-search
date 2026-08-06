@@ -24,6 +24,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "pylance>=9.0.0",
     "pyright>=1.1.411",
     "pytest>=9.1.1",

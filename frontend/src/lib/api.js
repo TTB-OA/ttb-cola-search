@@ -1,6 +1,8 @@
 // Thin fetch client for the COLA API. No external data-fetching library —
 // just fetch plus small typed helpers.
 
+import { clientSessionId, track } from './analytics.js';
+
 const BASE = import.meta.env.VITE_API_BASE || '/api';
 
 class ApiError extends Error {
@@ -14,6 +16,8 @@ class ApiError extends Error {
 
 async function request(path, { method = 'GET', body, signal } = {}) {
   const opts = { method, signal, headers: {} };
+  const sid = clientSessionId();
+  if (sid) opts.headers['X-Client-Session'] = sid;
   if (body instanceof FormData) {
     opts.body = body;
   } else if (body !== undefined) {
@@ -29,6 +33,8 @@ async function request(path, { method = 'GET', body, signal } = {}) {
       detail = await res.text().catch(() => '');
     }
     const message = (detail && detail.detail) || res.statusText || 'Request failed';
+    // Endpoint only: the path can carry the user's search terms.
+    if (path !== '/events') track('client_api_error', { endpoint: path.split('?')[0], status: res.status });
     throw new ApiError(message, res.status, detail);
   }
   if (res.status === 204) return null;

@@ -4,6 +4,7 @@ import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { CatTag } from '../components/Badges.jsx';
 import { api, toQuery } from '../lib/api.js';
+import { track } from '../lib/analytics.js';
 import { fmtDate } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
@@ -356,6 +357,7 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
                 style={{ marginTop: 6 }}
                 onClick={(e) => {
                   e.stopPropagation();
+                  track('image_search_abandoned', {});
                   set('image', null);
                 }}
               >
@@ -479,7 +481,14 @@ export default function SearchPage() {
                         </button>
                       ))}
                     </div>
-                    <button className="linkbtn" data-tour="advanced-toggle" onClick={() => setAdvanced(!advanced)}>
+                    <button
+                      className="linkbtn"
+                      data-tour="advanced-toggle"
+                      onClick={() => {
+                        track('advanced_panel_toggled', { open: !advanced });
+                        setAdvanced(!advanced);
+                      }}
+                    >
                       <Icon name="sliders" size={16} /> {advanced ? 'Hide advanced search' : 'Advanced search'}
                     </button>
                   </div>

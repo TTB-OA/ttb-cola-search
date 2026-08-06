@@ -42,6 +42,7 @@ jobs:
             -p postgresSchema="${{ vars.PG_SCHEMA }}" \
             -p postgresUser="${{ vars.PG_USER }}" \
             -p geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
+            -p analyticsSalt="${{ secrets.ANALYTICS_SALT }}" \
             --only-show-errors
 
       - name: Show outputs
