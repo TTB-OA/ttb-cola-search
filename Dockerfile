@@ -37,9 +37,8 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
-# Application code and database migration resources.
+# Application code.
 COPY src/ ./src/
-COPY resources/ ./resources/
 COPY run.py ./
 
 # Built SPA from stage 1 (served single-origin by FastAPI at "/").
