@@ -116,17 +116,22 @@ def image_face(img_type: str | None) -> str:
     return (img_type or "other").strip().lower()
 
 
-# Display order for label artwork: the brand/keg-collar face first, then the back,
-# then everything else. cola_images.img_type stores "Brand (front) or keg collar"
-# as a single value, so these match on substrings rather than equality. strpos
+# Fallback display order for label artwork: the brand/keg-collar face first, then
+# the back, then everything else. cola_images.img_type stores "Brand (front) or keg
+# collar" as a single value, so these match on substrings rather than equality. strpos
 # rather than LIKE, since psycopg reads '%' in a parameterised query as a placeholder.
-IMAGE_TYPE_RANK_SQL = (
-    "CASE "
-    "WHEN strpos(upper(coalesce(img_type,'')), 'FRONT') > 0 "
-    "OR strpos(upper(coalesce(img_type,'')), 'KEG') > 0 THEN 0 "
-    "WHEN strpos(upper(coalesce(img_type,'')), 'BACK') > 0 THEN 1 "
-    "ELSE 2 END"
-)
+def image_type_rank_sql(alias: str | None = None) -> str:
+    col = f"{alias}.img_type" if alias else "img_type"
+    return (
+        "CASE "
+        f"WHEN strpos(upper(coalesce({col},'')), 'FRONT') > 0 "
+        f"OR strpos(upper(coalesce({col},'')), 'KEG') > 0 THEN 0 "
+        f"WHEN strpos(upper(coalesce({col},'')), 'BACK') > 0 THEN 1 "
+        "ELSE 2 END"
+    )
+
+
+IMAGE_TYPE_RANK_SQL = image_type_rank_sql()
 
 
 def face_rank(face: str | None) -> int:
@@ -137,6 +142,71 @@ def face_rank(face: str | None) -> int:
     if "back" in f:
         return 1
     return 2
+
+
+# --- Visual-interest ordering ------------------------------------------------
+# vw_colas scores every image on aspect ratio, OCR text density and image-vs-text
+# embedding distance, then rolls the winner up to cola_search as a scalar column
+# and the per-image detail into the `images` jsonb. cola_images itself carries no
+# score, so both have to be joined back on.
+
+
+def visual_interest_hero_join_sql(alias: str, search_alias: str = "vi_hero") -> str:
+    """Join only the cheap scalar hero column; avoids detoasting `images`."""
+    return (
+        f"LEFT JOIN {SEARCH_TABLE} {search_alias} "
+        f"ON {search_alias}.cola_id = {alias}.cola_id"
+    )
+
+
+def visual_interest_join_sql(
+    alias: str, search_alias: str = "vi_src", out: str = "vi"
+) -> str:
+    """Join the per-image scores back out of the cola_search `images` rollup."""
+    return (
+        f"{visual_interest_hero_join_sql(alias, search_alias)} "
+        "LEFT JOIN LATERAL ("
+        "SELECT (e ->> 'visual_interest_score')::float8 AS visual_interest_score, "
+        "(e ->> 'visual_interest_rank')::int AS visual_interest_rank, "
+        "(e ->> 'visual_interest_aspect_ratio_score')::float8 AS aspect_ratio_score, "
+        "(e ->> 'visual_interest_text_density_score')::float8 AS text_density_score, "
+        "(e ->> 'visual_interest_embedding_distance_score')::float8 "
+        "AS embedding_distance_score "
+        "FROM jsonb_array_elements("
+        f"CASE WHEN jsonb_typeof({search_alias}.images) = 'array' "
+        f"THEN {search_alias}.images ELSE '[]'::jsonb END"
+        ") AS e "
+        f"WHERE e ->> 'file_name' = {alias}.file_name LIMIT 1"
+        f") {out} ON TRUE"
+    )
+
+
+def hero_first_sql(alias: str, search_alias: str = "vi_hero") -> str:
+    """Sort key that pins the upstream visual-interest winner to the front.
+
+    `false` sorts before `true`, so the matching row leads; when the column is
+    NULL every row compares equal and the remaining keys decide.
+    """
+    return (
+        f"({alias}.file_name IS DISTINCT FROM "
+        f"{search_alias}.image_visual_interest_best_file_name)"
+    )
+
+
+def image_display_order_sql(
+    alias: str, search_alias: str = "vi_hero", out: str | None = "vi"
+) -> str:
+    """Hero image first, then most-visually-interesting, then the type-rank fallback.
+
+    The score is only usable when the `images` rollup was joined; without it the
+    hero column alone lifts the winner and type rank orders the rest.
+    """
+    keys = [hero_first_sql(alias, search_alias)]
+    if out:
+        keys.append(f"{out}.visual_interest_score DESC NULLS LAST")
+    keys.append(image_type_rank_sql(alias))
+    keys.append(f"{alias}.file_name")
+    return ", ".join(keys)
 
 
 def image_url(cola_id: int, file_name: str) -> str:
@@ -214,6 +284,8 @@ def image_ref_from_row(row: dict[str, Any]) -> ImageRef:
         url=image_url(cola_id, file_name),
         width_px=row.get("width_px"),
         height_px=row.get("height_px"),
+        visual_interest_score=row.get("visual_interest_score"),
+        visual_interest_rank=row.get("visual_interest_rank"),
     )
 
 

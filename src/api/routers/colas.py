@@ -11,15 +11,16 @@ from ..db import fetch_all, fetch_one
 from ..mappers import (
     COMMODITY_CODE,
     DETAIL_COLUMNS,
-    IMAGE_TYPE_RANK_SQL,
     OCR_TABLE,
     SEARCH_TABLE,
     SOURCE_CODE,
     SUMMARY_COLUMNS,
     commodity_label,
     detail_from_rows,
+    image_display_order_sql,
     source_label,
     summary_from_row,
+    visual_interest_join_sql,
 )
 from ..models import ColaDetail, FacetBucket, Facets, SearchResponse
 
@@ -441,8 +442,12 @@ async def get_cola(cola_id: int) -> ColaDetail:
         raise HTTPException(status_code=404, detail="COLA not found")
 
     images = await fetch_all(
-        "SELECT cola_id, file_name, img_type, width_px, height_px FROM cola_images "
-        f"WHERE cola_id = %s ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name",
+        "SELECT ci.cola_id, ci.file_name, ci.img_type, ci.width_px, ci.height_px, "
+        "vi.visual_interest_score, vi.visual_interest_rank "
+        "FROM cola_images ci "
+        f"{visual_interest_join_sql('ci')} "
+        "WHERE ci.cola_id = %s "
+        f"ORDER BY {image_display_order_sql('ci')}",
         [cola_id],
     )
     items = await fetch_all(

@@ -281,6 +281,10 @@ Table cola_search {
   primary_permit_id         varchar     [note: 'id-ish, exact/prefix btree [local]']
   submitter_id              varchar     [note: 'id-ish, exact/prefix btree [local]']
   permits                   jsonb       [note: 'rolled-up permits array [local]']
+  images                    jsonb       [note: 'rolled-up images array; each entry carries visual_interest_score (0-100), visual_interest_rank and the aspect-ratio/text-density/embedding-distance components [local]']
+  image_visual_interest_best_score     "numeric(6,2)" [note: 'top visual_interest_score across the COLA images [local]']
+  image_visual_interest_best_file_name varchar(260)   [note: 'file_name of the rank-1 image; the display hero [local]']
+  image_visual_interest_best_blob_url  text           [note: 'blob_url of the rank-1 image [local]']
   search_tsv                tsvector    [note: 'generated: A brand/fanciful, B applicant/permit, C rest; GIN, websearch_to_tsquery [local]']
   _loaded_at                timestamptz [note: 'as-of time this row was materialised [local]']
 

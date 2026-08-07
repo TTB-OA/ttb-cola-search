@@ -182,7 +182,9 @@ export default function DetailPage() {
     return m;
   }, [images]);
   const faces = useMemo(() => {
-    const fs = orderFaces(Object.keys(imagesByFace));
+    // Server order: the API ranks images by visual interest, so the most
+    // distinctive artwork leads rather than whichever face is nominally the front.
+    const fs = Object.keys(imagesByFace);
     return fs.length ? fs : ['front'];
   }, [imagesByFace]);
 
@@ -195,7 +197,8 @@ export default function DetailPage() {
     [items, q]
   );
 
-  // Group extracted text by image face, reading order within each group.
+  // Group extracted text by image face, reading order within each group. Groups
+  // follow the gallery so the text panel and the images agree on which face leads.
   const itemGroups = useMemo(() => {
     const byFace = new Map();
     items.forEach((it) => {
@@ -204,11 +207,15 @@ export default function DetailPage() {
       byFace.get(f).push(it);
     });
     const pos = (it, k) => (it.box && typeof it.box[k] === 'number' ? it.box[k] : Infinity);
-    return orderFaces([...byFace.keys()]).map((face) => ({
+    const ordered = [
+      ...faces.filter((f) => byFace.has(f)),
+      ...orderFaces([...byFace.keys()].filter((f) => !faces.includes(f))),
+    ];
+    return ordered.map((face) => ({
       face,
       items: [...byFace.get(face)].sort((a, b) => pos(a, 'y') - pos(b, 'y') || pos(a, 'x') - pos(b, 'x')),
     }));
-  }, [items]);
+  }, [items, faces]);
 
   useEffect(() => {
     const first = matchedItems.length ? matchedItems[0] : null;

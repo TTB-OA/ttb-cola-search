@@ -19,6 +19,9 @@ class ImageRef(ApiModel):
     url: str
     width_px: int | None = None
     height_px: int | None = None
+    # 0-100, computed upstream in vw_colas; drives display order.
+    visual_interest_score: float | None = None
+    visual_interest_rank: int | None = None
 
 
 class ImageItem(ApiModel):

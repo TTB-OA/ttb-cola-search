@@ -16,11 +16,12 @@ from ..db import fetch_one, get_pool
 from ..embedding import get_embedder
 from ..mappers import (
     COMMODITY_CODE,
-    IMAGE_TYPE_RANK_SQL,
     SEARCH_TABLE,
     SUMMARY_COLUMN_LIST,
+    image_display_order_sql,
     select_columns,
     summary_from_row,
+    visual_interest_hero_join_sql,
 )
 from ..models import ColaSummary, SearchResponse
 from ..ratelimit import SlidingWindowLimiter, client_key
@@ -260,9 +261,10 @@ async def similar_colas(
     ),
 ) -> list[ColaSummary]:
     seed = await fetch_one(
-        "SELECT image_feature_vector::text AS vec FROM cola_images "
-        "WHERE cola_id = %s AND image_feature_vector IS NOT NULL "
-        f"ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name LIMIT 1",
+        "SELECT ci.image_feature_vector::text AS vec FROM cola_images ci "
+        f"{visual_interest_hero_join_sql('ci')} "
+        "WHERE ci.cola_id = %s AND ci.image_feature_vector IS NOT NULL "
+        f"ORDER BY {image_display_order_sql('ci', out=None)} LIMIT 1",
         [cola_id],
     )
     if seed is None or not seed.get("vec"):

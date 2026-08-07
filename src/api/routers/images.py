@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 
 from ..blob import stream_blob
 from ..db import fetch_one
-from ..mappers import IMAGE_TYPE_RANK_SQL
+from ..mappers import image_display_order_sql, visual_interest_hero_join_sql
 
 router = APIRouter(tags=["images"])
 
@@ -14,9 +14,13 @@ router = APIRouter(tags=["images"])
 @router.get("/colas/{cola_id}/images/{file_name}")
 async def get_image(cola_id: int, file_name: str):
     if file_name == "primary":
+        # Scores are not joined here: the hero column alone decides the winner, and
+        # skipping the `images` rollup keeps this hot endpoint off the toast table.
         row = await fetch_one(
-            "SELECT file_name, blob_name, blob_url FROM cola_images WHERE cola_id = %s "
-            f"ORDER BY {IMAGE_TYPE_RANK_SQL}, file_name LIMIT 1",
+            "SELECT ci.file_name, ci.blob_name, ci.blob_url FROM cola_images ci "
+            f"{visual_interest_hero_join_sql('ci')} "
+            "WHERE ci.cola_id = %s "
+            f"ORDER BY {image_display_order_sql('ci', out=None)} LIMIT 1",
             [cola_id],
         )
     else:
