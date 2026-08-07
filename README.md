@@ -177,7 +177,7 @@ All routes are mounted under `/api`.
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `permit`, `permitName`, `permitState`, `permitCity`, `submitter`,
 `varietal`, `qualification`, `labelText`, `commodity`, `source`, `origin`,
-`status`, `dateFrom`, `dateTo`, `sort`, `page`, `pageSize`, and `facets`.
+`status`, `dateFrom`, `dateTo`, `allDates`, `sort`, `page`, `pageSize`, and `facets`.
 
 ### Search behaviour
 
@@ -189,6 +189,8 @@ A few semantics are worth knowing before writing queries against it:
 - `ttbId`, `permit`, and `submitter` match on **prefix**. Identifier input is
   upper-cased before comparison, since the supporting indexes compare bytes.
 - `labelText` searches OCR text from the label images via `cola_search_ocr`.
+- With no `dateFrom` or `dateTo`, searches are limited to the last three
+  calendar years. Pass `allDates=true` to search the full history instead.
 - `total` is capped at 10,000. When the cap is hit, `totalIsCapped` is `true` and
   `total` should be read as a floor. `page` is capped at 500 — narrow the filters
   rather than paging deeper.

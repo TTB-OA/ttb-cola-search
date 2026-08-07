@@ -314,11 +314,22 @@ async def list_colas(
             description=(
                 "Approval/completed date lower bound (`YYYY-MM-DD`). When both "
                 "`dateFrom` and `dateTo` are omitted, searches default to Jan 1 of "
-                "the year two years before the current year (last three calendar years)."
+                "the year two years before the current year (last three calendar years), "
+                "unless `allDates` is set."
             ),
         ),
     ] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
+    all_dates: Annotated[
+        bool,
+        Query(
+            alias="allDates",
+            description=(
+                "Search the full history instead of the default three-calendar-year "
+                "window. Ignored when `dateFrom` or `dateTo` is supplied."
+            ),
+        ),
+    ] = False,
     sort: str = Query(
         default="relevance",
         title="Result ordering",
@@ -358,7 +369,7 @@ async def list_colas(
     ),
 ) -> SearchResponse:
     effective_date_from = date_from
-    if date_from is None and date_to is None:
+    if date_from is None and date_to is None and not all_dates:
         effective_date_from = _default_date_from()
 
     where, params = _build_filters(
