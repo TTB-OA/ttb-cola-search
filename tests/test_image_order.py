@@ -12,6 +12,7 @@ import pytest
 
 from src.api.mappers import (
     IMAGE_TYPE_RANK_SQL,
+    SEARCH_TABLE,
     detail_from_rows,
     face_rank,
     hero_first_sql,
@@ -88,9 +89,17 @@ def test_display_order_without_rollup_drops_the_score_key():
 def test_visual_interest_join_guards_a_non_array_rollup():
     """jsonb_array_elements raises on a scalar; NULL alone would be safe."""
     join = visual_interest_join_sql("ci")
-    assert "jsonb_typeof(vi_src.images) = 'array'" in join
+    assert "jsonb_typeof(vi_hero.images) = 'array'" in join
     assert "LEFT JOIN LATERAL" in join
     assert "e ->> 'file_name' = ci.file_name" in join
+
+
+def test_join_and_order_agree_on_the_cola_search_alias():
+    """Mismatched defaults left ORDER BY referencing an unjoined alias."""
+    join = visual_interest_join_sql("ci")
+    order = image_display_order_sql("ci")
+    alias = order.split("IS DISTINCT FROM ")[1].split(".")[0]
+    assert f"LEFT JOIN {SEARCH_TABLE} {alias} " in join
 
 
 def test_image_ref_carries_visual_interest():

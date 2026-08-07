@@ -160,7 +160,7 @@ def visual_interest_hero_join_sql(alias: str, search_alias: str = "vi_hero") -> 
 
 
 def visual_interest_join_sql(
-    alias: str, search_alias: str = "vi_src", out: str = "vi"
+    alias: str, search_alias: str = "vi_hero", out: str = "vi"
 ) -> str:
     """Join the per-image scores back out of the cola_search `images` rollup."""
     return (
