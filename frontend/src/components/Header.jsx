@@ -20,6 +20,9 @@ export default function Header() {
           <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
             Search
           </NavLink>
+          <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Coverage
+          </NavLink>
           <a href="https://my.ttb.gov/" target="_blank" rel="noopener noreferrer" className="row gap-6">
             myTTB <Icon name="external" size={14} />
           </a>

@@ -19,6 +19,12 @@ from .models import (
 # that maintains it, but the API never reads the view directly.
 SEARCH_TABLE = "cola_search"
 OCR_TABLE = "cola_search_ocr"
+# Refresh queue drained by the materialisation job; its depth is how far the
+# search surface currently trails the source tables.
+DIRTY_TABLE = "cola_search_dirty"
+# Pipeline coverage by calendar year of completed_date, rebuilt whole by the
+# same job that maintains cola_search.
+COVERAGE_TABLE = "cola_coverage_year"
 
 # Columns needed to build a ColaSummary. Selected explicitly so list and
 # vector queries never drag along the large jsonb rollups (images,

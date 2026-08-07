@@ -27,7 +27,16 @@ from .blob import close_blob
 from .config import API_PREFIX, Settings, get_settings
 from .db import close_pool, open_pool
 from .insights import close_insights
-from .routers import colas, events, health, images, insights, reference, search
+from .routers import (
+    colas,
+    coverage,
+    events,
+    health,
+    images,
+    insights,
+    reference,
+    search,
+)
 from .telemetry import configure_telemetry
 
 # psycopg's async driver cannot run on Windows' default ProactorEventLoop; select
@@ -75,6 +84,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(reference.router, prefix=API_PREFIX)
+    app.include_router(coverage.router, prefix=API_PREFIX)
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)

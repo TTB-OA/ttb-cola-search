@@ -133,6 +133,47 @@ class ReferenceData(ApiModel):
 
 
 # ---------------------------------------------------------------------------
+# Pipeline coverage
+# ---------------------------------------------------------------------------
+class CoverageCounts(ApiModel):
+    """Records that reached each pipeline stage. Stages are cumulative."""
+
+    # Upstream truth. Null when the pipeline never recorded an expected count
+    # for the period, which is not the same as zero.
+    api_count: int | None = None
+    ingested_count: int = 0
+    detail_count: int = 0
+    image_count: int = 0
+    ocr_count: int = 0
+    embedding_count: int = 0
+
+
+class CoverageYear(CoverageCounts):
+    year: int
+
+
+class SearchIndexStatus(ApiModel):
+    """How far the materialised search surface trails the source tables."""
+
+    # Planner estimates (pg_class.reltuples), not exact counts: an exact count
+    # of a multi-million-row table costs more than the number is worth here.
+    searchable_count: int | None = None
+    label_text_count: int | None = None
+    # Records queued for re-materialisation, and how long the oldest has waited.
+    pending_count: int = 0
+    oldest_pending_at: datetime | None = None
+
+
+class CoverageResponse(ApiModel):
+    years: list[CoverageYear] = []
+    totals: CoverageCounts = CoverageCounts()
+    # Null when the status query failed, so the rest of the page still renders.
+    search: SearchIndexStatus | None = None
+    # When the coverage table was last rebuilt; absent if it has never run.
+    as_of: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
 # Usage dashboard
 # ---------------------------------------------------------------------------
 class NamedCount(ApiModel):

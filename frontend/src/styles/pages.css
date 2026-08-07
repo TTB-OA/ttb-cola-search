@@ -285,6 +285,24 @@
 .an-table td { text-align: right; padding: 7px 0; border-top: 1px solid var(--base-lightest); }
 .an-table td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- Coverage ---------- */
+/* Six stage columns do not fit a phone, so the table scrolls sideways rather
+   than reflowing into an unreadable stack. */
+.cv-scroll { overflow-x: auto; }
+.cv-table { min-width: 660px; }
+.cv-table tbody th, .cv-table tfoot th {
+  text-align: left; text-transform: none; letter-spacing: 0; font-size: 13.5px;
+  color: var(--base-darker); font-weight: 700; padding: 7px 12px 7px 0;
+  border-top: 1px solid var(--base-lightest); white-space: nowrap;
+}
+.cv-table td { padding: 7px 0 7px 16px; vertical-align: top; }
+.cv-table tfoot th, .cv-table tfoot td { border-top: 2px solid var(--base-lighter); font-weight: 700; }
+.cv-cell { display: flex; justify-content: flex-end; align-items: baseline; gap: 8px; }
+.cv-pct { font-size: 12px; }
+.cv-index { margin-bottom: 20px; }
+.cv-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 18px; }
+.cv-fact-value { font-size: 20px; font-weight: 800; color: var(--ink); line-height: 1.2; }
+
 /* ============================================================
    Responsive
    ============================================================ */

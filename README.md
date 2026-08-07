@@ -162,8 +162,9 @@ All routes are mounted under `/api`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/health` | Liveness plus database and embedding-provider status |
+| `GET` | `/health` | Liveness, embedding-provider status, and a database check that resolves the search relations through `search_path` rather than just opening a connection |
 | `GET` | `/reference` | Filter vocabularies (origins, statuses, categories, permit states); cached in process for 1 hour |
+| `GET` | `/coverage` | Pipeline coverage by approval year plus search-index freshness, for the `/coverage` page; cached in process for 15 minutes |
 | `GET` | `/colas` | Paged, filtered, faceted search |
 | `GET` | `/colas/{cola_id}` | Full COLA detail with images and label analysis |
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |

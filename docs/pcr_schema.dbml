@@ -34,6 +34,10 @@ Table colas {
   image_count_to_parse integer     [note: 'images found by the image run [local]']
   scraped_on           timestamptz [note: 'last list-pass write [local]']
   detail_scraped_on    timestamptz [note: 'last detail-pass write [local]']
+  source_of_product    varchar     [note: 'form item "SOURCE OF PRODUCT" [scraped]: Domestic | Imported']
+  application_type     text        [note: 'form item "TYPE OF APPLICATION" [scraped], multi-select joined with " | "']
+  exemption_state      varchar     [note: 'state abbreviation printed on the exemption option [scraped]']
+  resubmission_ttb_id  bigint      [note: 'rejected TTB ID printed on the resubmission option [scraped]']
 
   indexes {
     completed_date
@@ -324,6 +328,20 @@ Table cola_search_dirty {
   indexes {
     (marked_at, cola_id)
   }
+}
+
+// Pipeline coverage by calendar year of colas.completed_date, rebuilt whole by
+// search_materialize.py on every run. A COLA counts towards an enrichment stage
+// only when every one of its stored images (SUCCESS with a blob) is done.
+Table cola_coverage_year {
+  coverage_year        integer     [pk, note: 'calendar year of completed_date [local]']
+  api_cola_count       bigint      [note: 'sum of pipeline_day_status.api_count for list_ingest; upstream truth, nullable [local]']
+  ingested_cola_count  bigint      [note: 'colas rows [local]']
+  detail_cola_count    bigint      [note: 'colas with detail_scraped_on [local]']
+  image_cola_count     bigint      [note: 'colas with >= 1 stored image [local]']
+  ocr_cola_count       bigint      [note: 'colas whose every stored image has a terminal analysis [local]']
+  embedding_cola_count bigint      [note: 'colas whose every stored image has an image_feature_vector [local]']
+  _loaded_at           timestamptz [note: 'as-of time this row was materialised [local]']
 }
 
 Ref: cola_images.cola_id > colas.cola_id

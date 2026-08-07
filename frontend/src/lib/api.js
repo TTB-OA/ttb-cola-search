@@ -55,6 +55,8 @@ export function toQuery(params) {
 export const api = {
   reference: (signal) => request('/reference', { signal }),
 
+  coverage: (signal) => request('/coverage', { signal }),
+
   searchColas: (params, signal) => request(`/colas${toQuery(params)}`, { signal }),
 
   getCola: (id, signal) => request(`/colas/${encodeURIComponent(id)}`, { signal }),
