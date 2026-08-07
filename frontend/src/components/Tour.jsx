@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Icon from './Icon.jsx';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { DEMO_QUERY, TOUR_STEPS, hasSeenTour, markTourSeen } from '../lib/tour.js';
+import { DEMO_TYPING_DELAY_MS, TOUR_STEPS, hasSeenTour, markTourSeen, pickDemoQuery } from '../lib/tour.js';
 
 const TourContext = createContext({ active: false, start: () => {}, demoText: '' });
 
@@ -266,6 +266,7 @@ export function TourProvider({ children }) {
   const [index, setIndex] = useState(0);
   const [pending, setPending] = useState(false);
   const [demoText, setDemoText] = useState('');
+  const [demoQuery, setDemoQuery] = useState('');
   const colaIdRef = useRef(undefined); // undefined = not fetched, null = unavailable
   const fetchingRef = useRef(false);
   const triggerRef = useRef('auto');
@@ -348,10 +349,10 @@ export function TourProvider({ children }) {
       setPending(false);
       if (!ready) return;
 
-      const ctx = { colaId: colaIdRef.current };
+      const ctx = { colaId: colaIdRef.current, query: pickDemoQuery() };
       const resolved = TOUR_STEPS.map((s) => ({
         ...s,
-        route: typeof s.route === 'function' ? (ctx.colaId ? s.route(ctx) : null) : s.route,
+        route: typeof s.route === 'function' ? s.route(ctx) : s.route,
       })).filter((s) => {
         if (s.route === null) return false; // dynamic route with no sample record
         if (s.skipMobile && isMobile) return false;
@@ -359,6 +360,7 @@ export function TourProvider({ children }) {
         return true;
       });
       setIndex(0);
+      setDemoQuery(ctx.query);
       setSteps(resolved);
       track('tour_started', { trigger: triggerRef.current, step_count: resolved.length });
       triggerRef.current = 'auto';
@@ -379,20 +381,26 @@ export function TourProvider({ children }) {
   // sample query means feeding the page state a character at a time.
   useEffect(() => {
     const step = steps && steps[index];
-    if (!step || step.id !== 'search') return undefined;
+    if (!step || step.id !== 'search' || !demoQuery) return undefined;
     if (prefersReducedMotion()) {
-      setDemoText(DEMO_QUERY);
+      setDemoText(demoQuery);
       return undefined;
     }
     setDemoText('');
-    let n = 0;
-    const id = setInterval(() => {
-      n += 1;
-      setDemoText(DEMO_QUERY.slice(0, n));
-      if (n >= DEMO_QUERY.length) clearInterval(id);
-    }, 90);
-    return () => clearInterval(id);
-  }, [steps, index]);
+    let typer = 0;
+    const start = setTimeout(() => {
+      let n = 0;
+      typer = setInterval(() => {
+        n += 1;
+        setDemoText(demoQuery.slice(0, n));
+        if (n >= demoQuery.length) clearInterval(typer);
+      }, 90);
+    }, DEMO_TYPING_DELAY_MS);
+    return () => {
+      clearTimeout(start);
+      clearInterval(typer);
+    };
+  }, [steps, index, demoQuery]);
 
   const next = useCallback(() => {
     setIndex((i) => {

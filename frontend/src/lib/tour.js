@@ -4,11 +4,31 @@
 // dropped when their element is missing; others fall back to a centered card.
 const SEEN_KEY = 'ttb-cola:tour-seen:v1';
 
-// Typed into the search box during the `search` step, then carried into the
-// results route so the results/facets steps show a real, filtered result set.
-export const DEMO_QUERY = 'cape may';
+// One of these is typed into the search box during the `search` step, then
+// carried into the results route so the results/facets steps show a real,
+// filtered result set. All are broad enough to match plenty of approvals.
+export const DEMO_QUERIES = [
+  'cape may',
+  'napa valley',
+  'bourbon whiskey',
+  'cabernet sauvignon',
+  'brewing company',
+  'india pale ale',
+  'chardonnay',
+  'single malt',
+];
 
-export const RESULTS_ROUTE = `/results?q=${encodeURIComponent(DEMO_QUERY)}&sort=approvalDate&status=Approved`;
+export function pickDemoQuery() {
+  return DEMO_QUERIES[Math.floor(Math.random() * DEMO_QUERIES.length)];
+}
+
+export function resultsRoute(query) {
+  return `/results?q=${encodeURIComponent(query)}&sort=approvalDate&status=Approved`;
+}
+
+// Pause before the sample query starts typing itself, so the step's card can be
+// read first (ms).
+export const DEMO_TYPING_DELAY_MS = 900;
 
 export const TOUR_STEPS = [
   {
@@ -68,7 +88,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'results-facets',
-    route: RESULTS_ROUTE,
+    route: (ctx) => resultsRoute(ctx.query),
     target: '[data-tour="results-facets"]',
     placement: 'right',
     skipMobile: true,
@@ -78,7 +98,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'results-views',
-    route: RESULTS_ROUTE,
+    route: (ctx) => resultsRoute(ctx.query),
     target: '[data-tour="results-views"]',
     placement: 'bottom',
     title: 'Sort and switch views',
@@ -87,7 +107,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-images',
-    route: (ctx) => `/cola/${ctx.colaId}`,
+    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
     target: '[data-tour="detail-images"]',
     placement: 'right',
     title: 'Every approved label image',
@@ -96,7 +116,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-fields',
-    route: (ctx) => `/cola/${ctx.colaId}`,
+    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
     target: '[data-tour="detail-fields"]',
     placement: 'left',
     title: 'The complete certificate record',
@@ -105,7 +125,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-ocr',
-    route: (ctx) => `/cola/${ctx.colaId}`,
+    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
     target: '[data-tour="detail-ocr"]',
     placement: 'left',
     title: 'Text read from the label images',
@@ -114,7 +134,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-similar',
-    route: (ctx) => `/cola/${ctx.colaId}`,
+    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
     target: '[data-tour="detail-similar"]',
     placement: 'right',
     title: 'Related approvals',
