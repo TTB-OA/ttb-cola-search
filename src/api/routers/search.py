@@ -128,6 +128,11 @@ async def _nearest_by_vector(
     ef_search = max(64, candidates)
     async with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
         await cur.execute(SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search)))
+        # pgvector prices an HNSW scan off ef_search, so raising it with the candidate
+        # count eventually makes a sequential scan look cheaper. It is not: that plan
+        # detoasts every 768-d vector in the table and takes ~30s where the index
+        # answers in under one. The ANN index is always the right plan here.
+        await cur.execute(SQL("SET LOCAL enable_seqscan TO off"))
         await cur.execute(cast(QueryNoTemplate, query), params)
         rows = cast(list[dict[str, Any]], await cur.fetchall())
 
