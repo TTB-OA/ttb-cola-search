@@ -123,11 +123,12 @@ export const TOUR_STEPS = [
   },
   {
     id: 'replay',
+    route: '/', // returns the user to the search page as the tour ends
     target: '[data-tour="tour-button"]',
     placement: 'bottom',
     requireTarget: true,
     title: "You're all set",
-    body: 'Replay this tour anytime from the Tour link in the header.',
+    body: 'You are back on the search page — start your own search, and replay this tour anytime from the Tour link in the header.',
   },
 ];
 
