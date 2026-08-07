@@ -23,25 +23,9 @@ export default function Header() {
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
             Coverage
           </NavLink>
-          <a href="https://my.ttb.gov/" target="_blank" rel="noopener noreferrer" className="row gap-6">
-            myTTB <Icon name="external" size={14} />
-          </a>
-          <a
-            href="https://www.ttb.gov/system/files/images/pdfs/forms/f510031.pdf"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="row gap-6"
-          >
-            COLA Application Form <Icon name="external" size={14} />
-          </a>
-          <a
-            href="https://www.ttb.gov/regulated-commodities/labeling/labeling-resources"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="row gap-6"
-          >
-            COLA Resources <Icon name="external" size={14} />
-          </a>
+          <NavLink to="/analytics" className={({ isActive }) => (isActive ? 'active' : '')}>
+            Analytics
+          </NavLink>
           <button type="button" className="nav-tour" data-tour="tour-button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>

@@ -20,7 +20,6 @@ export default function App() {
           <Route path="/results" element={<ResultsPage />} />
           <Route path="/cola/:id" element={<DetailPage />} />
           <Route path="/coverage" element={<CoveragePage />} />
-          {/* Unlisted: reachable by URL, deliberately absent from the nav. */}
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="*" element={<SearchPage />} />
         </Routes>

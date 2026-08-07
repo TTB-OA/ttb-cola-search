@@ -1,3 +1,5 @@
+import Icon from './Icon.jsx';
+
 export default function Footer() {
   return (
     <footer className="site-footer">
@@ -18,6 +20,26 @@ export default function Footer() {
             </div>
           </div>
         </div>
+        <nav className="foot-links">
+          <h4>Resources</h4>
+          <a href="https://my.ttb.gov/" target="_blank" rel="noopener noreferrer">
+            myTTB <Icon name="external" size={14} />
+          </a>
+          <a
+            href="https://www.ttb.gov/system/files/images/pdfs/forms/f510031.pdf"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            COLA Application Form <Icon name="external" size={14} />
+          </a>
+          <a
+            href="https://www.ttb.gov/regulated-commodities/labeling/labeling-resources"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            COLA Resources <Icon name="external" size={14} />
+          </a>
+        </nav>
       </div>
     </footer>
   );
