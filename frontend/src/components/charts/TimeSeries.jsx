@@ -71,6 +71,17 @@ export default function TimeSeries({ points, series, label }) {
         {series.map((s) => (
           <path key={s.key} className="an-line" d={path(s.key)} stroke={s.color} fill="none" />
         ))}
+        {/* A lone bucket produces a path with no segment to stroke, so mark it. */}
+        {points.length === 1 &&
+          series.map((s) => (
+            <circle
+              key={s.key}
+              cx={x(0)}
+              cy={y(points[0].values?.[s.key] ?? 0)}
+              r="3"
+              fill={s.color}
+            />
+          ))}
       </svg>
       <ul className="an-legend">
         {series.map((s) => (

@@ -47,7 +47,6 @@ if sys.platform == "win32":
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    configure_telemetry(get_settings())
     await open_pool()
     try:
         yield
@@ -59,6 +58,9 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    # Must precede FastAPI(): the OpenTelemetry FastAPI instrumentor patches the
+    # class constructor, so an app built before this call emits no request spans.
+    configure_telemetry(settings)
     app = FastAPI(
         title=settings.api_title,
         lifespan=lifespan,
