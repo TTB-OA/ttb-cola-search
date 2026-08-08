@@ -23,6 +23,20 @@ export function fmtDateLong(iso) {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
+// Short date plus clock time, for stamps where the time of day matters.
+export function fmtDateTime(iso) {
+  const d = parseDate(iso);
+  if (!d) return '—';
+  return d.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  });
+}
+
 // Map a commodity/category label to the CSS tag class used by styles.css.
 export function tagClass(category) {
   switch ((category || '').toLowerCase()) {

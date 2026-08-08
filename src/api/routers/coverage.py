@@ -19,8 +19,17 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..db import fetch_all, fetch_one
-from ..mappers import COVERAGE_TABLE, DIRTY_TABLE, OCR_TABLE, SEARCH_TABLE
+from ..mappers import (
+    COVERAGE_TABLE,
+    DIRTY_TABLE,
+    OCR_TABLE,
+    SEARCH_TABLE,
+    SUMMARY_COLUMN_LIST,
+    select_columns,
+    summary_from_row,
+)
 from ..models import (
+    CompleteRange,
     CoverageCounts,
     CoverageResponse,
     CoverageYear,
@@ -56,6 +65,52 @@ SELECT (SELECT count(*) FROM {DIRTY_TABLE}) AS pending_count,
          WHERE oid = to_regclass('{SEARCH_TABLE}')) AS searchable_count,
        (SELECT reltuples::bigint FROM pg_class
          WHERE oid = to_regclass('{OCR_TABLE}')) AS label_text_count
+"""
+
+# A COLA is fully processed once the detail pass has run and every image it
+# actually stored has been both read by OCR and embedded. This is the per-record
+# form of the stage definitions behind cola_coverage_year.
+_COMPLETE_PREDICATE = """--sql
+    c.detail_scraped_on IS NOT NULL
+    AND EXISTS (
+        SELECT 1 FROM cola_images i
+         WHERE i.cola_id = c.cola_id
+           AND i.download_status = 'SUCCESS'
+           AND i.blob_name IS NOT NULL
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM cola_images i
+         WHERE i.cola_id = c.cola_id
+           AND i.download_status = 'SUCCESS'
+           AND i.blob_name IS NOT NULL
+           AND (
+                i.image_feature_vector IS NULL
+                OR NOT EXISTS (
+                    SELECT 1 FROM cola_image_analysis a
+                     WHERE a.cola_id = i.cola_id
+                       AND a.file_name = i.file_name
+                       AND a.analysis_status IN ('SUCCESS', 'NONE')
+                )
+           )
+    )
+"""
+
+# The CTE is read three times, so the qualifying set is materialised once and
+# both ends of the range come out of a single pass over it.
+_COMPLETE_RANGE_SQL = f"""--sql
+WITH complete AS (
+    SELECT c.cola_id, c.completed_date
+      FROM colas c
+     WHERE c.completed_date IS NOT NULL AND {_COMPLETE_PREDICATE}
+), bounds AS (
+    SELECT (SELECT cola_id FROM complete
+             ORDER BY completed_date, cola_id LIMIT 1) AS earliest_id,
+           (SELECT cola_id FROM complete
+             ORDER BY completed_date DESC, cola_id DESC LIMIT 1) AS latest_id
+)
+SELECT b.earliest_id, b.latest_id, {select_columns(SUMMARY_COLUMN_LIST, "s")}
+  FROM bounds b
+  JOIN {SEARCH_TABLE} s ON s.cola_id IN (b.earliest_id, b.latest_id)
 """
 
 
@@ -102,6 +157,24 @@ async def _search_status() -> SearchIndexStatus | None:
     )
 
 
+async def _complete_range() -> CompleteRange | None:
+    try:
+        rows = await fetch_all(_COMPLETE_RANGE_SQL)
+    except Exception:  # noqa: BLE001 - coverage is still worth showing without it
+        logger.warning("could not read the fully-processed range", exc_info=True)
+        return None
+
+    result = CompleteRange()
+    for row in rows:
+        summary = summary_from_row(row)
+        # A single complete record is both ends, so these are not exclusive.
+        if row["cola_id"] == row.get("earliest_id"):
+            result.earliest = summary
+        if row["cola_id"] == row.get("latest_id"):
+            result.latest = summary
+    return result
+
+
 def _year_from_row(row: dict[str, Any]) -> CoverageYear:
     return CoverageYear(
         year=int(row["coverage_year"]),
@@ -146,6 +219,7 @@ async def _load() -> CoverageResponse:
         years=years,
         totals=_totals(years),
         search=await _search_status(),
+        complete_range=await _complete_range(),
         as_of=as_of,
     )
 

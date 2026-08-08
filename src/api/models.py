@@ -167,11 +167,24 @@ class SearchIndexStatus(ApiModel):
     oldest_pending_at: datetime | None = None
 
 
+class CompleteRange(ApiModel):
+    """Oldest and newest COLAs that finished every pipeline stage.
+
+    Both are null until at least one record has cleared detail, images, OCR and
+    embedding; they are the same record when only one has.
+    """
+
+    earliest: ColaSummary | None = None
+    latest: ColaSummary | None = None
+
+
 class CoverageResponse(ApiModel):
     years: list[CoverageYear] = []
     totals: CoverageCounts = CoverageCounts()
     # Null when the status query failed, so the rest of the page still renders.
     search: SearchIndexStatus | None = None
+    # Null when the lookup failed; the rest of the page still renders.
+    complete_range: CompleteRange | None = None
     # When the coverage table was last rebuilt; absent if it has never run.
     as_of: datetime | None = None
 

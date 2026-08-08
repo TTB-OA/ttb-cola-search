@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -38,6 +38,18 @@ def _status(**overrides):
     } | overrides
 
 
+def _summary(cola_id: int, earliest_id: int, latest_id: int, **overrides):
+    return {
+        "earliest_id": earliest_id,
+        "latest_id": latest_id,
+        "cola_id": cola_id,
+        "brand_name": "Test Brand",
+        "completed_date": date(2026, 5, 6),
+        "ct_commodity": "wine",
+        "ct_source": "domestic",
+    } | overrides
+
+
 @pytest.fixture(autouse=True)
 def clean():
     coverage_router.reset_cache()
@@ -50,13 +62,14 @@ def client():
     return TestClient(app)
 
 
-def stub(monkeypatch, rows, status=None) -> list[str]:
+def stub(monkeypatch, rows, status=None, complete=()) -> list[str]:
     """Replace the database reads; returns the list of queries actually issued."""
     calls: list[str] = []
 
     async def fake_fetch_all(query, params=None):
         calls.append(query)
-        return list(rows)
+        # Two different reads share fetch_all, so dispatch on the query itself.
+        return list(complete) if "bounds" in query else list(rows)
 
     async def fake_fetch_one(query, params=None):
         calls.append(query)
@@ -150,5 +163,48 @@ def test_repeat_requests_are_served_from_cache(client, monkeypatch):
     calls = stub(monkeypatch, [_row(2025)])
     client.get(PATH)
     client.get(PATH)
-    # One coverage read plus one status read, and nothing on the second request.
-    assert len(calls) == 2
+    # Coverage, status and complete-range reads, and nothing on the second request.
+    assert len(calls) == 3
+
+
+def test_complete_range_reports_both_ends(client, monkeypatch):
+    stub(
+        monkeypatch,
+        [_row(2025)],
+        complete=[
+            _summary(1, 1, 2, completed_date=date(2024, 1, 2)),
+            _summary(2, 1, 2, completed_date=date(2026, 3, 4)),
+        ],
+    )
+    rng = client.get(PATH).json()["completeRange"]
+    assert rng["earliest"]["id"] == 1
+    assert rng["earliest"]["approvalDate"] == "2024-01-02"
+    assert rng["latest"]["id"] == 2
+
+
+def test_a_single_complete_record_is_both_ends_of_the_range(client, monkeypatch):
+    stub(monkeypatch, [_row(2025)], complete=[_summary(7, 7, 7)])
+    rng = client.get(PATH).json()["completeRange"]
+    assert rng["earliest"]["id"] == 7
+    assert rng["latest"]["id"] == 7
+
+
+def test_no_complete_records_yields_an_empty_range_rather_than_an_error(client, monkeypatch):
+    stub(monkeypatch, [_row(2025)], complete=[])
+    rng = client.get(PATH).json()["completeRange"]
+    assert rng["earliest"] is None
+    assert rng["latest"] is None
+
+
+def test_a_failed_range_query_does_not_blank_the_coverage_table(client, monkeypatch):
+    stub(monkeypatch, [_row(2025)])
+
+    async def fake_fetch_all(query, params=None):
+        if "bounds" in query:
+            raise RuntimeError("statement timeout")
+        return [_row(2025)]
+
+    monkeypatch.setattr(coverage_router, "fetch_all", fake_fetch_all)
+    body = client.get(PATH).json()
+    assert body["completeRange"] is None
+    assert body["years"][0]["year"] == 2025
