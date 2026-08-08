@@ -103,15 +103,21 @@ function useRenderedImageRect(stageRef, src) {
   return rect;
 }
 
+// The .bbox border is drawn inside the element (box-sizing: border-box), so
+// grow the frame by its own width plus a pixel of clearance to keep the stroke
+// off the text it is pointing at. Keep in sync with .bbox in pages.css.
+const BBOX_BORDER = 2;
+const BBOX_OUTSET = BBOX_BORDER + 1;
+
 function BoundingBox({ item, stageRef, src }) {
   const rect = useRenderedImageRect(stageRef, src);
   if (!rect) return null;
   const b = item.box;
   const style = {
-    left: rect.left + (b.x / 100) * rect.width + 'px',
-    top: rect.top + (b.y / 100) * rect.height + 'px',
-    width: (b.w / 100) * rect.width + 'px',
-    height: (b.h / 100) * rect.height + 'px',
+    left: rect.left + (b.x / 100) * rect.width - BBOX_OUTSET + 'px',
+    top: rect.top + (b.y / 100) * rect.height - BBOX_OUTSET + 'px',
+    width: (b.w / 100) * rect.width + BBOX_OUTSET * 2 + 'px',
+    height: (b.h / 100) * rect.height + BBOX_OUTSET * 2 + 'px',
   };
   return (
     <div className="bbox" style={style}>
