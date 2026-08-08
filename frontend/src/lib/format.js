@@ -1,19 +1,25 @@
 // Small presentation helpers shared across pages/components.
 
+// Parse a bare YYYY-MM-DD as a local calendar date; Date() reads it as UTC,
+// which slips back a day west of Greenwich.
+function parseDate(iso) {
+  if (!iso) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso).trim());
+  const d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 // Format an ISO date (or date-time) into a short US date, or an em dash.
 export function fmtDate(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
+  const d = parseDate(iso);
+  if (!d) return '—';
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-// Same, but with the month spelled out. Parsed as local parts because a bare
-// YYYY-MM-DD string is treated as UTC and slips back a day west of Greenwich.
+// Same, but with the month spelled out.
 export function fmtDateLong(iso) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
-  if (!m) return fmtDate(iso);
-  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const d = parseDate(iso);
+  if (!d) return '—';
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 }
 
