@@ -54,6 +54,14 @@ function hasBox(item) {
   return b && ['x', 'y', 'w', 'h'].every((k) => typeof b[k] === 'number');
 }
 
+// Client rects come back post-transform, so divide them out to get the layout
+// pixels the overlay is positioned in (the lightbox stage can be scaled).
+function cssScale(el) {
+  const t = getComputedStyle(el).transform;
+  if (!t || t === 'none') return 1;
+  return new DOMMatrixReadOnly(t).a || 1;
+}
+
 // The stage is not the image: the photo box adds padding and object-fit:
 // contain letterboxes the artwork inside it. Measuring the rendered <img>
 // keeps box percentages aligned without hard-coding those insets.
@@ -78,12 +86,15 @@ function useRenderedImageRect(stageRef, src) {
         setRect(null);
         return;
       }
-      const scale = Math.min(imgBox.width / nw, imgBox.height / nh);
+      const z = cssScale(stage);
+      const boxW = imgBox.width / z;
+      const boxH = imgBox.height / z;
+      const scale = Math.min(boxW / nw, boxH / nh);
       const w = nw * scale;
       const h = nh * scale;
       setRect({
-        left: imgBox.left - stageBox.left + (imgBox.width - w) / 2,
-        top: imgBox.top - stageBox.top + (imgBox.height - h) / 2,
+        left: (imgBox.left - stageBox.left) / z + (boxW - w) / 2,
+        top: (imgBox.top - stageBox.top) / z + (boxH - h) / 2,
         width: w,
         height: h,
       });
@@ -129,7 +140,12 @@ function BoundingBox({ item, stageRef, src }) {
   );
 }
 
+// Desktop has no pinch gesture, so the full-size view gets a click-to-zoom
+// that pans with the cursor.
+const LB_ZOOM = 2.6;
+
 function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) {
+  const [zoom, setZoom] = useState(null);
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -145,9 +161,20 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
     };
   }, [face, faces]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A new face means a new image, so drop back to the fitted view.
+  useEffect(() => setZoom(null), [face]);
+
   const faceImages = imagesByFace[face] || [];
   const cur = (hlItem && faceImages.find((im) => im.fileName === hlItem.file)) || faceImages[0];
   const stageRef = useRef(null);
+
+  // Percentages are read off the untransformed stage so panning stays steady.
+  const originFrom = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const clamp = (v) => Math.min(100, Math.max(0, v));
+    return { x: clamp(((e.clientX - r.left) / r.width) * 100), y: clamp(((e.clientY - r.top) / r.height) * 100) };
+  };
+
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="Full-size label image">
       <button className="lb-close" onClick={onClose} aria-label="Close">
@@ -163,11 +190,21 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
             <Icon name="chevLeft" size={26} />
           </button>
         )}
-        <div className="lb-stage" ref={stageRef}>
-          <LabelThumb rec={rec} src={cur && cur.url} />
-          {hlItem && hlItem.face === face && hasBox(hlItem) && (
-            <BoundingBox item={hlItem} stageRef={stageRef} src={cur && cur.url} />
-          )}
+        <div
+          className={'lb-stage' + (zoom ? ' zoomed' : '')}
+          onClick={(e) => setZoom(zoom ? null : originFrom(e))}
+          onMouseMove={(e) => zoom && setZoom(originFrom(e))}
+        >
+          <div
+            className="lb-zoom"
+            ref={stageRef}
+            style={zoom ? { transform: `scale(${LB_ZOOM})`, transformOrigin: `${zoom.x}% ${zoom.y}%` } : undefined}
+          >
+            <LabelThumb rec={rec} src={cur && cur.url} />
+            {hlItem && hlItem.face === face && hasBox(hlItem) && (
+              <BoundingBox item={hlItem} stageRef={stageRef} src={cur && cur.url} />
+            )}
+          </div>
           <div className="lb-cap">
             <b>{rec.brand}</b> — {face} label · TTB ID {rec.ttbId}
           </div>

@@ -192,18 +192,28 @@
 /* ---------- full-size lightbox ---------- */
 .lv-expand { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 6px; background: rgba(27,27,27,.78); color: #fff; border: 0; border-radius: 999px; font-size: 12px; font-weight: 700; padding: 6px 12px; cursor: pointer; opacity: 0; transition: opacity .15s ease; backdrop-filter: blur(2px); }
 .lv-stage:hover .lv-expand, .lv-expand:focus { opacity: 1; }
-.lightbox { position: fixed; inset: 0; z-index: 200; background: rgba(16,20,26,.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; animation: lbIn .18s ease; padding: 32px; }
+.lightbox { position: fixed; inset: 0; z-index: 200; background: rgba(16,20,26,.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; animation: lbIn .18s ease; padding: 32px; overflow: hidden; }
 @keyframes lbIn { from { opacity: 0; } }
-.lb-body { display: flex; align-items: center; gap: 22px; min-height: 0; flex: 0 1 auto; }
-.lb-stage { position: relative; width: min(52vh, 78vw); }
+.lb-body { display: flex; align-items: center; justify-content: center; gap: 22px; width: 100%; min-height: 0; flex: 1 1 auto; padding-bottom: 34px; }
+/* The stage claims the whole viewport row; the image inside sets its own width. */
+.lb-stage { position: relative; align-self: stretch; max-width: 100%; display: flex; cursor: zoom-in; }
+.lb-stage.zoomed { cursor: zoom-out; }
+.lb-zoom { position: relative; height: 100%; max-width: 100%; display: flex; will-change: transform; }
 .lb-stage .label-thumb { box-shadow: 0 24px 64px rgba(0,0,0,.5); }
+/* Full-size view drops the 4/5 crop frame so the artwork fills the height.
+   Size containment has to go too, or the auto width would collapse to zero. */
+.lb-stage .label-thumb.label-photo { aspect-ratio: auto; container-type: normal; width: auto; height: 100%; max-width: 100%; padding: 0; }
+.lb-stage .label-thumb.label-photo img { width: auto; height: 100%; max-width: 100%; }
+.lb-stage .label-thumb.style-classic { width: auto; height: 100%; }
 .lb-cap { position: absolute; left: 0; right: 0; bottom: -34px; text-align: center; color: #cfd6df; font-size: 13.5px; }
+/* The zoomed image spills past the stage, so get the caption out of its way. */
+.lb-stage.zoomed .lb-cap { opacity: 0; }
 .lb-cap b { color: #fff; }
-.lb-arrow { background: rgba(255,255,255,.1); border: 0; color: #fff; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; }
+.lb-arrow { background: rgba(255,255,255,.1); border: 0; color: #fff; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; flex: 0 0 auto; position: relative; z-index: 1; }
 .lb-arrow:hover { background: rgba(255,255,255,.22); }
-.lb-close { position: absolute; top: 22px; right: 26px; background: rgba(255,255,255,.1); border: 0; color: #fff; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+.lb-close { position: absolute; top: 22px; right: 26px; z-index: 2; background: rgba(255,255,255,.1); border: 0; color: #fff; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
 .lb-close:hover { background: rgba(255,255,255,.22); }
-.lb-thumbs { display: flex; gap: 12px; margin-top: 28px; }
+.lb-thumbs { display: flex; gap: 12px; flex: 0 0 auto; position: relative; z-index: 1; }
 .lb-thumbs .lv-thumb { width: 64px; background: #fff; }
 .lb-thumbs .lv-thumb.on { outline-color: var(--gold); }
 
