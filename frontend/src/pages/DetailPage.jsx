@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -54,39 +54,67 @@ function hasBox(item) {
   return b && ['x', 'y', 'w', 'h'].every((k) => typeof b[k] === 'number');
 }
 
-// Label images are letterboxed by object-fit: contain inside a fixed 4/5 stage,
-// so percentages of the image must be remapped onto the rendered image rect.
-const STAGE_ASPECT = 4 / 5;
+// The stage is not the image: the photo box adds padding and object-fit:
+// contain letterboxes the artwork inside it. Measuring the rendered <img>
+// keeps box percentages aligned without hard-coding those insets.
+function useRenderedImageRect(stageRef, src) {
+  const [rect, setRect] = useState(null);
 
-function boxStyle(item, img) {
-  const b = item.box;
-  const iw = img && img.widthPx;
-  const ih = img && img.heightPx;
-  let sx = 100;
-  let sy = 100;
-  let ox = 0;
-  let oy = 0;
-  if (iw && ih) {
-    const ia = iw / ih;
-    if (ia > STAGE_ASPECT) {
-      sy = (STAGE_ASPECT / ia) * 100;
-      oy = (100 - sy) / 2;
-    } else {
-      sx = (ia / STAGE_ASPECT) * 100;
-      ox = (100 - sx) / 2;
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return undefined;
+    const el = stage.querySelector('img');
+    if (!el) {
+      setRect(null);
+      return undefined;
     }
-  }
-  return {
-    left: ox + (b.x * sx) / 100 + '%',
-    top: oy + (b.y * sy) / 100 + '%',
-    width: (b.w * sx) / 100 + '%',
-    height: (b.h * sy) / 100 + '%',
-  };
+
+    const measure = () => {
+      const stageBox = stage.getBoundingClientRect();
+      const imgBox = el.getBoundingClientRect();
+      const nw = el.naturalWidth;
+      const nh = el.naturalHeight;
+      if (!imgBox.width || !imgBox.height || !nw || !nh) {
+        setRect(null);
+        return;
+      }
+      const scale = Math.min(imgBox.width / nw, imgBox.height / nh);
+      const w = nw * scale;
+      const h = nh * scale;
+      setRect({
+        left: imgBox.left - stageBox.left + (imgBox.width - w) / 2,
+        top: imgBox.top - stageBox.top + (imgBox.height - h) / 2,
+        width: w,
+        height: h,
+      });
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(stage);
+    ro.observe(el);
+    el.addEventListener('load', measure);
+    return () => {
+      ro.disconnect();
+      el.removeEventListener('load', measure);
+    };
+  }, [stageRef, src]);
+
+  return rect;
 }
 
-function BoundingBox({ item, img }) {
+function BoundingBox({ item, stageRef, src }) {
+  const rect = useRenderedImageRect(stageRef, src);
+  if (!rect) return null;
+  const b = item.box;
+  const style = {
+    left: rect.left + (b.x / 100) * rect.width + 'px',
+    top: rect.top + (b.y / 100) * rect.height + 'px',
+    width: (b.w / 100) * rect.width + 'px',
+    height: (b.h / 100) * rect.height + 'px',
+  };
   return (
-    <div className="bbox" style={boxStyle(item, img)}>
+    <div className="bbox" style={style}>
       <span className="bbox-tag">
         {String(item.type || '').replace(/_/g, ' ')}
         {item.conf != null ? ` · ${Math.round(item.conf * 100)}%` : ''}
@@ -113,6 +141,7 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
 
   const faceImages = imagesByFace[face] || [];
   const cur = (hlItem && faceImages.find((im) => im.fileName === hlItem.file)) || faceImages[0];
+  const stageRef = useRef(null);
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label="Full-size label image">
       <button className="lb-close" onClick={onClose} aria-label="Close">
@@ -128,9 +157,11 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
             <Icon name="chevLeft" size={26} />
           </button>
         )}
-        <div className="lb-stage">
+        <div className="lb-stage" ref={stageRef}>
           <LabelThumb rec={rec} src={cur && cur.url} />
-          {hlItem && hlItem.face === face && hasBox(hlItem) && <BoundingBox item={hlItem} img={cur} />}
+          {hlItem && hlItem.face === face && hasBox(hlItem) && (
+            <BoundingBox item={hlItem} stageRef={stageRef} src={cur && cur.url} />
+          )}
           <div className="lb-cap">
             <b>{rec.brand}</b> — {face} label · TTB ID {rec.ttbId}
           </div>
@@ -191,6 +222,7 @@ export default function DetailPage() {
   const [activeImg, setActiveImg] = useState('front');
   const [hlItem, setHlItem] = useState(null);
   const [lightbox, setLightbox] = useState(false);
+  const mainStageRef = useRef(null);
 
   const matchedItems = useMemo(
     () => (q ? items.filter((it) => (it.text || '').toLowerCase().includes(q)) : []),
@@ -321,10 +353,10 @@ export default function DetailPage() {
           <div>
             <div className="panel label-viewer" data-tour="detail-images">
               <div className="lv-main">
-                <div className="lv-stage" style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
+                <div className="lv-stage" ref={mainStageRef} style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
                   <LabelThumb rec={rec} src={currentImage && currentImage.url} style={{ aspectRatio: '4/5' }} />
                   {hlItem && activeImg === hlItem.face && hasBox(hlItem) && (
-                    <BoundingBox item={hlItem} img={currentImage} />
+                    <BoundingBox item={hlItem} stageRef={mainStageRef} src={currentImage && currentImage.url} />
                   )}
                   <button className="lv-expand" onClick={() => { track('lightbox_opened', { face: activeImg }); setLightbox(true); }} title="View full size" aria-label="View full size">
                     <Icon name="expand" size={16} /> Full size
