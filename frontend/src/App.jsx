@@ -1,5 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
-import GovBanner from './components/GovBanner.jsx';
+// import GovBanner from './components/GovBanner.jsx'; // temporarily disabled
 import Header from './components/Header.jsx';
 import Footer from './components/Footer.jsx';
 import { TourProvider } from './components/Tour.jsx';
@@ -12,7 +12,7 @@ import AnalyticsPage from './pages/AnalyticsPage.jsx';
 export default function App() {
   return (
     <TourProvider>
-      <GovBanner />
+      {/* <GovBanner /> temporarily disabled */}
       <Header />
       <main>
         <Routes>
