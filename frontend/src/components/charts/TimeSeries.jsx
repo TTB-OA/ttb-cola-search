@@ -12,13 +12,34 @@ function niceMax(value) {
   return Math.ceil(value / mag) * mag;
 }
 
-function shortDate(iso) {
-  const d = new Date(iso);
-  // Buckets are aligned to UTC boundaries, so label them in UTC: rendering the
-  // 00:00Z start of today's bucket locally would show it as yesterday.
-  return Number.isNaN(d.getTime())
-    ? ''
-    : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// The smallest gap between buckets is the bin width the API used, which is
+// under a day on the shorter ranges.
+function bucketWidth(points) {
+  let smallest = Infinity;
+  for (let i = 1; i < points.length; i += 1) {
+    const gap = new Date(points[i].t) - new Date(points[i - 1].t);
+    if (gap > 0 && gap < smallest) smallest = gap;
+  }
+  return Number.isFinite(smallest) ? smallest : DAY_MS;
+}
+
+function tickFormatter(points) {
+  // Sub-daily bins need the hour or every label on a day repeats, and an hour
+  // is only meaningful in the reader's timezone. Daily bins stay in UTC, since
+  // those buckets start at 00:00Z and would otherwise read as the day before.
+  const sub = bucketWidth(points) < DAY_MS;
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    month: 'numeric',
+    day: 'numeric',
+    timeZone: sub ? 'America/New_York' : 'UTC',
+    ...(sub ? { hour: 'numeric' } : {}),
+  });
+  return (iso) => {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : fmt.format(d).replace(', ', ' ');
+  };
 }
 
 export default function TimeSeries({ points, series, label }) {
@@ -45,6 +66,7 @@ export default function TimeSeries({ points, series, label }) {
   const ticks = [0, max / 2, max];
   // Cap the axis at a handful of labels so they never collide.
   const every = Math.max(1, Math.ceil(points.length / 6));
+  const tickLabel = tickFormatter(points);
 
   return (
     <div className="an-chart">
@@ -66,7 +88,7 @@ export default function TimeSeries({ points, series, label }) {
               y={H - 6}
               textAnchor={i === 0 ? 'start' : 'middle'}
             >
-              {shortDate(p.t)}
+              {tickLabel(p.t)}
             </text>
           ) : null
         )}
