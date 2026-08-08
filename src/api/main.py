@@ -37,7 +37,7 @@ from .routers import (
     reference,
     search,
 )
-from .telemetry import configure_telemetry
+from .telemetry import configure_telemetry, instrument_app
 
 # psycopg's async driver cannot run on Windows' default ProactorEventLoop; select
 # the SelectorEventLoop policy before uvicorn creates its loop.
@@ -58,8 +58,6 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    # Must precede FastAPI(): the OpenTelemetry FastAPI instrumentor patches the
-    # class constructor, so an app built before this call emits no request spans.
     configure_telemetry(settings)
     app = FastAPI(
         title=settings.api_title,
@@ -68,6 +66,7 @@ def create_app() -> FastAPI:
         # without first clicking the button.
         swagger_ui_parameters={"tryItOutEnabled": True},
     )
+    instrument_app(app)
 
     app.add_middleware(
         CORSMiddleware,

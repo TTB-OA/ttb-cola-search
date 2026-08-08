@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 from .config import Settings
 
@@ -69,3 +70,23 @@ def configure_telemetry(settings: Settings) -> bool:
     _configured = True
     logger.info("Telemetry enabled (sampling_ratio=%s).", settings.telemetry_sampling_ratio)
     return True
+
+
+def instrument_app(app: Any) -> None:
+    """Attach request tracing to an already-constructed FastAPI app.
+
+    ``configure_azure_monitor`` instruments FastAPI by rebinding
+    ``fastapi.FastAPI`` to a subclass. Any module that did ``from fastapi import
+    FastAPI`` at import time holds the original class and so builds an
+    uninstrumented app, which is why this is done explicitly rather than relying
+    on call ordering.
+    """
+    if not _configured:
+        return
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        # No-op if the class-level patch already got to this instance.
+        FastAPIInstrumentor.instrument_app(app, excluded_urls=EXCLUDED_URLS)
+    except Exception:
+        logger.exception("FastAPI request instrumentation failed; continuing without it.")

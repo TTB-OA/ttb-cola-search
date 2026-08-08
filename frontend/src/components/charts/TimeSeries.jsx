@@ -14,9 +14,11 @@ function niceMax(value) {
 
 function shortDate(iso) {
   const d = new Date(iso);
+  // Buckets are aligned to UTC boundaries, so label them in UTC: rendering the
+  // 00:00Z start of today's bucket locally would show it as yesterday.
   return Number.isNaN(d.getTime())
     ? ''
-    : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+    : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
 }
 
 export default function TimeSeries({ points, series, label }) {
