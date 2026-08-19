@@ -53,9 +53,12 @@ _ANN_OVERFETCH = 6
 # narrow, nearly equidistant band (cosine 0.64-0.92, sd 0.03). Greedy HNSW descent
 # has almost no gradient to follow there and settles in a local minimum: at the old
 # floor of 64 the scan lost the true 1st and 2nd nearest neighbours outright.
-# Measured recall@10 on a cross-modal query: 70% at ef 144, 90% at 400, 100% at 600.
-# pgvector caps this at 1000.
-_HNSW_EF_SEARCH = 600
+# 1000 is pgvector's ceiling, and the needed value scales with the corpus: 600 gave
+# full recall at 80k indexed images but already dropped a true rank-3 label at 157k.
+# The embedding backfill is still running, so once it lands this cannot be raised
+# further and the index itself has to improve (partial index over the ~16% of rows
+# that are embedded, plus a rebuild at higher m / ef_construction).
+_HNSW_EF_SEARCH = 1000
 
 _QUERY_VECTOR_CACHE_SIZE = 256
 _query_vector_cache: OrderedDict[str, str] = OrderedDict()
