@@ -51,6 +51,20 @@ class Qualification(ApiModel):
     comment: str | None = None
 
 
+class ProcessingStatus(ApiModel):
+    """Which enrichment passes have run for a COLA.
+
+    Only the list pass is guaranteed; detail fill, image download, OCR and
+    embedding are backfilled asynchronously, so these distinguish "absent from
+    the data" from "not processed yet".
+    """
+
+    detail_loaded: bool = False
+    images_loaded: bool = False
+    text_analyzed: bool = False
+    embedded: bool = False
+
+
 class ColaSummary(ApiModel):
     id: int
     ttb_id: str
@@ -101,6 +115,7 @@ class ColaDetail(ColaSummary):
     image_items: list[ImageItem] = []
     details_url: str | None = None
     form_url: str | None = None
+    processing: ProcessingStatus = ProcessingStatus()
 
 
 class FacetBucket(ApiModel):

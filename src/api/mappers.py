@@ -12,6 +12,7 @@ from .models import (
     ImageItem,
     ImageRef,
     PermitRef,
+    ProcessingStatus,
     Qualification,
 )
 
@@ -77,6 +78,12 @@ DETAIL_COLUMN_LIST: tuple[str, ...] = SUMMARY_COLUMN_LIST + (
     "fax_no",
     "cola_details_url",
     "cola_form_url",
+    # Pipeline-stage rollups, surfaced so the UI can say what has not been run
+    # rather than showing an empty field.
+    "detail_scraped_on",
+    "image_success_count",
+    "analysis_count",
+    "image_vector_count",
 )
 
 
@@ -372,6 +379,28 @@ def _item_sort_key(item: ImageItem) -> tuple[int, str, float, float]:
     )
 
 
+def _positive(value: Any) -> bool:
+    try:
+        return int(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def processing_from_row(base: Mapping[str, Any]) -> ProcessingStatus:
+    """Which pipeline stages have actually run for this COLA.
+
+    Everything outside the list pass is optional and backfilled over time, so
+    an empty field can mean either "not in the data" or "not processed yet";
+    these flags let the UI tell the two apart.
+    """
+    return ProcessingStatus(
+        detail_loaded=base.get("detail_scraped_on") is not None,
+        images_loaded=_positive(base.get("image_success_count")),
+        text_analyzed=_positive(base.get("analysis_count")),
+        embedded=_positive(base.get("image_vector_count")),
+    )
+
+
 def detail_from_rows(
     base: dict[str, Any],
     images: list[dict[str, Any]],
@@ -418,4 +447,5 @@ def detail_from_rows(
         image_items=sorted((image_item_from_row(r) for r in items), key=_item_sort_key),
         details_url=base.get("cola_details_url"),
         form_url=base.get("cola_form_url"),
+        processing=processing_from_row(base),
     )

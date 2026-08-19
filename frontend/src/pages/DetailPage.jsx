@@ -10,11 +10,41 @@ import { track } from '../lib/analytics.js';
 import { fmtDate, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
 
-function Field({ label, children, mono }) {
+function isBlank(value) {
+  return value == null || value === false || (typeof value === 'string' && !value.trim());
+}
+
+// Fields with nothing behind them are dropped rather than shown as an em dash,
+// and a section that ends up with no fields at all disappears with them.
+function FieldSection({ title, fields = [], children }) {
+  const shown = fields.filter((f) => f && !isBlank(f.value));
+  if (!shown.length && !children) return null;
   return (
-    <div className="d-field">
-      <div className="d-label">{label}</div>
-      <div className={'d-value' + (mono ? ' mono' : '')}>{children || '—'}</div>
+    <>
+      <h3 className="d-section">{title}</h3>
+      {shown.length > 0 && (
+        <div className="d-fields">
+          {shown.map((f) => (
+            <div className="d-field" key={f.label}>
+              <div className="d-label">{f.label}</div>
+              <div className={'d-value' + (f.mono ? ' mono' : '')}>{f.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {children}
+    </>
+  );
+}
+
+function Notice({ tone, title, children }) {
+  return (
+    <div className={'d-notice' + (tone ? ' ' + tone : '')}>
+      <Icon name="info" size={16} />
+      <div>
+        {title && <b>{title}</b>}
+        <div>{children}</div>
+      </div>
     </div>
   );
 }
@@ -331,10 +361,12 @@ export default function DetailPage() {
   const dropSelf = (list) => (list || []).filter((r) => String(r.id) !== String(rec.id));
   const memberSimilar = dropSelf(memberState.data);
   const othersSimilar = dropSelf(othersState.data);
+  const proc = rec.processing || {};
   const activeFaceImages = imagesByFace[activeImg] || [];
   const currentImage =
     (hlItem && activeFaceImages.find((im) => im.fileName === hlItem.file)) || activeFaceImages[0];
   const onOpen = (rid) => navigate(`/cola/${rid}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
+  const memberPermit = rec.permitId || rec.permit;
 
   return (
     <div className="detail-page">
@@ -391,6 +423,14 @@ export default function DetailPage() {
           </div>
         </div>
 
+        {!proc.detailLoaded && (
+          <Notice tone="warn" title="Full record details have not been loaded for this COLA.">
+            Only the fields published in TTB's COLA listing are shown below. The complete permit list,
+            submitter contact information, qualifications and grape varietal data have not been
+            retrieved yet.
+          </Notice>
+        )}
+
         <div className="detail-grid">
           {/* label images */}
           <div>
@@ -428,69 +468,66 @@ export default function DetailPage() {
           {/* fields */}
           <div>
             <div className="panel d-panel" data-tour="detail-fields">
-              <h3 className="d-section">Label identity</h3>
-              <div className="d-fields">
-                <Field label="Brand name">{rec.brand}</Field>
-                <Field label="Fanciful name">{rec.fanciful}</Field>
-                <Field label="Class / Type">{rec.classType}</Field>
-                <Field label="Class / Type code" mono>
-                  {rec.classTypeCode}
-                </Field>
-                <Field label="Net contents">{rec.netContents}</Field>
-                <Field label="Alcohol content">{rec.abv ? `${rec.abv} ALC/VOL` : null}</Field>
-              </div>
+              <FieldSection
+                title="Label identity"
+                fields={[
+                  { label: 'Brand name', value: rec.brand },
+                  { label: 'Fanciful name', value: rec.fanciful },
+                  { label: 'Class / Type', value: rec.classType || rec.classSub },
+                  { label: 'Net contents', value: rec.netContents },
+                  { label: 'Alcohol content', value: rec.abv ? `${rec.abv} ALC/VOL` : null },
+                ]}
+              />
 
-              <h3 className="d-section">Origin &amp; status</h3>
-              <div className="d-fields">
-                <Field label="Source">{rec.originGroup}</Field>
-                <Field label="Origin">{rec.originFlag ? rec.originFlag + ' ' : ''}{rec.origin}</Field>
-                <Field label="Origin code" mono>
-                  {rec.originCode}
-                </Field>
-                <Field label="Status">{rec.status}</Field>
-                <Field label="For sale in">{rec.forSaleIn}</Field>
-                <Field label="Formula" mono>
-                  {rec.formula || 'Not required'}
-                </Field>
-                {rec.category === 'Wine' && (
-                  <Field label="Grape varietal">
-                    {rec.grapeVarietals && rec.grapeVarietals.length ? rec.grapeVarietals.join(', ') : '—'}
-                  </Field>
-                )}
-                {rec.category === 'Wine' && <Field label="Appellation">{rec.appellation || '—'}</Field>}
-              </div>
+              <FieldSection
+                title="Origin & status"
+                fields={[
+                  { label: 'Source', value: rec.originGroup },
+                  {
+                    label: 'Origin',
+                    value: rec.origin ? `${rec.originFlag ? rec.originFlag + ' ' : ''}${rec.origin}` : null,
+                  },
+                  { label: 'Status', value: rec.status },
+                  { label: 'For sale in', value: rec.forSaleIn },
+                  // "Not required" is only a fact once the detail pass has run.
+                  { label: 'Formula', value: rec.formula || (proc.detailLoaded ? 'Not required' : null), mono: true },
+                  {
+                    label: 'Grape varietal',
+                    value: rec.grapeVarietals && rec.grapeVarietals.length ? rec.grapeVarietals.join(', ') : null,
+                  },
+                  { label: 'Appellation', value: rec.appellation },
+                ]}
+              />
 
-              <h3 className="d-section">Application &amp; permit</h3>
-              <div className="d-fields">
-                <Field label="Applicant / business">{rec.applicant}</Field>
-                <Field label="Mailing address">{rec.mailingAddress}</Field>
-                <Field label="Application type">{rec.applicationType}</Field>
-                <Field label="Permit / plant number" mono>
-                  {rec.permitId || rec.permit}
-                </Field>
-                <Field label="Serial number" mono>
-                  {rec.serial}
-                </Field>
-                <Field label="Vendor code" mono>
-                  {rec.vendorCode}
-                </Field>
-                <Field label="Received as">{rec.receivedDescription || rec.receivedCode}</Field>
-                <Field label="Date approved">{fmtDate(rec.approvalDate)}</Field>
-              </div>
+              <FieldSection
+                title="Application & permit"
+                fields={[
+                  { label: 'Applicant / business', value: rec.applicant },
+                  { label: 'Mailing address', value: rec.mailingAddress },
+                  { label: 'Application type', value: rec.applicationType },
+                  // Redundant with the permit list below, which carries the same
+                  // number plus the name and address.
+                  {
+                    label: 'Permit / plant number',
+                    value: rec.permits && rec.permits.length ? null : rec.permitId || rec.permit,
+                    mono: true,
+                  },
+                  { label: 'Serial number', value: rec.serial, mono: true },
+                  { label: 'Vendor code', value: rec.vendorCode, mono: true },
+                  { label: 'Received as', value: rec.receivedDescription },
+                  { label: 'Date approved', value: fmtDate(rec.approvalDate) },
+                ]}
+              />
 
-              <h3 className="d-section">Submitter</h3>
-              <div className="d-fields">
-                <Field label="Name">{rec.submitter}</Field>
-                <Field label="Submitter ID" mono>
-                  {rec.submitterId}
-                </Field>
-                <Field label="Telephone" mono>
-                  {rec.submitterPhone}
-                </Field>
-                <Field label="Fax" mono>
-                  {rec.submitterFax}
-                </Field>
-              </div>
+              <FieldSection
+                title="Submitter"
+                fields={[
+                  { label: 'Name', value: rec.submitter },
+                  { label: 'Submitter ID', value: rec.submitterId, mono: true },
+                  { label: 'Telephone', value: rec.submitterPhone, mono: true },
+                  { label: 'Fax', value: rec.submitterFax, mono: true },
+                ]}
+              />
 
               {rec.permits && rec.permits.length > 0 && (
                 <>
@@ -563,9 +600,21 @@ export default function DetailPage() {
                 </div>
               )}
               {items.length === 0 ? (
-                <div className="muted" style={{ fontSize: 13, padding: '8px 0' }}>
-                  No text has been extracted from this label's images yet.
-                </div>
+                !proc.imagesLoaded ? (
+                  <Notice>
+                    No label images have been retrieved for this record, so there is nothing to read
+                    text from.
+                  </Notice>
+                ) : !proc.textAnalyzed ? (
+                  <Notice title="Text extraction has not been run on this label.">
+                    These images have not yet been processed by document intelligence, so no text,
+                    highlights or label-text search results are available for this COLA.
+                  </Notice>
+                ) : (
+                  <Notice title="Text extraction ran but found no readable text.">
+                    Document intelligence processed this label's images and returned no text.
+                  </Notice>
+                )
               ) : (
                 <>
                   <p className="ocr-hint">
@@ -613,11 +662,22 @@ export default function DetailPage() {
         </div>
 
         {/* similar labels */}
-        {memberSimilar.length > 0 && (
+        {!proc.embedded && (
+          <section style={{ marginTop: 40 }}>
+            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs</h2>
+            <Notice title="Visual similarity has not been computed for this label.">
+              {proc.imagesLoaded
+                ? "This record's images have not been converted into image embeddings yet, so visually similar COLAs from this or any other industry member cannot be shown."
+                : 'No label images have been retrieved for this record, so there is nothing to compare against other COLAs.'}
+            </Notice>
+          </section>
+        )}
+
+        {proc.embedded && memberSimilar.length > 0 && (
           <section style={{ marginTop: 40 }}>
             <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs from this industry member</h2>
             <p className="muted" style={{ margin: '0 0 16px', fontSize: 14 }}>
-              Visually similar approved labels filed under permit {rec.permit || '—'}.
+              Visually similar approved labels filed under permit {memberPermit || '—'}.
             </p>
             <div className="recent-grid">
               {memberSimilar.map((r, i) => (
@@ -627,7 +687,7 @@ export default function DetailPage() {
           </section>
         )}
 
-        {othersSimilar.length > 0 && (
+        {proc.embedded && othersSimilar.length > 0 && (
           <section style={{ marginTop: 40 }}>
             <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs from other industry members</h2>
             <p className="muted" style={{ margin: '0 0 16px', fontSize: 14 }}>
