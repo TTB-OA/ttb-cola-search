@@ -107,7 +107,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-images',
-    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
+    route: (ctx) => (ctx.colaId ? `/cola/${encodeURIComponent(ctx.colaId)}` : null),
     target: '[data-tour="detail-images"]',
     placement: 'right',
     title: 'Every approved label image',
@@ -116,7 +116,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-fields',
-    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
+    route: (ctx) => (ctx.colaId ? `/cola/${encodeURIComponent(ctx.colaId)}` : null),
     target: '[data-tour="detail-fields"]',
     placement: 'left',
     title: 'The complete certificate record',
@@ -125,7 +125,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-ocr',
-    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
+    route: (ctx) => (ctx.colaId ? `/cola/${encodeURIComponent(ctx.colaId)}` : null),
     target: '[data-tour="detail-ocr"]',
     placement: 'left',
     title: 'Text read from the label images',
@@ -134,7 +134,7 @@ export const TOUR_STEPS = [
   },
   {
     id: 'detail-similar',
-    route: (ctx) => (ctx.colaId ? `/cola/${ctx.colaId}` : null),
+    route: (ctx) => (ctx.colaId ? `/cola/${encodeURIComponent(ctx.colaId)}` : null),
     target: '[data-tour="detail-similar"]',
     placement: 'right',
     title: 'Related approvals',

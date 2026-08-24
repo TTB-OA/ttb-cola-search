@@ -611,7 +611,7 @@ export default function SearchPage() {
         )}
         <div className={'recent-grid' + (isMobile ? ' compact' : '')} data-tour="recent">
           {recent.map((r) => (
-            <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${r.id}`)}>
+            <button key={r.id} className={'recent-card' + (isMobile ? ' compact' : '')} onClick={() => navigate(`/cola/${encodeURIComponent(r.id)}`)}>
               <LabelThumb rec={r} />
               <div className="recent-meta">
                 <div className="row between gap-8">

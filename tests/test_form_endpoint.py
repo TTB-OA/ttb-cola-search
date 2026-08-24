@@ -30,7 +30,7 @@ def jpeg() -> bytes:
 
 
 DETAIL_ROW = {
-    "cola_id": 26087001000123,
+    "cola_id": "26087001000123",
     "ttb_id": "26087001000123",
     "brand_name": "Estate Reserve",
     "fanciful_name": "Old Vine",
@@ -144,7 +144,7 @@ def test_image_count_is_capped(client, monkeypatch):
 
     monkeypatch.setattr(forms_router, "fetch_all", fetch_all)
     client.get(PATH)
-    assert seen[0] == [26087001000123, forms_router.MAX_FORM_IMAGES]
+    assert seen[0] == ["26087001000123", forms_router.MAX_FORM_IMAGES]
 
 
 def test_over_the_limit_returns_429_with_retry_after(client, monkeypatch):

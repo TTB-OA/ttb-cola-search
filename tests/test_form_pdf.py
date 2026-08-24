@@ -51,7 +51,7 @@ def label(name: str = "front.jpg", **overrides) -> LabelImage:
 
 def full_detail() -> ColaDetail:
     return ColaDetail(
-        id=26087001000123,
+        id="26087001000123",
         ttb_id="26087001000123",
         serial="26J087",
         brand="Estate Reserve",
@@ -168,7 +168,7 @@ def test_renders_a_populated_record():
 
 
 def test_renders_a_record_with_nothing_but_the_required_fields():
-    bare = ColaDetail(id=1, ttb_id="1", category="Other", origin_group="Unknown")
+    bare = ColaDetail(id="1", ttb_id="1", category="Other", origin_group="Unknown")
     pdf = render_f510031(bare, [])
     assert pdf.startswith(b"%PDF-")
     assert page_count(pdf) == 1

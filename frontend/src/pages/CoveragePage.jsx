@@ -121,7 +121,7 @@ function Bookend({ label, rec }) {
       <div className="d-label">{label}</div>
       <div className="cv-fact-value">{fmtDate(rec.approvalDate)}</div>
       <div className="an-hint">
-        <Link to={`/cola/${rec.id}`}>{rec.brand || `TTB ID ${rec.ttbId}`}</Link>
+        <Link to={`/cola/${encodeURIComponent(rec.id)}`}>{rec.brand || `TTB ID ${rec.ttbId}`}</Link>
         <span className="muted"> · TTB ID {rec.ttbId}</span>
       </div>
     </div>

@@ -39,7 +39,9 @@ SORTS = {
 }
 
 # Identifier columns the free-text box probes exactly, alongside the tsvector.
-_ID_COLUMNS = ("serial_num", "permit_num", "primary_permit_id")
+# cola_id is text and matched verbatim: ids carry A/B/C/D/$ suffixes, embedded
+# spaces and leading zeros, so they cannot be normalised to a number.
+_ID_COLUMNS = ("cola_id", "serial_num", "permit_num", "primary_permit_id")
 
 # Permit id resolves against the COLA permit number, the primary permit, or the
 # GIN-indexed permits rollup.
@@ -96,18 +98,11 @@ def _build_filters(
         params.append(term)
         clause.extend(f"{c} = %s" for c in _ID_COLUMNS)
         params.extend([_id_term(term)] * len(_ID_COLUMNS))
-        if term.isdigit():
-            clause.append("cola_id = %s")
-            params.append(int(term))
         conditions.append("(" + " OR ".join(clause) + ")")
     if ttb_id:
         term = _id_term(ttb_id)
-        if term.isdigit():
-            conditions.append("(cola_id = %s OR serial_num LIKE %s)")
-            params.extend([int(term), _prefix(term)])
-        else:
-            conditions.append("serial_num LIKE %s")
-            params.append(_prefix(term))
+        conditions.append("(cola_id = %s OR serial_num LIKE %s)")
+        params.extend([term, _prefix(term)])
     if brand:
         conditions.append("brand_name ILIKE %s")
         params.append(f"%{brand}%")
@@ -434,11 +429,11 @@ async def list_colas(
 
 
 @router.get("/colas/{cola_id}", response_model=ColaDetail)
-async def get_cola(cola_id: int) -> ColaDetail:
+async def get_cola(cola_id: str) -> ColaDetail:
     return await load_detail(cola_id)
 
 
-async def load_detail(cola_id: int) -> ColaDetail:
+async def load_detail(cola_id: str) -> ColaDetail:
     """Assemble a full ColaDetail, or raise 404. Shared with the form renderer."""
     base = await fetch_one(
         f"SELECT {DETAIL_COLUMNS} FROM {SEARCH_TABLE} WHERE cola_id = %s", [cola_id]

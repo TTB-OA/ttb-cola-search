@@ -35,7 +35,7 @@ def _form_limiter() -> SlidingWindowLimiter:
     return _limiter
 
 
-async def _label_images(cola_id: int) -> list[LabelImage]:
+async def _label_images(cola_id: str) -> list[LabelImage]:
     """The COLA's artwork in gallery order, with blob bytes where readable."""
     rows = await fetch_all(
         "SELECT ci.file_name, ci.img_type, ci.width_px, ci.height_px, "
@@ -79,7 +79,7 @@ async def _label_images(cola_id: int) -> list[LabelImage]:
         "reconstruction, not the certificate TTB issued."
     ),
 )
-async def get_cola_form(cola_id: int, request: Request) -> Response:
+async def get_cola_form(cola_id: str, request: Request) -> Response:
     settings = get_settings()
     retry_after = _form_limiter().check(
         client_key(request, settings.trust_forwarded_for)

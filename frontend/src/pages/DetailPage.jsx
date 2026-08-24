@@ -365,7 +365,8 @@ export default function DetailPage() {
   const activeFaceImages = imagesByFace[activeImg] || [];
   const currentImage =
     (hlItem && activeFaceImages.find((im) => im.fileName === hlItem.file)) || activeFaceImages[0];
-  const onOpen = (rid) => navigate(`/cola/${rid}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
+  const onOpen = (rid) =>
+    navigate(`/cola/${encodeURIComponent(rid)}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
   const memberPermit = rec.permitId || rec.permit;
 
   return (

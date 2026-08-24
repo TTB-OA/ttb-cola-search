@@ -66,7 +66,8 @@ class ProcessingStatus(ApiModel):
 
 
 class ColaSummary(ApiModel):
-    id: int
+    # Verbatim TTB id: not numeric, suffixes and embedded spaces occur.
+    id: str
     ttb_id: str
     serial: str | None = None
     brand: str | None = None

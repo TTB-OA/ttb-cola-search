@@ -12,7 +12,7 @@ router = APIRouter(tags=["images"])
 
 
 @router.get("/colas/{cola_id}/images/{file_name}")
-async def get_image(cola_id: int, file_name: str):
+async def get_image(cola_id: str, file_name: str):
     if file_name == "primary":
         # Scores are not joined here: the hero column alone decides the winner, and
         # skipping the `images` rollup keeps this hot endpoint off the toast table.

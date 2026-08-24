@@ -102,7 +102,7 @@ function TopColas({ rows }) {
         {rows.map((r) => (
           <tr key={r.colaId}>
             <td>
-              <a href={`/cola/${r.colaId}`}>{r.brandName || r.colaId}</a>
+              <a href={`/cola/${encodeURIComponent(r.colaId)}`}>{r.brandName || r.colaId}</a>
             </td>
             <td>{num(r.views)}</td>
           </tr>

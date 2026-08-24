@@ -184,8 +184,10 @@ Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 A few semantics are worth knowing before writing queries against it:
 
 - `q` is word- and phrase-based (`websearch_to_tsquery`), not substring — `cab`
-  will not match `Cabernet`. It also probes `serial_num`, `permit_num`,
-  `primary_permit_id`, and, for all-digit input, `cola_id`.
+  will not match `Cabernet`. It also probes `cola_id`, `serial_num`,
+  `permit_num`, and `primary_permit_id` for an exact match. `cola_id` is text
+  matched verbatim: ids carry `A`/`B`/`C`/`D`/`$` suffixes, embedded spaces and
+  leading zeros, so they are never treated as numbers.
 - `ttbId`, `permit`, and `submitter` match on **prefix**. Identifier input is
   upper-cased before comparison, since the supporting indexes compare bytes.
 - `labelText` searches OCR text from the label images via `cola_search_ocr`.

@@ -216,12 +216,12 @@ def image_display_order_sql(
     return ", ".join(keys)
 
 
-def image_url(cola_id: int, file_name: str) -> str:
-    return f"{API_PREFIX}/colas/{cola_id}/images/{quote(file_name)}"
+def image_url(cola_id: str, file_name: str) -> str:
+    return f"{API_PREFIX}/colas/{quote(str(cola_id), safe='')}/images/{quote(file_name)}"
 
 
-def thumb_url(cola_id: int) -> str:
-    return f"{API_PREFIX}/colas/{cola_id}/images/primary"
+def thumb_url(cola_id: str) -> str:
+    return f"{API_PREFIX}/colas/{quote(str(cola_id), safe='')}/images/primary"
 
 
 def submitter_name(row: Mapping[str, Any]) -> str | None:
@@ -254,10 +254,10 @@ def permit_from_json(entry: dict[str, Any]) -> PermitRef:
 
 
 def summary_from_row(row: Mapping[str, Any], score: float | None = None) -> ColaSummary:
-    cola_id = row["cola_id"]
+    cola_id = str(row["cola_id"])
     return ColaSummary(
         id=cola_id,
-        ttb_id=str(cola_id),
+        ttb_id=cola_id,
         serial=row.get("serial_num"),
         brand=row.get("brand_name"),
         fanciful=row.get("fanciful_name"),
@@ -282,7 +282,7 @@ def summary_from_row(row: Mapping[str, Any], score: float | None = None) -> Cola
 
 
 def image_ref_from_row(row: dict[str, Any]) -> ImageRef:
-    cola_id = row["cola_id"]
+    cola_id = str(row["cola_id"])
     file_name = row["file_name"]
     return ImageRef(
         file_name=file_name,

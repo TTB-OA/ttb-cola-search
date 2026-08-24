@@ -38,7 +38,7 @@ def _status(**overrides):
     } | overrides
 
 
-def _summary(cola_id: int, earliest_id: int, latest_id: int, **overrides):
+def _summary(cola_id: str, earliest_id: str, latest_id: str, **overrides):
     return {
         "earliest_id": earliest_id,
         "latest_id": latest_id,
@@ -172,21 +172,21 @@ def test_complete_range_reports_both_ends(client, monkeypatch):
         monkeypatch,
         [_row(2025)],
         complete=[
-            _summary(1, 1, 2, completed_date=date(2024, 1, 2)),
-            _summary(2, 1, 2, completed_date=date(2026, 3, 4)),
+            _summary("1", "1", "2", completed_date=date(2024, 1, 2)),
+            _summary("2", "1", "2", completed_date=date(2026, 3, 4)),
         ],
     )
     rng = client.get(PATH).json()["completeRange"]
-    assert rng["earliest"]["id"] == 1
+    assert rng["earliest"]["id"] == "1"
     assert rng["earliest"]["approvalDate"] == "2024-01-02"
-    assert rng["latest"]["id"] == 2
+    assert rng["latest"]["id"] == "2"
 
 
 def test_a_single_complete_record_is_both_ends_of_the_range(client, monkeypatch):
-    stub(monkeypatch, [_row(2025)], complete=[_summary(7, 7, 7)])
+    stub(monkeypatch, [_row(2025)], complete=[_summary("7", "7", "7")])
     rng = client.get(PATH).json()["completeRange"]
-    assert rng["earliest"]["id"] == 7
-    assert rng["latest"]["id"] == 7
+    assert rng["earliest"]["id"] == "7"
+    assert rng["latest"]["id"] == "7"
 
 
 def test_no_complete_records_yields_an_empty_range_rather_than_an_error(client, monkeypatch):

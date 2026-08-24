@@ -442,7 +442,7 @@ export default function ResultsPage() {
       view,
       mode,
     });
-    navigate(`/cola/${id}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+    navigate(`/cola/${encodeURIComponent(id)}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
   };
 
   // Image mode with no stashed file (e.g. deep link / refresh): prompt to restart.

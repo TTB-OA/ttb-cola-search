@@ -77,7 +77,11 @@ const PALETTES = {
 export function placeholderStyle(rec) {
   const key = tagClass(rec.category);
   const set = PALETTES[key] || PALETTES.wine;
-  const idx = Math.abs(Number(rec.id) || 0) % set.length;
+  // Ids are text, so hash the characters rather than coercing to a number.
+  const id = String(rec.id || '');
+  let hash = 0;
+  for (let i = 0; i < id.length; i += 1) hash = (hash * 31 + id.charCodeAt(i)) % 100000;
+  const idx = hash % set.length;
   return set[idx];
 }
 

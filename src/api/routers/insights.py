@@ -95,7 +95,7 @@ async def _enrich_colas(rows: list[dict[str, Any]]) -> list[TopCola]:
     ranked: list[TopCola] = []
     for row in rows[:10]:
         cola_id = str(row.get("colaId") or "").strip()
-        if cola_id.isdigit():
+        if cola_id:
             ranked.append(TopCola(cola_id=cola_id, views=int(row.get("count_") or 0)))
     if not ranked:
         return []
@@ -107,7 +107,7 @@ async def _enrich_colas(rows: list[dict[str, Any]]) -> list[TopCola]:
               FROM {SEARCH_TABLE}
              WHERE cola_id = ANY(%s)
             """,
-            ([int(c.cola_id) for c in ranked],),
+            ([c.cola_id for c in ranked],),
         )
     except Exception:  # noqa: BLE001 - names are a nicety, ids already work
         logger.warning("could not resolve top COLA names", exc_info=True)

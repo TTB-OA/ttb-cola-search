@@ -63,20 +63,28 @@ def test_no_filters_produces_no_where_clause():
     assert params == []
 
 
-def test_numeric_terms_add_a_cola_id_branch():
+def test_terms_probe_cola_id_as_text():
     where, params = build(q="12345")
     assert "cola_id = %s" in where
-    assert 12345 in params
+    assert "12345" in params
     assert_aligned(where, params)
 
     where, params = build(ttb_id="12345")
     assert "cola_id = %s" in where
+    assert "12345" in params
     assert_aligned(where, params)
 
 
-def test_non_numeric_terms_omit_the_cola_id_branch():
-    where, _ = build(q="cabernet")
-    assert "cola_id = %s" not in where
+def test_non_numeric_terms_still_probe_cola_id():
+    # Ids carry A/B/C/D/$ suffixes and embedded spaces, so they are not numeric.
+    where, params = build(q="26208001000457A")
+    assert "cola_id = %s" in where
+    assert "26208001000457A" in params
+
+    where, params = build(ttb_id="26208001000457a")
+    assert "cola_id = %s" in where
+    assert "26208001000457A" in params
+    assert_aligned(where, params)
 
 
 def test_identifier_terms_are_upper_cased_and_wildcards_escaped():

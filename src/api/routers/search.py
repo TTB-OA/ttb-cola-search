@@ -86,7 +86,7 @@ async def _nearest_by_vector(
     vector_literal: str,
     limit: int,
     commodity_code: str | None,
-    exclude_cola_id: int | None,
+    exclude_cola_id: str | None,
     permit_num: str | None = None,
     permit_mode: str | None = None,
 ) -> list[ColaSummary]:
@@ -266,7 +266,7 @@ async def search_by_description(
 
 @router.get("/colas/{cola_id}/similar", response_model=list[ColaSummary])
 async def similar_colas(
-    cola_id: int,
+    cola_id: str,
     limit: int = Query(default=12, ge=1, le=48),
     scope: str = Query(
         default="all",
