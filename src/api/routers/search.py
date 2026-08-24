@@ -49,6 +49,17 @@ def _embedding_search_limiter() -> SlidingWindowLimiter:
 # de-duplication, so the ANN scan has to return more candidates than requested.
 _ANN_OVERFETCH = 6
 
+# A text query lands outside the cloud of image vectors, so every label sits in a
+# narrow, nearly equidistant band (cosine 0.64-0.92, sd 0.03). Greedy HNSW descent
+# has almost no gradient to follow there and settles in a local minimum: at the old
+# floor of 64 the scan lost the true 1st and 2nd nearest neighbours outright.
+# 1000 is pgvector's ceiling, and the needed value scales with the corpus: 600 gave
+# full recall at 80k indexed images but already dropped a true rank-3 label at 157k.
+# The embedding backfill is still running, so once it lands this cannot be raised
+# further and the index itself has to improve (partial index over the ~16% of rows
+# that are embedded, plus a rebuild at higher m / ef_construction).
+_HNSW_EF_SEARCH = 1000
+
 _QUERY_VECTOR_CACHE_SIZE = 256
 _query_vector_cache: OrderedDict[str, str] = OrderedDict()
 
@@ -126,9 +137,15 @@ async def _nearest_by_vector(
     params.append(limit)
 
     # ef_search has to exceed the candidate LIMIT or HNSW recall collapses.
-    ef_search = max(64, candidates)
+    ef_search = min(1000, max(_HNSW_EF_SEARCH, candidates))
     async with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
         await cur.execute(SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search)))
+        # Without this the scan stops at the first ef_search tuples, so the permit and
+        # commodity filters below can starve the result set. It also lets the search
+        # keep widening past a bad local minimum, which is what actually recovers the
+        # top-ranked labels on a text query. relaxed_order is safe because the outer
+        # query re-sorts on b.dist.
+        await cur.execute(SQL("SET LOCAL hnsw.iterative_scan TO relaxed_order"))
         # pgvector prices an HNSW scan off ef_search, so raising it with the candidate
         # count eventually makes a sequential scan look cheaper. It is not: that plan
         # detoasts every 768-d vector in the table and takes ~30s where the index
