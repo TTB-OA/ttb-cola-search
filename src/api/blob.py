@@ -29,19 +29,28 @@ def _get_service() -> BlobServiceClient:
     return _service
 
 
-async def stream_blob(blob_name: str) -> tuple[AsyncIterator[bytes], str]:
-    """Return an async byte iterator and content type for ``blob_name``."""
+def _blob_client(blob_name: str):
     settings = get_settings()
     if not settings.blob_container:
         raise RuntimeError("BLOB_CONTAINER is not configured")
-    blob_client = _get_service().get_blob_client(
+    return _get_service().get_blob_client(
         container=settings.blob_container, blob=blob_name
     )
-    downloader = await blob_client.download_blob()
+
+
+async def stream_blob(blob_name: str) -> tuple[AsyncIterator[bytes], str]:
+    """Return an async byte iterator and content type for ``blob_name``."""
+    downloader = await _blob_client(blob_name).download_blob()
     content_type = (
         downloader.properties.content_settings.content_type or "application/octet-stream"
     )
     return downloader.chunks(), content_type
+
+
+async def read_blob(blob_name: str) -> bytes:
+    """Read ``blob_name`` fully into memory, for callers that cannot stream."""
+    downloader = await _blob_client(blob_name).download_blob()
+    return await downloader.readall()
 
 
 async def close_blob() -> None:

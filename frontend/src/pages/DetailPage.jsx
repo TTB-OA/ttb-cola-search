@@ -399,15 +399,16 @@ export default function DetailPage() {
             </div>
           </div>
           <div className="row gap-8">
-            <button
+            {/* Reconstructed from registry data, unlike the TTB-hosted scan below. */}
+            <a
               className="btn secondary sm"
-              onClick={() => {
-                track('print_clicked', {});
-                window.print();
-              }}
+              href={api.colaFormUrl(rec.id)}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() => track('form_viewed', {})}
             >
-              <Icon name="print" size={16} /> Print
-            </button>
+              <Icon name="print" size={16} /> View form 5100.31
+            </a>
             {rec.formUrl && (
               // Leaves our origin, so this is the only place the download is visible.
               <a

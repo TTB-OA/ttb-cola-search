@@ -61,6 +61,9 @@ export const api = {
 
   getCola: (id, signal) => request(`/colas/${encodeURIComponent(id)}`, { signal }),
 
+  // A URL rather than a fetch, so the browser's own PDF viewer handles it.
+  colaFormUrl: (id) => `${BASE}/colas/${encodeURIComponent(id)}/form.pdf`,
+
   similar: (id, limit = 8, signal, scope) =>
     request(`/colas/${encodeURIComponent(id)}/similar${toQuery({ limit, scope })}`, { signal }),
 

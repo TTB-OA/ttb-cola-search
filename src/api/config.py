@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # limiter is per replica, so the real ceiling is this times the replica count.
     image_search_rate_limit: int = 10
     image_search_rate_window_seconds: int = 60
+    # Rendering a form reads every label blob and rasterises them; cheaper than
+    # the embedding call, but still worth a ceiling.
+    form_render_rate_limit: int = 30
+    form_render_rate_window_seconds: int = 60
     # Only enable behind a reverse proxy that overwrites X-Forwarded-For;
     # otherwise clients can spoof the header and reset their own bucket.
     trust_forwarded_for: bool = True

@@ -435,6 +435,11 @@ async def list_colas(
 
 @router.get("/colas/{cola_id}", response_model=ColaDetail)
 async def get_cola(cola_id: int) -> ColaDetail:
+    return await load_detail(cola_id)
+
+
+async def load_detail(cola_id: int) -> ColaDetail:
+    """Assemble a full ColaDetail, or raise 404. Shared with the form renderer."""
     base = await fetch_one(
         f"SELECT {DETAIL_COLUMNS} FROM {SEARCH_TABLE} WHERE cola_id = %s", [cola_id]
     )

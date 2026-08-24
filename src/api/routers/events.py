@@ -34,6 +34,7 @@ ALLOWED_EVENTS = frozenset(
         "lightbox_opened",
         "ocr_chip_clicked",
         "cola_form_downloaded",
+        "form_viewed",
         "print_clicked",
         "image_search_abandoned",
         "image_search_state_lost",

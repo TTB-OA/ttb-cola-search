@@ -31,6 +31,7 @@ from .routers import (
     colas,
     coverage,
     events,
+    forms,
     health,
     images,
     insights,
@@ -89,6 +90,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)
+    app.include_router(forms.router, prefix=API_PREFIX)
     app.include_router(events.router, prefix=API_PREFIX)
     app.include_router(insights.router, prefix=API_PREFIX)
 
