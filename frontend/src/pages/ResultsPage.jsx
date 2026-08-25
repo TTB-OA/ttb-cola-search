@@ -10,6 +10,7 @@ import { fmtDate } from '../lib/format.js';
 import { clearPendingImageSearch, readPendingImageSearch } from '../lib/imageSearchStore.js';
 import { track } from '../lib/analytics.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const PAGE_SIZE = 24;
@@ -50,6 +51,12 @@ function paramsToObject(sp) {
   const o = {};
   for (const [k, v] of sp.entries()) o[k] = v;
   return o;
+}
+
+// Keeps a long describe prompt from overrunning the browser tab title.
+function clip(value, max = 60) {
+  const s = String(value).trim();
+  return s.length > max ? s.slice(0, max - 1) + '…' : s;
 }
 
 /* ---------- facet group ---------- */
@@ -308,6 +315,24 @@ export default function ResultsPage() {
   // Both are ANN searches over label vectors: scored, unfaceted, unpaged.
   const isVector = isImg || isDescribe;
   const page = Math.max(1, parseInt(criteria.page || '1', 10) || 1);
+
+  // Name the tab after whichever filter the user most likely typed: FILTER_KEYS
+  // is ordered from the broadest query down to the narrower fields.
+  const titleTerm = (() => {
+    const key = FILTER_KEYS.find((k) => criteria[k]);
+    return key ? clip(criteria[key]) : '';
+  })();
+  useDocumentTitle(
+    isImg
+      ? 'Image search results'
+      : isDescribe
+        ? titleTerm
+          ? `Artwork search: \u201C${titleTerm}\u201D`
+          : 'Artwork search results'
+        : titleTerm
+          ? `Search: \u201C${titleTerm}\u201D`
+          : 'Search results'
+  );
 
   const [view, setViewState] = useState(() => localStorage.getItem('cola.view') || (window.matchMedia('(max-width: 720px)').matches ? 'list' : 'gallery'));
 

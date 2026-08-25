@@ -9,6 +9,7 @@ import { track } from '../lib/analytics.js';
 import { fmtDate, fmtDateLong } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
 function defaultDateFrom() {
@@ -462,6 +463,7 @@ function DescribeSearch({ draft, set, refData, onSubmit }) {
 }
 
 export default function SearchPage() {
+  useDocumentTitle(null);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [draft, setDraft] = useState(EMPTY);

@@ -9,6 +9,7 @@ import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
 import { fmtDate, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 
 function isBlank(value) {
   return value == null || value === false || (typeof value === 'string' && !value.trim());
@@ -274,6 +275,18 @@ export default function DetailPage() {
   const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id]);
   const othersState = useAsync((signal) => api.similar(id, 8, signal, 'others'), [id]);
   const rec = detailState.data;
+
+  const brand = (rec && rec.brand ? rec.brand : '').trim();
+  const fanciful = (rec && rec.fanciful ? rec.fanciful : '').trim();
+  useDocumentTitle(
+    rec
+      ? [brand || fanciful || `TTB ID ${rec.ttbId || id}`, brand && fanciful ? `(${fanciful})` : '']
+          .filter(Boolean)
+          .join(' ')
+      : detailState.loading
+        ? null
+        : 'Label not found'
+  );
 
   const images = useMemo(() => (rec && rec.images) || [], [rec]);
   const items = useMemo(() => (rec && rec.imageItems) || [], [rec]);

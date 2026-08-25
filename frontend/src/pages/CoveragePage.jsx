@@ -5,6 +5,7 @@
 import { Link } from 'react-router-dom';
 import StatTile from '../components/charts/StatTile.jsx';
 import { useAsync } from '../hooks/useAsync.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { api } from '../lib/api.js';
 import { fmtDate, fmtDateTime } from '../lib/format.js';
 
@@ -203,6 +204,7 @@ function CoverageTable({ years, totals }) {
 }
 
 export default function CoveragePage() {
+  useDocumentTitle('Data coverage');
   const { data, loading, error } = useAsync((signal) => api.coverage(signal), []);
 
   const totals = data?.totals;

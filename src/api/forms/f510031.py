@@ -26,8 +26,14 @@ SPLIT = 250.0  # left/right column divide on the application half
 BODY = "Helvetica"
 BOLD = "Helvetica-Bold"
 
+# Registry data is drawn in blue monospace so it reads as fill-in rather than
+# as part of the preprinted form.
+MONO = "Courier"
+MONO_BOLD = "Courier-Bold"
+VALUE_COLOR = (0.05, 0.20, 0.62)
+
 CAPTION_SIZE = 5.5
-VALUE_SIZE = 8.5
+VALUE_SIZE = 8.0
 
 # "AFFIX COMPLETE SET OF LABELS BELOW", taken from the official form's widget rect.
 AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H = 24.6, 28.9, 564.8, 297.9
@@ -107,6 +113,15 @@ def _joined(*parts: object, sep: str = ", ") -> str:
     return sep.join(p for p in (_clean(v) for v in parts) if p)
 
 
+def _value_style(c: canvas.Canvas, font: str, size: float) -> None:
+    c.setFont(font, size)
+    c.setFillColorRGB(*VALUE_COLOR)
+
+
+def _reset_style(c: canvas.Canvas) -> None:
+    c.setFillGray(0)
+
+
 # ---------------------------------------------------------------------------
 # Drawing primitives
 # ---------------------------------------------------------------------------
@@ -120,7 +135,7 @@ def _field(
     value: str = "",
     *,
     value_size: float = VALUE_SIZE,
-    value_font: str = BOLD,
+    value_font: str = MONO_BOLD,
 ) -> None:
     """A bordered form item: small caption at the top, wrapped value beneath."""
     c.setLineWidth(0.6)
@@ -136,12 +151,13 @@ def _field(
     if not value:
         return
     cursor -= 2
-    c.setFont(value_font, value_size)
+    _value_style(c, value_font, value_size)
     for line in _wrap(value, value_font, value_size, inner):
         if cursor < y + 2:
             break
         c.drawString(x + 4, cursor, line)
         cursor -= value_size + 1.5
+    _reset_style(c)
 
 
 def _band(c: canvas.Canvas, x: float, y: float, w: float, h: float, text: str) -> None:
@@ -160,8 +176,10 @@ def _checkbox(
     c.rect(x, y, 7.5, 7.5)
     if checked:
         c.setLineWidth(1.1)
+        c.setStrokeColorRGB(*VALUE_COLOR)
         c.line(x + 1.5, y + 3.8, x + 3.2, y + 1.8)
         c.line(x + 3.2, y + 1.8, x + 6.2, y + 5.8)
+        c.setStrokeGray(0)
         c.setLineWidth(0.6)
     c.setFont(BODY, size)
     c.drawString(x + 10.5, y + 1.3, label)
@@ -223,7 +241,7 @@ def _caption_lines(img: LabelImage) -> list[tuple[str, str]]:
     """(font, text) caption rows: type, then the measurements, then the file."""
     rows: list[tuple[str, str]] = []
     heading = _clean(img.img_type) or _clean(img.face).title() or "Label image"
-    rows.append((BOLD, heading))
+    rows.append((MONO_BOLD, heading))
 
     face = _clean(img.face)
     detail: list[str] = []
@@ -234,10 +252,10 @@ def _caption_lines(img: LabelImage) -> list[tuple[str, str]]:
     if _clean(img.dimensions_txt):
         detail.append(_clean(img.dimensions_txt))
     if detail:
-        rows.append((BODY, " \u00b7 ".join(detail)))
+        rows.append((MONO, " \u00b7 ".join(detail)))
 
     if _clean(img.file_name):
-        rows.append((BODY, _clean(img.file_name)))
+        rows.append((MONO, _clean(img.file_name)))
     return rows
 
 
@@ -274,11 +292,12 @@ def _draw_label_cell(
     for font, text in _caption_lines(img):
         if cursor < y:
             break
-        c.setFont(font, 6.5)
+        _value_style(c, font, 6.5)
         line = _wrap(text, font, 6.5, w)[:1]
         if line:
             c.drawCentredString(x + w / 2, cursor, line[0])
         cursor -= 8
+    _reset_style(c)
 
 
 def _draw_affix_grid(
@@ -384,7 +403,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
             )
         ),
         value_size=6.5,
-        value_font=BODY,
+        value_font=MONO,
     )
 
     c.setLineWidth(0.6)
@@ -486,8 +505,9 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     _checkbox(c, 384, 688, flags["c"], "c. DISTINCTIVE LIQUOR BOTTLE APPROVAL.", size=6)
     c.setFont(BODY, 6)
     c.drawString(394.5, 679, "TOTAL BOTTLE CAPACITY BEFORE CLOSURE")
-    c.setFont(BOLD, 7)
+    _value_style(c, MONO_BOLD, 7)
     c.drawString(394.5, 670, _clean(detail.net_contents))
+    _reset_style(c)
     _checkbox(c, 384, 656, flags["d"], "d. RESUBMISSION AFTER REJECTION", size=6)
 
     _field(

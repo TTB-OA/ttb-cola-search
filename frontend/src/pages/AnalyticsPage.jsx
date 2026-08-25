@@ -6,6 +6,7 @@ import BarList from '../components/charts/BarList.jsx';
 import StatTile from '../components/charts/StatTile.jsx';
 import TimeSeries from '../components/charts/TimeSeries.jsx';
 import { useAsync } from '../hooks/useAsync.js';
+import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { api } from '../lib/api.js';
 
 const RANGES = [
@@ -114,6 +115,7 @@ function TopColas({ rows }) {
 
 /* ---------- Page ---------- */
 export default function AnalyticsPage() {
+  useDocumentTitle('Usage dashboard');
   const [range, setRange] = useState('30d');
   const { data, loading, error } = useAsync(
     (signal) => api.analyticsDashboard({ range }, signal),
