@@ -41,6 +41,41 @@ def _loose_distinct(cte: str, expr: str) -> str:
     """
 
 
+async def _load_lookups() -> dict[str, Any]:
+    """Controlled vocabularies, read from the small reference tables.
+
+    These are the codes TTB publishes rather than the values observed in
+    cola_search, so they cost a few hundred rows instead of a 3M-row roll-up.
+    """
+    rows = await fetch_all(
+        """--sql
+        SELECT 'classType' AS dim, description AS value
+          FROM ref_product_class_types
+         WHERE btrim(coalesce(description, '')) <> ''
+        UNION
+        SELECT 'received', description
+          FROM ref_received_codes
+         WHERE btrim(coalesce(description, '')) <> ''
+        UNION
+        SELECT 'varietal', vartl_name
+          FROM ref_grape_varietals
+         WHERE btrim(coalesce(vartl_name, '')) <> ''
+        """
+    )
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row["dim"], []).append(row)
+
+    return {
+        "class_types": sorted(r["value"] for r in grouped.get("classType", [])),
+        # Descriptions rather than codes, so the value reads in a URL and in the
+        # active-filter chips; /colas accepts either.
+        "received_types": sorted(r["value"] for r in grouped.get("received", [])),
+        "varietals": sorted(r["value"] for r in grouped.get("varietal", [])),
+    }
+
+
 async def _load_reference() -> ReferenceData:
     # origin functionally determines ct_source, so one probe per origin (via the
     # same index) reproduces the old max(ct_source) rollup.
@@ -83,6 +118,8 @@ async def _load_reference() -> ReferenceData:
         COMMODITY_LABEL[c] for c in ("wine", "beer", "distilled_spirits") if c in present
     ] or CATEGORIES
 
+    lookups = await _load_lookups()
+
     return ReferenceData(
         categories=categories,
         sources=SOURCES,
@@ -90,6 +127,7 @@ async def _load_reference() -> ReferenceData:
         domestic_origins=domestic,
         imported_origins=imported,
         permit_states=sorted(r["value"] for r in grouped.get("permitState", [])),
+        **lookups,
     )
 
 

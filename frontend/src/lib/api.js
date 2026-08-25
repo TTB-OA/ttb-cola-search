@@ -55,6 +55,9 @@ export function toQuery(params) {
 export const api = {
   reference: (signal) => request('/reference', { signal }),
 
+  suggestPermits: ({ q, limit = 8 }, signal) =>
+    request(`/suggest/permits${toQuery({ q, limit })}`, { signal }),
+
   coverage: (signal) => request('/coverage', { signal }),
 
   searchColas: (params, signal) => request(`/colas${toQuery(params)}`, { signal }),

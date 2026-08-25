@@ -24,6 +24,7 @@
 
 .adv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 20px; }
 .adv-grid .field:nth-child(1), .adv-grid .field:nth-child(2), .adv-grid .field:nth-child(3) { grid-column: span 2; }
+.adv-grid .field.adv-wide { grid-column: span 2; }
 .adv-grid .field.adv-span { grid-column: 1 / -1; margin-bottom: 4px; }
 .adv-subhead {
   font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;

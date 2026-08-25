@@ -37,6 +37,7 @@ from .routers import (
     insights,
     reference,
     search,
+    suggest,
 )
 from .telemetry import configure_telemetry, instrument_app
 
@@ -86,6 +87,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router, prefix=API_PREFIX)
     app.include_router(reference.router, prefix=API_PREFIX)
+    app.include_router(suggest.router, prefix=API_PREFIX)
     app.include_router(coverage.router, prefix=API_PREFIX)
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)

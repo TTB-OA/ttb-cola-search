@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
+import Combobox, { matchOptions } from '../components/Combobox.jsx';
 import { CatTag } from '../components/Badges.jsx';
 import { useTour } from '../components/Tour.jsx';
 import { api, toQuery } from '../lib/api.js';
@@ -11,6 +12,7 @@ import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
+import { usePermitSuggest } from '../hooks/usePermitSuggest.js';
 
 function defaultDateFrom() {
   return `${new Date().getFullYear() - 2}-01-01`;
@@ -31,6 +33,8 @@ const EMPTY = {
   qualification: '',
   labelText: '',
   commodity: '',
+  classType: '',
+  receivedBy: '',
   source: '',
   origin: '',
   status: 'Approved',
@@ -57,6 +61,8 @@ const PASSTHROUGH_KEYS = [
   'qualification',
   'labelText',
   'commodity',
+  'classType',
+  'receivedBy',
   'source',
   'origin',
   'status',
@@ -98,13 +104,45 @@ function ModeTabs({ mode, setMode }) {
   );
 }
 
+function permitLine(p) {
+  return [p.city ? `${p.city}, ${p.state || ''}`.replace(/,\s*$/, '') : p.state, p.colaCount ? `${p.colaCount.toLocaleString()} COLAs` : '']
+    .filter(Boolean)
+    .join(' · ');
+}
+
 function AdvancedFields({ draft, set, refData }) {
-  const categories = refData.categories || [];
   const sources = refData.sources || [];
   const domestic = refData.domesticOrigins || [];
   const imported = refData.importedOrigins || [];
   const statuses = refData.statuses || [];
   const permitStates = refData.permitStates || [];
+  const classTypes = refData.classTypes || [];
+  const receivedTypes = refData.receivedTypes || [];
+  const varietals = refData.varietals || [];
+
+  const classTypeOptions = useMemo(() => matchOptions(classTypes, draft.classType), [classTypes, draft.classType]);
+  const varietalOptions = useMemo(() => matchOptions(varietals, draft.varietal), [varietals, draft.varietal]);
+
+  const permitById = usePermitSuggest(draft.permit, (p) => ({
+    value: p.permitId,
+    label: p.permitId,
+    hint: p.name || permitLine(p),
+  }));
+  const permitByName = usePermitSuggest(draft.permitName, (p) => ({
+    value: p.name || p.permitId,
+    label: p.name || p.permitId,
+    hint: [p.permitId, permitLine(p)].filter(Boolean).join(' · '),
+  }));
+
+  // Resolving to the permit id searches every COLA on that permit, including
+  // the ones where it isn't the primary permit, so the name box is cleared
+  // rather than left behind as a second, narrower filter.
+  function pickPermit(opt) {
+    const p = opt.permit;
+    set('permit', p.permitId);
+    set('permitName', '');
+  }
+
   return (
     <div className="adv-grid">
       <div className="field">
@@ -137,13 +175,26 @@ function AdvancedFields({ draft, set, refData }) {
           onChange={(e) => set('fanciful', e.target.value)}
         />
       </div>
-      <div className="field">
+      <div className="field adv-wide">
         <label>Class / Type</label>
-        <select className="select" value={draft.commodity} onChange={(e) => set('commodity', e.target.value)}>
-          <option value="">All commodities</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
+        <div className="hint">Specific class/type on the application — use the quick filters for a whole commodity</div>
+        <Combobox
+          ariaLabel="Class / Type"
+          placeholder="Start typing, e.g. TABLE RED WINE"
+          value={draft.classType}
+          onChange={(v) => set('classType', v)}
+          options={classTypeOptions}
+          emptyText="No matching class/type"
+        />
+      </div>
+      <div className="field adv-wide">
+        <label>Received by</label>
+        <div className="hint">How TTB received the application</div>
+        <select className="select" value={draft.receivedBy} onChange={(e) => set('receivedBy', e.target.value)}>
+          <option value="">Any submission method</option>
+          {receivedTypes.map((r) => (
+            <option key={r} value={r}>
+              {r}
             </option>
           ))}
         </select>
@@ -226,20 +277,30 @@ function AdvancedFields({ draft, set, refData }) {
       <div className="field">
         <label>Permit / plant number</label>
         <div className="hint">Matches any permit associated with the COLA</div>
-        <input
+        <Combobox
+          ariaLabel="Permit or plant number"
           className="input mono"
           placeholder="e.g. BWN-CA-1234"
           value={draft.permit}
-          onChange={(e) => set('permit', e.target.value)}
+          onChange={(v) => set('permit', v)}
+          onPick={pickPermit}
+          options={permitById.options}
+          loading={permitById.loading}
+          emptyText="No matching permit"
         />
       </div>
       <div className="field">
         <label>Permit holder name</label>
-        <input
-          className="input"
+        <div className="hint">Pick a suggestion to search every COLA on that permit</div>
+        <Combobox
+          ariaLabel="Permit holder name"
           placeholder="e.g. Cedar Hollow LLC"
           value={draft.permitName}
-          onChange={(e) => set('permitName', e.target.value)}
+          onChange={(v) => set('permitName', v)}
+          onPick={pickPermit}
+          options={permitByName.options}
+          loading={permitByName.loading}
+          emptyText="No matching permit holder"
         />
       </div>
       <div className="field">
@@ -278,11 +339,14 @@ function AdvancedFields({ draft, set, refData }) {
       </div>
       <div className="field">
         <label>Grape varietal</label>
-        <input
-          className="input"
+        <div className="hint">Any varietal declared on the application</div>
+        <Combobox
+          ariaLabel="Grape varietal"
           placeholder="e.g. Cabernet Sauvignon"
           value={draft.varietal}
-          onChange={(e) => set('varietal', e.target.value)}
+          onChange={(v) => set('varietal', v)}
+          options={varietalOptions}
+          emptyText="No matching varietal"
         />
       </div>
       <div className="field">

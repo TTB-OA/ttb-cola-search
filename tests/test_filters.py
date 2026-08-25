@@ -18,6 +18,8 @@ FILTER_VALUES = {
     "brand": "brand",
     "fanciful": "fanciful",
     "commodity": "Wine",
+    "class_type": "TABLE RED WINE",
+    "received_by": "Electronic submission (COLAs Online)",
     "source": "Domestic",
     "origin": "California",
     "status": "APPROVED",
@@ -91,6 +93,25 @@ def test_identifier_terms_are_upper_cased_and_wildcards_escaped():
     _, params = build(permit="bwn-ca%1234")
     assert all("BWN-CA" in str(p) for p in params)
     assert r"BWN-CA\%1234%" in params
+
+
+def test_class_type_matches_the_description_or_the_code():
+    where, params = build(class_type="  table red wine  ")
+    assert "upper(class_type) = upper(%s)" in where
+    assert "class_type_code = %s" in where
+    assert params == ["table red wine", "table red wine"]
+
+
+def test_class_type_is_independent_of_the_commodity_rollup():
+    where, _ = build(class_type="TABLE RED WINE")
+    assert "ct_commodity" not in where
+
+
+def test_received_by_matches_the_description_or_the_code():
+    where, params = build(received_by="es")
+    assert "upper(received_description) = upper(%s)" in where
+    assert "received_code = upper(%s)" in where
+    assert params == ["es", "es"]
 
 
 def test_label_text_probes_the_ocr_side_table():

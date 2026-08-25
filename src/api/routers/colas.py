@@ -111,6 +111,8 @@ def _build_filters(
     varietal: str | None = None,
     qualification: str | None = None,
     label_text: str | None = None,
+    class_type: str | None = None,
+    received_by: str | None = None,
 ) -> tuple[str, list[Any]]:
     conditions: list[str] = []
     params: list[Any] = []
@@ -168,6 +170,18 @@ def _build_filters(
     if commodity:
         conditions.append("ct_commodity = %s")
         params.append(COMMODITY_CODE.get(commodity, commodity))
+    if class_type:
+        # The description is what the UI sends; the code is accepted so an API
+        # caller can filter straight off classTypeCode.
+        term = class_type.strip()
+        conditions.append("(upper(class_type) = upper(%s) OR class_type_code = %s)")
+        params.extend([term, term])
+    if received_by:
+        term = received_by.strip()
+        conditions.append(
+            "(upper(received_description) = upper(%s) OR received_code = upper(%s))"
+        )
+        params.extend([term, term])
     if source:
         conditions.append("ct_source = %s")
         params.append(SOURCE_CODE.get(source, source))
@@ -334,6 +348,27 @@ async def list_colas(
         ),
     ),
     commodity: str | None = None,
+    class_type: str | None = Query(
+        default=None,
+        alias="classType",
+        description=(
+            "Granular TTB class/type on the application, e.g. `TABLE RED WINE`. "
+            "Matched case-insensitively against the class/type description, or "
+            "exactly against `classTypeCode`. Use `commodity` for the coarse "
+            "wine/malt beverage/distilled spirits grouping."
+        ),
+        examples=["TABLE RED WINE", "80"],
+    ),
+    received_by: str | None = Query(
+        default=None,
+        alias="receivedBy",
+        description=(
+            "How TTB received the application. Matched case-insensitively against "
+            "the received description, or exactly against the received code "
+            "(`ES`, `MAIL`, `OVR`)."
+        ),
+        examples=["Electronic submission (COLAs Online)", "ES"],
+    ),
     source: str | None = None,
     origin: str | None = None,
     status: str | None = None,
@@ -423,6 +458,8 @@ async def list_colas(
         varietal=varietal,
         qualification=qualification,
         label_text=label_text,
+        class_type=class_type,
+        received_by=received_by,
     )
     order_by, order_params = _order_by(sort, q)
     offset = (page - 1) * page_size

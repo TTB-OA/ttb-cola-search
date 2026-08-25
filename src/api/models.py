@@ -158,6 +158,18 @@ class ReferenceData(ApiModel):
     domestic_origins: list[str] = []
     imported_origins: list[str] = []
     permit_states: list[str] = []
+    # Granular TTB class/type descriptions, not the three commodity roll-ups.
+    class_types: list[str] = []
+    received_types: list[str] = []
+    varietals: list[str] = []
+
+
+class PermitSuggestion(ApiModel):
+    permit_id: str
+    name: str | None = None
+    city: str | None = None
+    state: str | None = None
+    cola_count: int = 0
 
 
 # ---------------------------------------------------------------------------
