@@ -6,12 +6,14 @@ import sys
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from psycopg.errors import QueryCanceled
+from starlette.responses import Response
 
 from .analytics import (
     EVENT_BY_ROUTE,
@@ -170,6 +172,26 @@ def _resolve_spa_dir(configured: str | None) -> Path | None:
     return path if (path / "index.html").is_file() else None
 
 
+# Vite fingerprints every file under /assets, so the name changes whenever the
+# contents do and the response can be cached indefinitely.
+_IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+
+# Everything else, index.html above all, must be revalidated on every load.
+# index.html names the hashed bundle, so a stale copy pins the browser to the
+# previous deploy. With no Cache-Control header browsers fall back to heuristic
+# freshness and do exactly that. The ETag keeps the revalidation a cheap 304.
+_REVALIDATE_CACHE = "no-cache"
+
+
+class _ImmutableStaticFiles(StaticFiles):
+    """StaticFiles that marks its responses immutable."""
+
+    def file_response(self, *args: Any, **kwargs: Any) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = _IMMUTABLE_CACHE
+        return response
+
+
 def _mount_spa(app: FastAPI, spa_dir: Path) -> None:
     """Serve the built Vite SPA single-origin.
 
@@ -180,7 +202,7 @@ def _mount_spa(app: FastAPI, spa_dir: Path) -> None:
     assets_dir = spa_dir / "assets"
     if assets_dir.is_dir():
         app.mount(
-            "/assets", StaticFiles(directory=assets_dir), name="assets"
+            "/assets", _ImmutableStaticFiles(directory=assets_dir), name="assets"
         )
     index_file = spa_dir / "index.html"
 
@@ -192,8 +214,12 @@ def _mount_spa(app: FastAPI, spa_dir: Path) -> None:
             and spa_dir in candidate.parents
             and candidate.is_file()
         ):
-            return FileResponse(candidate)
-        return FileResponse(index_file)
+            return FileResponse(
+                candidate, headers={"Cache-Control": _REVALIDATE_CACHE}
+            )
+        return FileResponse(
+            index_file, headers={"Cache-Control": _REVALIDATE_CACHE}
+        )
 
 
 app = create_app()
