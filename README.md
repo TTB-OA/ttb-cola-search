@@ -175,10 +175,10 @@ All routes are mounted under `/api`.
 | `GET` | `/analytics/dashboard` | Aggregate usage numbers for the `/analytics` page; 404 unless enabled |
 
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
-`applicant`, `permit`, `permitName`, `permitState`, `permitCity`, `submitter`,
-`varietal`, `qualification`, `labelText`, `commodity`, `source`, `origin`,
-`status`, `dateFrom`, `dateTo`, `allDates`, `sort`, `page`, `pageSize`, and `facets`.
-
+`applicant`, `business`, `permit`, `permitName`, `permitState`, `permitCity`,
+`submitter`, `varietal`, `qualification`, `labelText`, `commodity`, `source`,
+`origin`, `status`, `dateFrom`, `dateTo`, `allDates`, `sort`, `page`, `pageSize`,
+and `facets`.
 ### Search behaviour
 
 A few semantics are worth knowing before writing queries against it:
@@ -195,6 +195,13 @@ A few semantics are worth knowing before writing queries against it:
   timeout.
 - `ttbId`, `permit`, and `submitter` match on **prefix**. Identifier input is
   upper-cased before comparison, since the supporting indexes compare bytes.
+- `business` is the consolidated "who made this" filter the advanced form sends:
+  one term matched against the applicant/permit holder name *and* as a permit or
+  plant number. `applicant`, `permit`, and `permitName` remain for callers that
+  want one half on its own.
+- `permitName` resolves against `applicant_name` rather than
+  `primary_permit_name`. The two never diverge (verified across all 4.39M rows)
+  and only `applicant_name` carries a trigram index.
 - `labelText` searches OCR text from the label images via `cola_search_ocr`, and
   narrows the result set to the artwork alone — use it when `q` returns too many
   record matches.

@@ -26,6 +26,7 @@ FILTER_VALUES = {
     "date_from": date(2020, 1, 1),
     "date_to": date(2024, 12, 31),
     "applicant": "applicant",
+    "business": "cedar hollow",
     "permit": "BWN-CA-1234",
     "permit_name": "winery",
     "permit_state": "ca",
@@ -119,6 +120,29 @@ def test_label_text_probes_the_ocr_side_table():
     assert "cola_search_ocr" in where
     assert "ocr_tsv @@ websearch_to_tsquery" in where
     assert params == ["government warning"]
+
+
+def test_business_matches_the_name_and_the_permit_number():
+    where, params = build(business="cedar hollow")
+    assert "applicant_name ILIKE %s" in where
+    assert "permit_num LIKE %s" in where
+    assert "permits @>" in where
+    # Name half is a substring match; permit half is an upper-cased prefix.
+    assert params[0] == "%cedar hollow%"
+    assert params[1:] == ["CEDAR HOLLOW%", "CEDAR HOLLOW%", "CEDAR HOLLOW"]
+    assert_aligned(where, params)
+
+
+def test_business_uses_the_indexed_name_column():
+    # primary_permit_name has no index and never diverges from applicant_name.
+    where, _ = build(business="cedar hollow")
+    assert "primary_permit_name" not in where
+
+
+def test_permit_name_resolves_against_the_indexed_equivalent():
+    where, params = build(permit_name="cedar hollow")
+    assert where == "WHERE applicant_name ILIKE %s"
+    assert params == ["%cedar hollow%"]
 
 
 def test_q_also_matches_the_label_ocr():

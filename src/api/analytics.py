@@ -47,6 +47,7 @@ FILTER_KEYS = (
     "brand",
     "fanciful",
     "applicant",
+    "business",
     "permit",
     "permitName",
     "permitState",

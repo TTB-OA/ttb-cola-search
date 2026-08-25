@@ -24,6 +24,7 @@ const EMPTY = {
   brand: '',
   fanciful: '',
   applicant: '',
+  business: '',
   permit: '',
   permitName: '',
   permitState: '',
@@ -52,6 +53,7 @@ const PASSTHROUGH_KEYS = [
   'brand',
   'fanciful',
   'applicant',
+  'business',
   'permit',
   'permitName',
   'permitState',
@@ -123,24 +125,17 @@ function AdvancedFields({ draft, set, refData }) {
   const classTypeOptions = useMemo(() => matchOptions(classTypes, draft.classType), [classTypes, draft.classType]);
   const varietalOptions = useMemo(() => matchOptions(varietals, draft.varietal), [varietals, draft.varietal]);
 
-  const permitById = usePermitSuggest(draft.permit, (p) => ({
-    value: p.permitId,
-    label: p.permitId,
-    hint: p.name || permitLine(p),
-  }));
-  const permitByName = usePermitSuggest(draft.permitName, (p) => ({
+  const business = usePermitSuggest(draft.business, (p) => ({
     value: p.name || p.permitId,
     label: p.name || p.permitId,
     hint: [p.permitId, permitLine(p)].filter(Boolean).join(' · '),
   }));
 
-  // Resolving to the permit id searches every COLA on that permit, including
-  // the ones where it isn't the primary permit, so the name box is cleared
-  // rather than left behind as a second, narrower filter.
-  function pickPermit(opt) {
-    const p = opt.permit;
-    set('permit', p.permitId);
-    set('permitName', '');
+  // Picking a suggestion swaps the typed name for the permit number, which is
+  // unambiguous and finds every COLA on that permit — including the ones where
+  // it isn't the primary permit. One field, so no second filter to AND against.
+  function pickBusiness(opt) {
+    set('business', opt.permit.permitId);
   }
 
   return (
@@ -264,43 +259,20 @@ function AdvancedFields({ draft, set, refData }) {
       <div className="field adv-span">
         <div className="adv-subhead">Applicant, permit &amp; submitter</div>
       </div>
-      <div className="field">
-        <label>Applicant / business</label>
-        <div className="hint">Permit holder, or the submitter when no permit is on file</div>
-        <input
-          className="input"
-          placeholder="e.g. Cedar Hollow Winery"
-          value={draft.applicant}
-          onChange={(e) => set('applicant', e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label>Permit / plant number</label>
-        <div className="hint">Matches any permit associated with the COLA</div>
+      <div className="field adv-wide">
+        <label>Business or permit</label>
+        <div className="hint">
+          Applicant, permit holder, or a permit/plant number — pick a suggestion to search every COLA on that permit
+        </div>
         <Combobox
-          ariaLabel="Permit or plant number"
-          className="input mono"
-          placeholder="e.g. BWN-CA-1234"
-          value={draft.permit}
-          onChange={(v) => set('permit', v)}
-          onPick={pickPermit}
-          options={permitById.options}
-          loading={permitById.loading}
-          emptyText="No matching permit"
-        />
-      </div>
-      <div className="field">
-        <label>Permit holder name</label>
-        <div className="hint">Pick a suggestion to search every COLA on that permit</div>
-        <Combobox
-          ariaLabel="Permit holder name"
-          placeholder="e.g. Cedar Hollow LLC"
-          value={draft.permitName}
-          onChange={(v) => set('permitName', v)}
-          onPick={pickPermit}
-          options={permitByName.options}
-          loading={permitByName.loading}
-          emptyText="No matching permit holder"
+          ariaLabel="Business or permit"
+          placeholder="e.g. Cedar Hollow Winery, or BWN-CA-1234"
+          value={draft.business}
+          onChange={(v) => set('business', v)}
+          onPick={pickBusiness}
+          options={business.options}
+          loading={business.loading}
+          emptyText="No matching business or permit"
         />
       </div>
       <div className="field">

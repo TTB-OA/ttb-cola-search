@@ -73,6 +73,11 @@ _PERMIT_ID_MATCH = (
     " OR permits @> jsonb_build_array(jsonb_build_object('permit_id', %s::text)))"
 )
 
+# One box for "who made this": the business name or any of its permit numbers.
+# applicant_name is the permit/plant name, falling back to the submitter when no
+# permit is on file, and carries a trigram index, so the name half stays cheap.
+_BUSINESS_MATCH = f"(applicant_name ILIKE %s OR {_PERMIT_ID_MATCH})"
+
 
 def _prefix(term: str) -> str:
     """LIKE pattern for a prefix match, with wildcards in the term neutralised."""
@@ -103,6 +108,7 @@ def _build_filters(
     date_from: date | None,
     date_to: date | None,
     applicant: str | None = None,
+    business: str | None = None,
     permit: str | None = None,
     permit_name: str | None = None,
     permit_state: str | None = None,
@@ -136,12 +142,22 @@ def _build_filters(
     if applicant:
         conditions.append("applicant_name ILIKE %s")
         params.append(f"%{applicant}%")
+    if business:
+        term = business.strip()
+        conditions.append(_BUSINESS_MATCH)
+        id_term = _id_term(term)
+        params.extend(
+            [f"%{term}%", _prefix(id_term), _prefix(id_term), id_term]
+        )
     if permit:
         term = _id_term(permit)
         conditions.append(_PERMIT_ID_MATCH)
         params.extend([_prefix(term), _prefix(term), term])
     if permit_name:
-        conditions.append("primary_permit_name ILIKE %s")
+        # primary_permit_name never diverges from applicant_name (verified across
+        # all 4.39M rows) and has no index, so this resolves against the indexed
+        # copy instead.
+        conditions.append("applicant_name ILIKE %s")
         params.append(f"%{permit_name}%")
     if permit_state:
         conditions.append("upper(primary_permit_state_addr) = upper(%s)")
@@ -305,7 +321,22 @@ async def list_colas(
     fanciful: str | None = None,
     applicant: str | None = Query(
         default=None,
-        description="Applicant/business name (primary permit name, falling back to the submitter).",
+        description=(
+            "Applicant/business name (primary permit name, falling back to the "
+            "submitter). Superseded by `business`, which also matches permit numbers."
+        ),
+    ),
+    business: str | None = Query(
+        default=None,
+        description=(
+            "Business or permit, in one field. Matches the applicant/permit holder "
+            "name as a substring, and the same term as a permit or plant number "
+            "(prefix match on the COLA permit number and primary permit, exact "
+            "match against any associated permit). This is what the advanced search "
+            "form sends; `applicant`, `permit` and `permitName` remain for callers "
+            "that need one half on its own."
+        ),
+        examples=["Cedar Hollow", "BWN-CA-1234"],
     ),
     permit: str | None = Query(
         default=None,
@@ -314,7 +345,11 @@ async def list_colas(
     permit_name: str | None = Query(
         default=None,
         alias="permitName",
-        description="Permit holder name of the primary permit (partial match).",
+        description=(
+            "Permit holder name of the primary permit (partial match). Resolves "
+            "against `applicant_name`, which holds the same value; superseded by "
+            "`business`."
+        ),
     ),
     permit_state: str | None = Query(
         default=None,
@@ -450,6 +485,7 @@ async def list_colas(
         effective_date_from,
         date_to,
         applicant=applicant,
+        business=business,
         permit=permit,
         permit_name=permit_name,
         permit_state=permit_state,
