@@ -38,6 +38,10 @@ Table colas {
   application_type     text        [note: 'form item "TYPE OF APPLICATION" [scraped], multi-select joined with " | "']
   exemption_state      varchar     [note: 'state abbreviation printed on the exemption option [scraped]']
   resubmission_ttb_id  text        [note: 'rejected TTB ID printed on the resubmission option [scraped], COLLATE "C"']
+  type_of_product      varchar     [note: 'form item "TYPE OF PRODUCT" [scraped]: WINE | DISTILLED SPIRITS | MALT BEVERAGE']
+  application_date     date        [note: 'form item "DATE OF APPLICATION" [scraped]']
+  issued_date          date        [note: 'form item "DATE ISSUED" [scraped], blank until the certificate issues']
+  expiration_date      date        [note: '"EXPIRATION DATE (If any)" from the certificate status block [scraped], set only where status is Expired']
 
   indexes {
     completed_date
@@ -330,7 +334,7 @@ Table cola_search {
   brand_name                text        [note: 'mirrors colas.brand_name']
   fanciful_name             text        [note: 'mirrors colas.fanciful_name']
   applicant_name            text        [note: 'permit or submitter name [local]']
-  ct_commodity              text        [note: 'wine | beer | distilled_spirits | unknown [local]']
+  ct_commodity              text        [note: 'wine | beer | distilled_spirits | unknown — from type_of_product, else class_type_code [local]']
   ct_source                 text        [note: 'domestic | import | unknown [local]']
   origin                    text        [note: 'mirrors colas origin label']
   status                    varchar     [note: 'mirrors colas.status']

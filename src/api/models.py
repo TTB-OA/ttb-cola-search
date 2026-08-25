@@ -100,7 +100,16 @@ class ColaDetail(ColaSummary):
     net_contents: str | None = None
     abv: str | None = None
     mailing_address: str | None = None
+    # Items transcribed from the certificate image rather than the API; blank
+    # until the form-scrape pass has run for the record.
+    source_of_product: str | None = None
+    type_of_product: str | None = None
     application_type: str | None = None
+    exemption_state: str | None = None
+    resubmission_ttb_id: str | None = None
+    application_date: date | None = None
+    issued_date: date | None = None
+    expiration_date: date | None = None
     for_sale_in: str | None = None
     vendor_code: str | None = None
     formula: str | None = None

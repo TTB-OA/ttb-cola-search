@@ -2,15 +2,16 @@
 
 Geometry mirrors the official form (``docs/f510031.pdf``): US Legal, 612 x 1008pt,
 with every numbered item drawn where the real form's widget sits. The registry
-does not publish alcohol content, email address or either signature, so those
-items render blank and the footer says the form was reconstructed.
+does not publish alcohol content, email address, the item 15 container text or
+either signature, so those items render blank and the footer says the form was
+reconstructed.
 """
 from __future__ import annotations
 
 import io
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from PIL import Image, ImageOps
 from reportlab.lib.utils import ImageReader
@@ -113,6 +114,10 @@ def _joined(*parts: object, sep: str = ", ") -> str:
     return sep.join(p for p in (_clean(v) for v in parts) if p)
 
 
+def _date(value: date | None) -> str:
+    return value.strftime("%m/%d/%Y") if value else ""
+
+
 def _value_style(c: canvas.Canvas, font: str, size: float) -> None:
     c.setFont(font, size)
     c.setFillColorRGB(*VALUE_COLOR)
@@ -183,6 +188,30 @@ def _checkbox(
         c.setLineWidth(0.6)
     c.setFont(BODY, size)
     c.drawString(x + 10.5, y + 1.3, label)
+
+
+def _inline_value(
+    c: canvas.Canvas,
+    x: float,
+    y: float,
+    label: str,
+    value: str,
+    *,
+    size: float = 6.0,
+    placeholder: str = "",
+) -> float:
+    """Draw preprinted `label` then its registry `value`; returns the trailing x."""
+    c.setFont(BODY, size)
+    c.drawString(x, y, label)
+    x += stringWidth(label, BODY, size)
+    if value:
+        _value_style(c, MONO_BOLD, size + 0.5)
+        c.drawString(x, y, value)
+        _reset_style(c)
+        return x + stringWidth(value, MONO_BOLD, size + 0.5)
+    c.setFont(BODY, size)
+    c.drawString(x, y, placeholder)
+    return x + stringWidth(placeholder, BODY, size)
 
 
 # ---------------------------------------------------------------------------
@@ -434,17 +463,18 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     )
 
     _field(c, LEFT, 836, left_w, 30, "3. SOURCE OF PRODUCT (Required)")
-    source = _clean(detail.origin_group).lower()
+    # The scraped form item is authoritative; origin_group is the API's inference.
+    source = (_clean(detail.source_of_product) or _clean(detail.origin_group)).lower()
     _checkbox(c, LEFT + 12, 840, source == "domestic", "DOMESTIC")
     _checkbox(c, LEFT + 92, 840, source == "imported", "IMPORTED")
 
     _field(c, LEFT, 796, 124, 40, "4. SERIAL NUMBER (Required)", _clean(detail.serial))
     _field(c, LEFT + 124, 796, left_w - 124, 40, "5. TYPE OF PRODUCT (Required)")
-    category = _clean(detail.category).lower()
+    product = (_clean(detail.type_of_product) or _clean(detail.category)).lower()
     for i, (label, match) in enumerate(
         (("WINE", "wine"), ("DISTILLED SPIRITS", "distilled"), ("MALT BEVERAGES", "malt"))
     ):
-        _checkbox(c, LEFT + 130, 819 - i * 9.5, match in category, label, size=6)
+        _checkbox(c, LEFT + 130, 819 - i * 9.5, match in product, label, size=6)
 
     _field(c, LEFT, 770, left_w, 26, "6. BRAND NAME (Required)", _clean(detail.brand))
     _field(c, LEFT, 744, left_w, 26, "7. FANCIFUL NAME (If any)", _clean(detail.fanciful))
@@ -500,15 +530,31 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     _field(c, 378, 650, RIGHT - 378, 94, "14. TYPE OF APPLICATION (Check applicable box(es))")
     _checkbox(c, 384, 726, flags["a"], "a. CERTIFICATE OF LABEL APPROVAL", size=6)
     _checkbox(c, 384, 712, flags["b"], "b. CERTIFICATE OF EXEMPTION FROM LABEL", size=6)
+    cursor = _inline_value(
+        c,
+        394.5,
+        703,
+        'APPROVAL "For sale in ',
+        _clean(detail.exemption_state) or _clean(detail.for_sale_in),
+        placeholder="____",
+    )
     c.setFont(BODY, 6)
-    c.drawString(394.5, 703, 'APPROVAL "For sale in ____ only"')
+    c.drawString(cursor + 2, 703, 'only"')
     _checkbox(c, 384, 688, flags["c"], "c. DISTINCTIVE LIQUOR BOTTLE APPROVAL.", size=6)
     c.setFont(BODY, 6)
     c.drawString(394.5, 679, "TOTAL BOTTLE CAPACITY BEFORE CLOSURE")
     _value_style(c, MONO_BOLD, 7.5)
     c.drawString(394.5, 670, _clean(detail.net_contents))
     _reset_style(c)
-    _checkbox(c, 384, 656, flags["d"], "d. RESUBMISSION AFTER REJECTION", size=6)
+    _checkbox(c, 384, 658, flags["d"], "d. RESUBMISSION AFTER REJECTION", size=6)
+    _inline_value(
+        c,
+        394.5,
+        651,
+        "OF TTB ID ",
+        _clean(detail.resubmission_ttb_id),
+        size=5.5,
+    )
 
     _field(
         c,
@@ -537,7 +583,16 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         c.drawString(LEFT + 2, cursor, line)
         cursor -= 7.5
 
-    _field(c, LEFT, 486, 110, 26, "16. DATE OF APPLICATION")
+    _field(
+        c,
+        LEFT,
+        486,
+        110,
+        26,
+        "16. DATE OF APPLICATION",
+        _date(detail.application_date),
+        value_size=8.0,
+    )
     _field(c, LEFT + 110, 486, 234, 26, "17. SIGNATURE OF APPLICANT OR AUTHORIZED AGENT")
     _field(
         c,
@@ -565,7 +620,9 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         124,
         26,
         "19. DATE ISSUED",
-        detail.approval_date.strftime("%m/%d/%Y") if detail.approval_date else "",
+        # completed_date is the API's stand-in until the form scrape lands.
+        _date(detail.issued_date) or _date(detail.approval_date),
+        value_size=8.0,
     )
     _field(
         c,
@@ -578,7 +635,16 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
 
     _band(c, LEFT, 412, RIGHT - LEFT, 13, "FOR TTB USE ONLY")
     _field(c, LEFT, 336, 458, 74, "QUALIFICATIONS", _qualifications(detail), value_size=7.5)
-    _field(c, LEFT + 458, 336, RIGHT - LEFT - 458, 74, "EXPIRATION DATE (If any)")
+    _field(
+        c,
+        LEFT + 458,
+        336,
+        RIGHT - LEFT - 458,
+        74,
+        "EXPIRATION DATE (If any)",
+        _date(detail.expiration_date),
+        value_size=8.0,
+    )
 
 
 def _draw_affix_page(
