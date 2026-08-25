@@ -33,7 +33,7 @@ MONO_BOLD = "Courier-Bold"
 VALUE_COLOR = (0.05, 0.20, 0.62)
 
 CAPTION_SIZE = 5.5
-VALUE_SIZE = 8.0
+VALUE_SIZE = 9.0
 
 # "AFFIX COMPLETE SET OF LABELS BELOW", taken from the official form's widget rect.
 AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H = 24.6, 28.9, 564.8, 297.9
@@ -292,8 +292,8 @@ def _draw_label_cell(
     for font, text in _caption_lines(img):
         if cursor < y:
             break
-        _value_style(c, font, 6.5)
-        line = _wrap(text, font, 6.5, w)[:1]
+        _value_style(c, font, 7.0)
+        line = _wrap(text, font, 7.0, w)[:1]
         if line:
             c.drawCentredString(x + w / 2, cursor, line[0])
         cursor -= 8
@@ -402,7 +402,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
                 ),
             )
         ),
-        value_size=6.5,
+        value_size=7.0,
         value_font=MONO,
     )
 
@@ -460,7 +460,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         "OR BREWER'S NOTICE. INCLUDE APPROVED DBA OR TRADENAME IF USED ON THE LABEL "
         "(Required)",
         _applicant_block(detail),
-        value_size=8,
+        value_size=8.5,
     )
     _field(
         c,
@@ -470,7 +470,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         86,
         "8a. MAILING ADDRESS, IF DIFFERENT",
         _clean(detail.mailing_address),
-        value_size=8,
+        value_size=8.5,
     )
 
     _field(c, LEFT, 716, 124, 28, "9. FORMULA", _clean(detail.formula))
@@ -482,7 +482,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         28,
         "10. GRAPE VARIETAL(S) Wine only",
         ", ".join(detail.grape_varietals),
-        value_size=7.5,
+        value_size=8.0,
     )
     _field(
         c,
@@ -505,7 +505,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     _checkbox(c, 384, 688, flags["c"], "c. DISTINCTIVE LIQUOR BOTTLE APPROVAL.", size=6)
     c.setFont(BODY, 6)
     c.drawString(394.5, 679, "TOTAL BOTTLE CAPACITY BEFORE CLOSURE")
-    _value_style(c, MONO_BOLD, 7)
+    _value_style(c, MONO_BOLD, 7.5)
     c.drawString(394.5, 670, _clean(detail.net_contents))
     _reset_style(c)
     _checkbox(c, 384, 656, flags["d"], "d. RESUBMISSION AFTER REJECTION", size=6)
@@ -577,7 +577,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     )
 
     _band(c, LEFT, 412, RIGHT - LEFT, 13, "FOR TTB USE ONLY")
-    _field(c, LEFT, 336, 458, 74, "QUALIFICATIONS", _qualifications(detail), value_size=7)
+    _field(c, LEFT, 336, 458, 74, "QUALIFICATIONS", _qualifications(detail), value_size=7.5)
     _field(c, LEFT + 458, 336, RIGHT - LEFT - 458, 74, "EXPIRATION DATE (If any)")
 
 
