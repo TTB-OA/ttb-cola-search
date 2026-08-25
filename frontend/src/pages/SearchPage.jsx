@@ -297,7 +297,7 @@ function AdvancedFields({ draft, set, refData }) {
       </div>
       <div className="field">
         <label>Text on the label</label>
-        <div className="hint">Searches text recognized on label artwork — slower</div>
+        <div className="hint">Limits results to text recognized on the label artwork</div>
         <input
           className="input"
           placeholder="e.g. estate bottled"
@@ -528,7 +528,7 @@ export default function SearchPage() {
                       <input
                         className="input"
                         style={{ fontSize: 17 }}
-                        placeholder="Brand, fanciful name, TTB ID, applicant, permit, submitter, origin…"
+                        placeholder="Brand, fanciful name, TTB ID, applicant, permit, text on the label…"
                         value={draft.text}
                         onChange={(e) => set('text', e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && submitText()}
@@ -538,7 +538,8 @@ export default function SearchPage() {
                       </button>
                     </div>
                     <div className="hint" style={{ marginTop: 8 }}>
-                      Search across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID.
+                      Search across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID, plus
+                      text recognized on the label artwork. Records matching a field are listed first.
                     </div>
                     <div className="hint" style={{ marginTop: 6 }}>
                       Defaults to COLAs approved after {fmtDateLong(defaultDateFrom())} (last three calendar years). Expand in Advanced search.

@@ -10,7 +10,7 @@ from datetime import date
 
 import pytest
 
-from src.api.routers.colas import SORTS, _build_filters, _default_date_from
+from src.api.routers.colas import SORTS, _build_filters, _default_date_from, _order_by
 
 FILTER_VALUES = {
     "q": "cabernet",
@@ -98,6 +98,48 @@ def test_label_text_probes_the_ocr_side_table():
     assert "cola_search_ocr" in where
     assert "ocr_tsv @@ websearch_to_tsquery" in where
     assert params == ["government warning"]
+
+
+def test_q_also_matches_the_label_ocr():
+    where, params = build(q="estate bottled")
+    assert "cola_search_ocr" in where
+    assert "ocr_tsv @@ websearch_to_tsquery" in where
+    assert params[0] == "estate bottled"
+    assert params[-1] == "estate bottled"
+    assert_aligned(where, params)
+
+
+def test_q_avoids_an_or_against_the_ocr_table():
+    # An OR-ed EXISTS cannot be turned into a join and falls back to a per-row
+    # subplan over a sequential scan of cola_search.
+    where, _ = build(q="estate bottled")
+    assert " OR " not in where
+    assert "EXISTS" not in where
+    assert "cola_id IN (" in where
+
+
+def test_relevance_ranks_record_matches_above_ocr_only_matches():
+    order_by, order_params = _order_by("relevance", "cabernet")
+    assert order_by.startswith("(search_tsv @@ websearch_to_tsquery")
+    assert order_by.endswith(SORTS["relevance"])
+    assert order_params == ["cabernet"]
+
+
+@pytest.mark.parametrize("sort,q", [("relevance", None), ("relevance", "   "), ("brand", "cabernet")])
+def test_order_by_binds_nothing_without_a_ranked_term(sort, q):
+    order_by, order_params = _order_by(sort, q)
+    assert order_by == SORTS[sort]
+    assert order_params == []
+
+
+def test_unknown_sort_falls_back_to_relevance():
+    assert _order_by("nonsense", None) == (SORTS["relevance"], [])
+
+
+@pytest.mark.parametrize("sort", sorted(SORTS))
+def test_order_by_placeholders_match_its_parameters(sort):
+    order_by, order_params = _order_by(sort, "cabernet")
+    assert order_by.count("%s") == len(order_params)
 
 
 def test_every_sort_has_a_cola_id_tiebreaker():

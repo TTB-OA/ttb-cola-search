@@ -43,6 +43,29 @@ SORTS = {
 # spaces and leading zeros, so they cannot be normalised to a number.
 _ID_COLUMNS = ("cola_id", "serial_num", "permit_num", "primary_permit_id")
 
+# Matches the record document, the identifier columns, and the label OCR.
+#
+# Written as a semi-join over a UNION rather than one OR-list. OR-ing an EXISTS
+# against cola_search_ocr cannot be turned into a join, so the planner falls
+# back to a per-row subplan over a sequential scan of cola_search (measured at
+# 7-13s, past the statement timeout). Each UNION branch drives its own index and
+# the result feeds a semi-join on the primary key instead.
+_Q_MATCH = (
+    f"{SEARCH_TABLE}.cola_id IN (SELECT cola_id FROM {SEARCH_TABLE} "
+    "WHERE search_tsv @@ websearch_to_tsquery('english', %s)"
+    + "".join(
+        f" UNION ALL SELECT cola_id FROM {SEARCH_TABLE} WHERE {c} = %s"
+        for c in _ID_COLUMNS
+    )
+    + f" UNION ALL SELECT cola_id FROM {OCR_TABLE} "
+    "WHERE ocr_tsv @@ websearch_to_tsquery('english', %s))"
+)
+
+# Ranks rows whose record fields match above those that only match on label OCR.
+# Without it the date sort would bury an exact brand hit under every label that
+# happens to print the word.
+_Q_RANK = "(search_tsv @@ websearch_to_tsquery('english', %s)) DESC"
+
 # Permit id resolves against the COLA permit number, the primary permit, or the
 # GIN-indexed permits rollup.
 _PERMIT_ID_MATCH = (
@@ -94,11 +117,10 @@ def _build_filters(
 
     if q:
         term = q.strip()
-        clause = ["search_tsv @@ websearch_to_tsquery('english', %s)"]
+        conditions.append(_Q_MATCH)
         params.append(term)
-        clause.extend(f"{c} = %s" for c in _ID_COLUMNS)
         params.extend([_id_term(term)] * len(_ID_COLUMNS))
-        conditions.append("(" + " OR ".join(clause) + ")")
+        params.append(term)
     if ttb_id:
         term = _id_term(ttb_id)
         conditions.append("(cola_id = %s OR serial_num LIKE %s)")
@@ -164,6 +186,14 @@ def _build_filters(
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where, params
+
+
+def _order_by(sort: str, q: str | None) -> tuple[str, list[Any]]:
+    """ORDER BY for the requested sort, plus any parameters it binds."""
+    key = sort if sort in SORTS else "relevance"
+    if key == "relevance" and q and q.strip():
+        return f"{_Q_RANK}, {SORTS[key]}", [q.strip()]
+    return SORTS[key], []
 
 
 async def _facets(where: str, params: list[Any]) -> Facets:
@@ -244,7 +274,10 @@ async def list_colas(
             "phrases, `or`, and leading `-` for exclusion are supported. The term is "
             "also compared exactly against the serial number, permit number and "
             "primary permit id, and against the numeric COLA id when it is all digits. "
-            "Text recognized on the label images is not scanned here \u2014 use `labelText`. "
+            "Text recognized by OCR on the label artwork is searched too, so a COLA "
+            "matches when the term appears only on the label; under `sort=relevance` "
+            "those rows sort below record-field matches. Use `labelText` to search "
+            "the label artwork alone. "
             "Leave empty to browse all records without keyword filtering."
         ),
         examples=["cabernet", '"napa valley"', "26J087"],
@@ -296,7 +329,8 @@ async def list_colas(
         alias="labelText",
         description=(
             "Text recognized by OCR on the label artwork. Parsed as a web-style query "
-            "and matched against the indexed OCR document for the COLA."
+            "and matched against the indexed OCR document for the COLA. Unlike `q`, "
+            "which spans both, this narrows the result set to the label artwork alone."
         ),
     ),
     commodity: str | None = None,
@@ -332,9 +366,10 @@ async def list_colas(
         description=(
             "Controls the `ORDER BY` applied to the matching rows. Every ordering is "
             "tie-broken on `cola_id` so paging is stable. Accepted values:\n\n"
-            "- `relevance` (default) — newest first by approval/completed date "
-            "(`completed_date DESC`, nulls last). Currently an alias of `approvalDate`; "
-            "reserved for future keyword-relevance ranking.\n"
+            "- `relevance` (default) — with a `q` term, rows matching the record "
+            "fields sort ahead of rows that match only on label OCR; within each "
+            "group, newest first by approval/completed date. Without `q` it is "
+            "identical to `approvalDate`.\n"
             "- `approvalDate` — newest approved/completed COLAs first "
             "(`completed_date DESC`, nulls last).\n"
             "- `brand` — alphabetical by brand name (`brand_name ASC`, nulls last).\n"
@@ -389,7 +424,7 @@ async def list_colas(
         qualification=qualification,
         label_text=label_text,
     )
-    order_by = SORTS.get(sort, SORTS["relevance"])
+    order_by, order_params = _order_by(sort, q)
     offset = (page - 1) * page_size
 
     # The count is bounded so a broad filter cannot force a full scan; anything
@@ -404,7 +439,7 @@ async def list_colas(
 
     total_row, rows, facet_data = await asyncio.gather(
         fetch_one(count_sql, [*params, COUNT_CAP + 1]),
-        fetch_all(rows_sql, [*params, page_size, offset]),
+        fetch_all(rows_sql, [*params, *order_params, page_size, offset]),
         _facets(where, params) if facets else _no_facets(),
     )
 

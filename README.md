@@ -188,9 +188,19 @@ A few semantics are worth knowing before writing queries against it:
   `permit_num`, and `primary_permit_id` for an exact match. `cola_id` is text
   matched verbatim: ids carry `A`/`B`/`C`/`D`/`$` suffixes, embedded spaces and
   leading zeros, so they are never treated as numbers.
+- `q` also matches the label OCR in `cola_search_ocr`, so a COLA is returned when
+  the term appears only on the artwork. The match is expressed as a semi-join
+  over a `UNION` of per-index branches; an `OR EXISTS` against the OCR table
+  collapses to a per-row subplan over a sequential scan and blows the statement
+  timeout.
 - `ttbId`, `permit`, and `submitter` match on **prefix**. Identifier input is
   upper-cased before comparison, since the supporting indexes compare bytes.
-- `labelText` searches OCR text from the label images via `cola_search_ocr`.
+- `labelText` searches OCR text from the label images via `cola_search_ocr`, and
+  narrows the result set to the artwork alone — use it when `q` returns too many
+  record matches.
+- `sort=relevance` with a `q` term puts record-field matches ahead of rows that
+  match only on label OCR, then orders each group newest-first. Without `q` it is
+  identical to `approvalDate`.
 - With no `dateFrom` or `dateTo`, searches are limited to the last three
   calendar years. Pass `allDates=true` to search the full history instead.
 - `total` is capped at 10,000. When the cap is hit, `totalIsCapped` is `true` and
