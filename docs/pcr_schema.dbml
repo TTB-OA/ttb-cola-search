@@ -17,7 +17,6 @@ Project pcr {
 
 Table colas {
   cola_id              text        [pk, note: 'ttbId verbatim [list], COLLATE "C". Ids are not numeric: suffixes A/B/C/D/$ and embedded spaces occur, so the former bigint key stripped non-digits and leading zeros and collapsed distinct certificates onto one row']
-  ttb_id               varchar(20) [unique, note: 'ttbId verbatim [list], COLLATE "C", nullable. Equal to cola_id on every row since the re-key; predates it, and its unique index is now redundant']
   permit_num           varchar     [note: 'permitId [list]']
   serial_num           varchar     [note: 'serialNum [list]']
   brand_name           text        [note: 'brandName [list]']
