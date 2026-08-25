@@ -20,7 +20,7 @@ export default function Header() {
           <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
             Search
           </NavLink>
-          <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
+          <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')} data-tour="coverage-link">
             Coverage
           </NavLink>
           <NavLink to="/analytics" className={({ isActive }) => (isActive ? 'active' : '')}>

@@ -36,6 +36,7 @@ ALLOWED_EVENTS = frozenset(
         "cola_form_downloaded",
         "form_viewed",
         "print_clicked",
+        "describe_search_submitted",
         "image_search_abandoned",
         "image_search_state_lost",
         "client_api_error",

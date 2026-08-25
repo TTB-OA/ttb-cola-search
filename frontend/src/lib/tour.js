@@ -150,6 +150,16 @@ export const TOUR_STEPS = [
     title: "You're all set",
     body: 'You are back on the search page — start your own search, and replay this tour anytime from the Tour link in the header.',
   },
+  {
+    id: 'coverage',
+    route: '/',
+    target: '[data-tour="coverage-link"]',
+    placement: 'bottom',
+    requireTarget: true,
+    title: 'One more thing: data coverage',
+    body:
+      'We are still backfilling historical COLA records and label images. Coverage shows what has loaded so far — by year, commodity, and images — so you know how complete a search is.',
+  },
 ];
 
 export function hasSeenTour() {

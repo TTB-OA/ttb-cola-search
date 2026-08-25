@@ -271,9 +271,13 @@ export default function DetailPage() {
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') || '').trim().toLowerCase();
 
-  const detailState = useAsync((signal) => api.getCola(id, signal), [id]);
-  const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id]);
-  const othersState = useAsync((signal) => api.similar(id, 8, signal, 'others'), [id]);
+  const detailState = useAsync((signal) => api.getCola(id, signal), [id], { cacheKey: `cola:${id}` });
+  const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id], {
+    cacheKey: `similar:member:${id}`,
+  });
+  const othersState = useAsync((signal) => api.similar(id, 8, signal, 'others'), [id], {
+    cacheKey: `similar:others:${id}`,
+  });
   const rec = detailState.data;
 
   const brand = (rec && rec.brand ? rec.brand : '').trim();
@@ -679,7 +683,9 @@ export default function DetailPage() {
         {/* similar labels */}
         {!proc.embedded && (
           <section style={{ marginTop: 40 }}>
-            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Similar COLAs</h2>
+            <h2 style={{ fontSize: 20, marginBottom: 4 }} data-tour="detail-similar">
+              Similar COLAs
+            </h2>
             <Notice title="Visual similarity has not been computed for this label.">
               {proc.imagesLoaded
                 ? "This record's images have not been converted into image embeddings yet, so visually similar COLAs from this or any other industry member cannot be shown."

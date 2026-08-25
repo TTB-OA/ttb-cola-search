@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom';
 // import GovBanner from './components/GovBanner.jsx'; // temporarily disabled
 import Header from './components/Header.jsx';
 import Footer from './components/Footer.jsx';
+import ScrollManager from './components/ScrollManager.jsx';
 import { TourProvider } from './components/Tour.jsx';
 import SearchPage from './pages/SearchPage.jsx';
 import ResultsPage from './pages/ResultsPage.jsx';
@@ -13,6 +14,7 @@ export default function App() {
   return (
     <TourProvider>
       {/* <GovBanner /> temporarily disabled */}
+      <ScrollManager />
       <Header />
       <main>
         <Routes>

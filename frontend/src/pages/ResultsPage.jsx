@@ -378,6 +378,7 @@ export default function ResultsPage() {
 
   const textState = useAsync((signal) => api.searchColas(textParams, signal), [searchParams.toString()], {
     skip: isVector,
+    cacheKey: `text:${searchParams.toString()}`,
   });
 
   const imageState = useAsync(
@@ -389,7 +390,7 @@ export default function ResultsPage() {
   const describeState = useAsync(
     (signal) => api.searchByDescription({ q: criteria.q, commodity: criteria.commodity, limit: PAGE_SIZE }, signal),
     [searchParams.toString()],
-    { skip: !isDescribe }
+    { skip: !isDescribe, cacheKey: `describe:${searchParams.toString()}` }
   );
 
   const state = isImg ? imageState : isDescribe ? describeState : textState;

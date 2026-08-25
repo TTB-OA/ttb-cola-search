@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -412,9 +412,20 @@ function ImageSearch({ draft, set, refData, onSubmit }) {
 
 const DESCRIBE_MIN = 3;
 
+const DESCRIBE_PLACEHOLDERS = [
+  'a gold eagle crest above art-deco lettering on a deep green background',
+  'hand-drawn mountain range in muted blues with serif lettering',
+  'black label with gold foil script and a wax-seal emblem',
+  'watercolor botanical illustration with a thin gold border',
+];
+
 function DescribeSearch({ draft, set, refData, onSubmit }) {
   const categories = refData.categories || [];
   const ready = draft.description.trim().length >= DESCRIBE_MIN;
+  const placeholder = useMemo(
+    () => DESCRIBE_PLACEHOLDERS[Math.floor(Math.random() * DESCRIBE_PLACEHOLDERS.length)],
+    [],
+  );
 
   return (
     <div>
@@ -424,11 +435,13 @@ function DescribeSearch({ draft, set, refData, onSubmit }) {
           className="input"
           rows={3}
           style={{ resize: 'vertical' }}
-          placeholder="a dark green bottle with a gold eagle crest and art-deco lettering"
+          placeholder={placeholder}
           value={draft.description}
           onChange={(e) => set('description', e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && ready) onSubmit();
+            if (e.key !== 'Enter' || e.shiftKey) return; // Shift+Enter still adds a line break
+            e.preventDefault();
+            if (ready) onSubmit();
           }}
         />
       </div>
@@ -470,13 +483,14 @@ export default function SearchPage() {
   const [advanced, setAdvanced] = useState(false);
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
-  const refState = useAsync((signal) => api.reference(signal), []);
+  const refState = useAsync((signal) => api.reference(signal), [], { cacheKey: 'reference' });
   const ref = refState.data || {};
   const categories = ref.categories || [];
 
   const recentState = useAsync(
     (signal) => api.searchColas({ sort: 'approvalDate', status: 'Approved', pageSize: 6, facets: false }, signal),
-    []
+    [],
+    { cacheKey: 'recent' }
   );
   const recent = (recentState.data && recentState.data.items) || [];
 
