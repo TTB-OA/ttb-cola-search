@@ -175,14 +175,18 @@ function BoundingBox({ item, stageRef, src }) {
 // that pans with the cursor.
 const LB_ZOOM = 2.6;
 
-function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) {
+function Lightbox({ rec, views, file, setFile, hlItem, onClose }) {
   const [zoom, setZoom] = useState(null);
+  const idx = Math.max(0, views.findIndex((v) => v.img.fileName === file));
+  const step = (delta) => {
+    if (!views.length) return;
+    setFile(views[(idx + delta + views.length) % views.length].img.fileName);
+  };
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
-      const i = faces.indexOf(face);
-      if (e.key === 'ArrowRight') setFace(faces[(i + 1) % faces.length]);
-      if (e.key === 'ArrowLeft') setFace(faces[(i + faces.length - 1) % faces.length]);
+      if (e.key === 'ArrowRight') step(1);
+      if (e.key === 'ArrowLeft') step(-1);
     };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -190,13 +194,13 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [face, faces]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [file, views]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A new face means a new image, so drop back to the fitted view.
-  useEffect(() => setZoom(null), [face]);
+  // A new image means new artwork, so drop back to the fitted view.
+  useEffect(() => setZoom(null), [file]);
 
-  const faceImages = imagesByFace[face] || [];
-  const cur = (hlItem && faceImages.find((im) => im.fileName === hlItem.file)) || faceImages[0];
+  const view = views[idx];
+  const cur = view && view.img;
   const stageRef = useRef(null);
 
   // Percentages are read off the untransformed stage so panning stays steady.
@@ -212,12 +216,8 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
         <Icon name="close" size={22} />
       </button>
       <div className="lb-body" onClick={(e) => e.stopPropagation()}>
-        {faces.length > 1 && (
-          <button
-            className="lb-arrow"
-            onClick={() => setFace(faces[(faces.indexOf(face) + faces.length - 1) % faces.length])}
-            aria-label="Previous image"
-          >
+        {views.length > 1 && (
+          <button className="lb-arrow" onClick={() => step(-1)} aria-label="Previous image">
             <Icon name="chevLeft" size={26} />
           </button>
         )}
@@ -232,34 +232,31 @@ function Lightbox({ rec, faces, imagesByFace, face, setFace, hlItem, onClose }) 
             style={zoom ? { transform: `scale(${LB_ZOOM})`, transformOrigin: `${zoom.x}% ${zoom.y}%` } : undefined}
           >
             <LabelThumb rec={rec} src={cur && cur.url} />
-            {hlItem && hlItem.face === face && hasBox(hlItem) && (
-              <BoundingBox item={hlItem} stageRef={stageRef} src={cur && cur.url} />
+            {hlItem && cur && hlItem.file === cur.fileName && hasBox(hlItem) && (
+              <BoundingBox item={hlItem} stageRef={stageRef} src={cur.url} />
             )}
           </div>
           <div className="lb-cap">
-            <b>{rec.brand}</b> — {face} label · TTB ID {rec.ttbId}
+            <b>{rec.brand}</b> — {view ? view.caption : 'front'} label · TTB ID {rec.ttbId}
           </div>
         </div>
-        {faces.length > 1 && (
-          <button
-            className="lb-arrow"
-            onClick={() => setFace(faces[(faces.indexOf(face) + 1) % faces.length])}
-            aria-label="Next image"
-          >
+        {views.length > 1 && (
+          <button className="lb-arrow" onClick={() => step(1)} aria-label="Next image">
             <Icon name="chevRight" size={26} />
           </button>
         )}
       </div>
       <div className="lb-thumbs" onClick={(e) => e.stopPropagation()}>
-        {faces.map((f) => {
-          const img = imagesByFace[f] && imagesByFace[f][0];
-          return (
-            <button key={f} className={'lv-thumb' + (face === f ? ' on' : '')} onClick={() => setFace(f)}>
-              <LabelThumb rec={rec} src={img && img.url} />
-              <span className="lv-cap">{f}</span>
-            </button>
-          );
-        })}
+        {views.map((v) => (
+          <button
+            key={v.img.fileName}
+            className={'lv-thumb' + (v === view ? ' on' : '')}
+            onClick={() => setFile(v.img.fileName)}
+          >
+            <LabelThumb rec={rec} src={v.img.url} />
+            <span className="lv-cap">{v.caption}</span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -294,25 +291,42 @@ export default function DetailPage() {
 
   const images = useMemo(() => (rec && rec.images) || [], [rec]);
   const items = useMemo(() => (rec && rec.imageItems) || [], [rec]);
-  const imagesByFace = useMemo(() => {
-    const m = {};
+  // One gallery entry per image. Several images usually share an img_type, so
+  // keying the viewer on the face alone hid everything past the first of each.
+  const views = useMemo(() => {
+    const counts = {};
     images.forEach((img) => {
-      const f = img.face || 'front';
-      (m[f] = m[f] || []).push(img);
+      const f = img.face || 'other';
+      counts[f] = (counts[f] || 0) + 1;
     });
-    return m;
+    const seen = {};
+    return images.map((img) => {
+      const f = img.face || 'other';
+      seen[f] = (seen[f] || 0) + 1;
+      return { img, face: f, caption: counts[f] > 1 ? `${f} ${seen[f]}` : f };
+    });
   }, [images]);
   const faces = useMemo(() => {
     // Server order: the API ranks images by visual interest, so the most
     // distinctive artwork leads rather than whichever face is nominally the front.
-    const fs = Object.keys(imagesByFace);
+    const fs = Array.from(new Set(views.map((v) => v.face)));
     return fs.length ? fs : ['front'];
-  }, [imagesByFace]);
+  }, [views]);
 
-  const [activeImg, setActiveImg] = useState('front');
+  const [activeFile, setActiveFile] = useState(null);
   const [hlItem, setHlItem] = useState(null);
   const [lightbox, setLightbox] = useState(false);
   const mainStageRef = useRef(null);
+
+  // Highlighted text names its own image; fall back to that image's face, then
+  // to the lead image, so a stale or unmatched file name never blanks the stage.
+  const fileForItem = (it) => {
+    const match =
+      (it && views.find((v) => v.img.fileName === it.file)) ||
+      (it && views.find((v) => v.face === it.face)) ||
+      views[0];
+    return match ? match.img.fileName : null;
+  };
 
   const matchedItems = useMemo(
     () => (q ? items.filter((it) => (it.text || '').toLowerCase().includes(q)) : []),
@@ -342,8 +356,8 @@ export default function DetailPage() {
   useEffect(() => {
     const first = matchedItems.length ? matchedItems[0] : null;
     setHlItem(first);
-    setActiveImg(first ? first.face : faces[0]);
-  }, [id, q, faces]); // eslint-disable-line react-hooks/exhaustive-deps
+    setActiveFile(fileForItem(first));
+  }, [id, q, views]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (detailState.loading) {
     return (
@@ -379,9 +393,9 @@ export default function DetailPage() {
   const memberSimilar = dropSelf(memberState.data);
   const othersSimilar = dropSelf(othersState.data);
   const proc = rec.processing || {};
-  const activeFaceImages = imagesByFace[activeImg] || [];
-  const currentImage =
-    (hlItem && activeFaceImages.find((im) => im.fileName === hlItem.file)) || activeFaceImages[0];
+  const activeView = views.find((v) => v.img.fileName === activeFile) || views[0];
+  const currentImage = activeView && activeView.img;
+  const showBox = !!(hlItem && currentImage && hlItem.file === currentImage.fileName && hasBox(hlItem));
   const onOpen = (rid) =>
     navigate(`/cola/${encodeURIComponent(rid)}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
   const memberPermit = rec.permitId || rec.permit;
@@ -457,24 +471,25 @@ export default function DetailPage() {
               <div className="lv-main">
                 <div className="lv-stage" ref={mainStageRef} style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
                   <LabelThumb rec={rec} src={currentImage && currentImage.url} style={{ aspectRatio: '4/5' }} />
-                  {hlItem && activeImg === hlItem.face && hasBox(hlItem) && (
-                    <BoundingBox item={hlItem} stageRef={mainStageRef} src={currentImage && currentImage.url} />
+                  {showBox && (
+                    <BoundingBox item={hlItem} stageRef={mainStageRef} src={currentImage.url} />
                   )}
-                  <button className="lv-expand" onClick={() => { track('lightbox_opened', { face: activeImg }); setLightbox(true); }} title="View full size" aria-label="View full size">
+                  <button className="lv-expand" onClick={() => { track('lightbox_opened', { face: activeView && activeView.face }); setLightbox(true); }} title="View full size" aria-label="View full size">
                     <Icon name="expand" size={16} /> Full size
                   </button>
                 </div>
               </div>
               <div className="lv-thumbs">
-                {faces.map((f) => {
-                  const img = imagesByFace[f] && imagesByFace[f][0];
-                  return (
-                    <button key={f} className={'lv-thumb' + (activeImg === f ? ' on' : '')} onClick={() => { track('label_face_switched', { face: f }); setActiveImg(f); }}>
-                      <LabelThumb rec={rec} src={img && img.url} />
-                      <span className="lv-cap">{f}</span>
-                    </button>
-                  );
-                })}
+                {views.map((v) => (
+                  <button
+                    key={v.img.fileName}
+                    className={'lv-thumb' + (v === activeView ? ' on' : '')}
+                    onClick={() => { track('label_face_switched', { face: v.face }); setActiveFile(v.img.fileName); }}
+                  >
+                    <LabelThumb rec={rec} src={v.img.url} />
+                    <span className="lv-cap">{v.caption}</span>
+                  </button>
+                ))}
               </div>
               {images.length === 0 && (
                 <div className="muted" style={{ fontSize: 12, textAlign: 'center', marginTop: 12 }}>
@@ -662,7 +677,7 @@ export default function DetailPage() {
                                     setHlItem(null);
                                   } else {
                                     setHlItem(it);
-                                    setActiveImg(it.face);
+                                    setActiveFile(fileForItem(it));
                                   }
                                 }}
                               >
@@ -731,10 +746,9 @@ export default function DetailPage() {
       {lightbox && (
         <Lightbox
           rec={rec}
-          faces={faces}
-          imagesByFace={imagesByFace}
-          face={activeImg}
-          setFace={setActiveImg}
+          views={views}
+          file={currentImage && currentImage.fileName}
+          setFile={setActiveFile}
           hlItem={hlItem}
           onClose={() => setLightbox(false)}
         />
