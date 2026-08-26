@@ -149,7 +149,7 @@ export const TOUR_STEPS = [
     requireTarget: true,
     title: 'One more thing: data coverage',
     body:
-      'We are still backfilling historical COLA records and label images. Coverage shows what has loaded so far — by year, commodity, and images — so you know how complete a search is.',
+      'We are still backfilling historical COLA records and label images. Coverage shows what has loaded so far — by year — so you know how complete a search is.',
   },
   {
     id: 'replay',
