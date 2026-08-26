@@ -142,15 +142,6 @@ export const TOUR_STEPS = [
       'Each record links to similar COLAs from the same industry member and from other industry members — useful for comparing prior approvals and trade dress.',
   },
   {
-    id: 'replay',
-    route: '/', // returns the user to the search page as the tour ends
-    target: '[data-tour="tour-button"]',
-    placement: 'bottom',
-    requireTarget: true,
-    title: "You're all set",
-    body: 'You are back on the search page — start your own search, and replay this tour anytime from the Tour link in the header.',
-  },
-  {
     id: 'coverage',
     route: '/',
     target: '[data-tour="coverage-link"]',
@@ -159,6 +150,15 @@ export const TOUR_STEPS = [
     title: 'One more thing: data coverage',
     body:
       'We are still backfilling historical COLA records and label images. Coverage shows what has loaded so far — by year, commodity, and images — so you know how complete a search is.',
+  },
+  {
+    id: 'replay',
+    route: '/', // returns the user to the search page as the tour ends
+    target: '[data-tour="tour-button"]',
+    placement: 'bottom',
+    requireTarget: true,
+    title: "You're all set",
+    body: 'You are back on the search page — start your own search, and replay this tour anytime from the Tour link in the header.',
   },
 ];
 
