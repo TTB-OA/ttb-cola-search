@@ -58,7 +58,7 @@ Table cola_images {
   dimensions_txt  varchar
   blob_name       text
   blob_url        text
-  download_status varchar     [note: 'SUCCESS or NONE are terminal']
+  download_status varchar     [note: 'SUCCESS, NONE and UNAVAILABLE are terminal. NONE means TTB said there is no label; UNAVAILABLE means its detail page could not be read, so the answer is unknown.']
   scraped_on      timestamptz
 
   // Written only by code/image_embedding.py. pgvector, 768 dimensions to match
@@ -407,6 +407,37 @@ Table cola_coverage_year {
   _loaded_at           timestamptz [note: 'as-of time this row was materialised [local]']
 }
 
+// One row per permit_id, rebuilt whole by search_materialize.py on every run.
+// cola_permits only holds detail-filled COLAs, so cola_count is rolled up from
+// cola_permits UNION colas.permit_num for COLAs cola_permits hasn't reached yet,
+// keeping it the true count rather than the detail-filled subset. A permit's
+// display fields (permit_name, addresses) come only from cola_permits, so they
+// stay null until at least one of its COLAs is detail-filled.
+Table cola_permit_search {
+  permit_id              varchar     [pk, note: 'as scraped, already uppercase [local]']
+  permit_name            text        [note: 'latest by completed_date, for display [local]']
+  name_variants          text[]      [note: 'every distinct name seen, for recall [local]']
+  names_blob             text        [note: 'name_variants joined with " | ", trigram-indexed [local]']
+  permit_frst_strt_addr  text        [note: '[local]']
+  permit_secnd_strt_addr text        [note: '[local]']
+  permit_city_addr       varchar     [note: '[local]']
+  permit_state_addr      varchar     [note: '[local]']
+  permit_zip_addr        varchar     [note: '[local]']
+  permit_zip4_addr       varchar     [note: '[local]']
+  permit_cntry_addr      varchar     [note: '[local]']
+  cola_count             bigint      [note: 'distinct COLAs on this permit, list+detail sourced [local]']
+  primary_cola_count     bigint      [note: 'of cola_count, where this was the primary permit [local]']
+  first_completed_date   date        [note: '[local]']
+  last_completed_date    date        [note: '[local]']
+  _loaded_at             timestamptz [note: 'as-of time this row was materialised [local]']
+
+  indexes {
+    (permit_id) [name: 'cola_permit_search_permit_id_pattern_idx']
+    names_blob [type: gin, name: 'cola_permit_search_names_trgm_idx']
+    (cola_count, permit_id) [name: 'cola_permit_search_cola_count_idx']
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Views (defined in pcr_baseline.py, not drawn here)
 //
@@ -436,6 +467,7 @@ Ref: cola_grape_varietals.cola_id > colas.cola_id
 Ref: cola_search.cola_id - colas.cola_id
 Ref: cola_search_ocr.cola_id - cola_search.cola_id
 Ref: cola_search_dirty.cola_id > colas.cola_id
+Ref: cola_permit_search.permit_id - cola_permits.permit_id
 Ref: embedding_batch_item.job_id > embedding_batch_job.job_id
 Ref: embedding_batch_item.(cola_id, file_name) > cola_images.(cola_id, file_name)
 
