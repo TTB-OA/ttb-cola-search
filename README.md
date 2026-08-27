@@ -98,7 +98,8 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `POSTGRES_HOST` | — | required |
 | `POSTGRES_DB` | — | required |
 | `POSTGRES_USER` | — | required; the Entra principal when using token auth |
-| `POSTGRES_PORT` | `5432` | |
+| `POSTGRES_PORT` | `5432` | `6432` when going through the built-in PgBouncer |
+| `POSTGRES_PGBOUNCER` | `false` | set with port `6432`; the server pools in transaction mode, so the app applies `search_path`/`statement_timeout` per transaction and turns off server-side prepared statements |
 | `POSTGRES_SCHEMA` | `public` | e.g. `pcr-dev`, `pcr-prod` |
 | `POSTGRES_AUTH_METHOD` | `entra` | or `password` |
 | `POSTGRES_PASSWORD` | — | ignored under `entra` |
@@ -371,6 +372,13 @@ tables have not been built in the target `POSTGRES_SCHEMA`, or the connecting
 role lacks `USAGE` on that schema. Postgres silently drops schemas the role
 cannot access from `search_path`, so a missing grant reports as a missing table.
 Check with `has_schema_privilege('<role>', '<schema>', 'USAGE')`.
+
+**`unsupported startup parameter in options: search_path`** — the app is
+pointed at PgBouncer (port 6432) without `POSTGRES_PGBOUNCER=true`, or an older
+build that passed the schema as a libpq startup option. Azure's built-in
+PgBouncer does not expose `track_extra_parameters`, so `search_path` cannot be
+sent that way; with the flag on, the app applies `search_path` and
+`statement_timeout` inside the transaction that runs each query instead.
 
 **HTTP 504 from a search** — the query exceeded
 `POSTGRES_STATEMENT_TIMEOUT_MS`. Usually a filter with no supporting index;

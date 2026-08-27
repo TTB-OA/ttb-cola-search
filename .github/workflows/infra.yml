@@ -37,6 +37,7 @@ jobs:
             -p acrPassword="${{ secrets.ACR_PASSWORD }}" \
             -p postgresHost="${{ vars.PG_HOST }}" \
             -p postgresPort="${{ vars.PG_PORT }}" \
+            -p postgresPgbouncer="${{ vars.PG_PGBOUNCER || 'false' }}" \
             -p postgresSslmode="${{ vars.PG_SSLMODE }}" \
             -p postgresDb="${{ vars.PG_DATABASE }}" \
             -p postgresSchema="${{ vars.PG_SCHEMA }}" \

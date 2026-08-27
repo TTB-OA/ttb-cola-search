@@ -36,7 +36,10 @@ param acrPassword string
 
 // --- Postgres (Entra token auth; no password) ------------------------------
 param postgresHost string
+@description('5432 for a direct connection, 6432 for the built-in PgBouncer.')
 param postgresPort int = 5432
+@description('Set true when postgresPort is 6432 (built-in PgBouncer, transaction pooling).')
+param postgresPgbouncer bool = false
 param postgresDb string
 param postgresSchema string = 'pcr-prod'
 @description('Entra principal used to log in to Postgres. Use the managed identity name so the app connects as the identity created here.')
@@ -238,6 +241,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'AZURE_CLIENT_ID', value: identity.properties.clientId }
               { name: 'POSTGRES_HOST', value: postgresHost }
               { name: 'POSTGRES_PORT', value: string(postgresPort) }
+              { name: 'POSTGRES_PGBOUNCER', value: string(postgresPgbouncer) }
               { name: 'POSTGRES_DB', value: postgresDb }
               { name: 'POSTGRES_SCHEMA', value: postgresSchema }
               { name: 'POSTGRES_AUTH_METHOD', value: 'entra' }

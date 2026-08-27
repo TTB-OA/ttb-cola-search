@@ -12,7 +12,7 @@ from psycopg.abc import QueryNoTemplate
 from psycopg.sql import SQL, Literal
 
 from ..config import get_settings
-from ..db import fetch_one, get_pool
+from ..db import fetch_one, transaction_cursor
 from ..embedding import get_embedder
 from ..mappers import (
     COMMODITY_CODE,
@@ -138,7 +138,7 @@ async def _nearest_by_vector(
 
     # ef_search has to exceed the candidate LIMIT or HNSW recall collapses.
     ef_search = min(1000, max(_HNSW_EF_SEARCH, candidates))
-    async with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
+    async with transaction_cursor() as cur:
         await cur.execute(SQL("SET LOCAL hnsw.ef_search TO {}").format(Literal(ef_search)))
         # Without this the scan stops at the first ef_search tuples, so the permit and
         # commodity filters below can starve the result set. It also lets the search
