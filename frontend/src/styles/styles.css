@@ -100,6 +100,20 @@ h1,h2,h3,h4,h5 { margin: 0; font-weight: 700; line-height: 1.2; }
 }
 
 /* ============================================================
+   Prototype banner
+   ============================================================ */
+.prototype-banner {
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 13px;
+  border-bottom: 1px solid var(--gold-dark);
+}
+.prototype-banner .wrap {
+  padding: 7px 32px; display: flex; align-items: center; gap: 8px;
+}
+.prototype-banner svg { flex: 0 0 auto; }
+
+/* ============================================================
    Header
    ============================================================ */
 .site-header { background: var(--white); border-bottom: 1px solid var(--base-lighter); }

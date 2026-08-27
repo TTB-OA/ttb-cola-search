@@ -12,7 +12,7 @@ export default function Header() {
           <span className="brand-text">
             <span className="agency">Alcohol &amp; Tobacco Tax and Trade Bureau</span>
             <span className="product">
-              Public COLA <b>Registry</b>
+              TTB COLA <b>Registry</b>
             </span>
           </span>
         </Link>
@@ -26,6 +26,9 @@ export default function Header() {
           <NavLink to="/analytics" className={({ isActive }) => (isActive ? 'active' : '')}>
             Analytics
           </NavLink>
+          <a href="/docs" target="_blank" rel="noopener noreferrer">
+            API
+          </a>
           <button type="button" className="nav-tour" data-tour="tour-button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>

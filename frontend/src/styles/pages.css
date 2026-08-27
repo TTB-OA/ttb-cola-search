@@ -354,6 +354,6 @@ section > .d-notice { margin-bottom: 0; }
 
 /* print */
 @media print {
-  .gov-banner, .site-header, .site-footer, .results-bar, .tweaks-host, button.btn, .crumbs { display: none !important; }
+  .gov-banner, .prototype-banner, .site-header, .site-footer, .results-bar, .tweaks-host, button.btn, .crumbs { display: none !important; }
   .label-viewer, .panel { box-shadow: none; }
 }

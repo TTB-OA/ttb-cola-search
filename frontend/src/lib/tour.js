@@ -35,7 +35,7 @@ export const TOUR_STEPS = [
     id: 'welcome',
     route: '/',
     placement: 'center',
-    title: 'Welcome to the Public COLA Registry',
+    title: 'Welcome to the TTB COLA Registry',
     body:
       'Search every Certificate of Label Approval issued for wine, malt beverages, and distilled spirits — including the approved label artwork. Here is a quick look at what you can do.',
   },

@@ -217,7 +217,7 @@ export default function CoveragePage() {
         <div>
           <h1>Data coverage</h1>
           <p className="an-caption">
-            How much of the TTB Public COLA Registry this site holds, and how far each
+            How much of the TTB COLA Registry this site holds, and how far each
             year has been enriched. Search only finds what has been ingested, and the
             label-text and image searches only reach the records shown below.
           </p>

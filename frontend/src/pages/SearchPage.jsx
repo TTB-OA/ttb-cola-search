@@ -561,7 +561,7 @@ export default function SearchPage() {
             <span className="section-title" style={{ color: 'var(--accent)' }}>
               Certificate of Label Approval
             </span>
-            <h1 className="hero-title">Search the Public COLA Registry</h1>
+            <h1 className="hero-title">Search the TTB COLA Registry</h1>
             <p className="hero-sub">
               Find approved alcohol beverage labels across wine, malt beverages, and distilled spirits. Search by any
               field, upload a label image, or describe the artwork you have in mind.
