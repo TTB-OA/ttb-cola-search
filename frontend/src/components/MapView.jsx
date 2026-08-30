@@ -102,9 +102,16 @@ const HEAT_FALLOFF = 4.5;
 // vertically than horizontally. The radius has to clear the taller gap or the
 // bins read as rows of horizontal dashes.
 const HEAT_RADIUS = ['interpolate', ['linear'], ['zoom'], 0, 40, 10, 46, 16, 52];
+// Raising this lifts every bin at once, and a national view is the sum of many
+// small ones, so it saturates the whole surface rather than just the sparse end.
+// Sparse views are lifted by the intensity below instead.
 const WEIGHT_FLOOR = 0.12;
 const BASE_INTENSITY = 1.2;
 const MAX_INTENSITY = 6;
+// Landing the peak exactly on the top of the ramp puts the top colour at a
+// single pixel, which still reads as a smudge. Aiming just past it gives the
+// hottest cluster a saturated core with some area.
+const PEAK_TARGET = 1.3;
 // Enough probes to cover the plausible peaks without an O(n^2) pass over 20k bins.
 const PEAK_PROBES = 12;
 
@@ -143,7 +150,7 @@ function heatIntensity(bins, weightOf, instance) {
   if (peak <= 0) return BASE_INTENSITY;
   // Never below the base: zoomed out the peak already saturates, and dividing
   // into it would flatten the national surface this ramp was tuned against.
-  return Math.min(MAX_INTENSITY, Math.max(BASE_INTENSITY, 1 / (peak * GAUSS_COEF)));
+  return Math.min(MAX_INTENSITY, Math.max(BASE_INTENSITY, PEAK_TARGET / (peak * GAUSS_COEF)));
 }
 
 // Counts across a viewport routinely span four orders of magnitude, so weight
