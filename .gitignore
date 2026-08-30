@@ -29,3 +29,7 @@ venv/
 .DS_Store
 Thumbs.db
 .idea/
+
+# Basemap archives staged for upload; multi-GB build artefacts, never source.
+.basemap/
+*.pmtiles

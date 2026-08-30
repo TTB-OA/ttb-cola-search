@@ -25,6 +25,24 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      # containerImage defaults to a placeholder, so without this a re-run would
+      # roll a running app back to the quickstart image.
+      - name: Carry forward the running image
+        run: |
+          az extension add --name containerapp --upgrade --only-show-errors || true
+          APP=$(az deployment group show -g "$RESOURCE_GROUP" -n "$DEPLOYMENT_NAME" \
+            --query properties.outputs.containerAppName.value -o tsv 2>/dev/null || true)
+          if [ -n "$APP" ]; then
+            IMAGE=$(az containerapp show -g "$RESOURCE_GROUP" -n "$APP" \
+              --query "properties.template.containers[0].image" -o tsv 2>/dev/null || true)
+          fi
+          if [ -n "${IMAGE:-}" ]; then
+            echo "Carrying forward $IMAGE"
+            echo "CONTAINER_IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          else
+            echo "No running app found; the bicep placeholder image will be used."
+          fi
+
       - name: Deploy Bicep
         run: |
           az deployment group create \
@@ -32,6 +50,7 @@ jobs:
             -n "$DEPLOYMENT_NAME" \
             -f infra/main.bicep \
             -p infra/main.parameters.json \
+            ${CONTAINER_IMAGE:+-p containerImage="$CONTAINER_IMAGE"} \
             -p acrLoginServer="${{ vars.ACR_LOGIN_SERVER }}" \
             -p acrUsername="${{ vars.ACR_USERNAME }}" \
             -p acrPassword="${{ secrets.ACR_PASSWORD }}" \

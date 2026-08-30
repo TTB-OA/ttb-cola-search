@@ -270,6 +270,22 @@ labels render without calling a third-party font host. Both are optional: with n
 archive the map still plots data on a blank background, and with no fonts it
 renders unlabelled.
 
+The deployed archive is world z0-10 plus CONUS (`-125,24,-66,50`) z11-13, cut from
+a Protomaps daily planet build and merged. `pmtiles merge` needs disjoint inputs,
+so each band is cut with `--minzoom`/`--maxzoom` rather than as overlapping
+pyramids:
+
+```powershell
+pmtiles extract <planet-url> world-z10.pmtiles    --maxzoom=10
+pmtiles extract <planet-url> conus-z11-12.pmtiles --bbox=-125,24,-66,50 --minzoom=11 --maxzoom=12
+pmtiles extract <planet-url> conus-z13.pmtiles    --bbox=-125,24,-66,50 --minzoom=13 --maxzoom=13
+pmtiles merge world-z10.pmtiles conus-z11-12.pmtiles conus-z13.pmtiles basemap.pmtiles
+```
+
+Splitting the CONUS pull by zoom band is also what makes it finish: the build CDN
+resets HTTP/2 streams on multi-GB single extracts. Alaska, Hawaii and Puerto Rico
+fall outside the bbox and so render at world detail; beyond z13 MapLibre overzooms.
+
 ## Data model
 
 [`docs/pcr_schema.dbml`](docs/pcr_schema.dbml) is the source of truth.
