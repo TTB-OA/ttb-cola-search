@@ -96,12 +96,15 @@ function areaGeoJson(area) {
 
 // Counts across a viewport routinely span four orders of magnitude, so weight
 // is taken from the log: a linear ramp would render everything outside the
-// densest metro as blank.
+// densest metro as blank. The top of the ramp is the densest bin currently in
+// view, so whatever is hottest on screen reads red at any zoom or filter.
 function heatPaint(maxCount) {
-  const top = Math.max(1, Math.log10(Math.max(1, maxCount)) + 1);
+  const top = Math.max(0.5, Math.log10(Math.max(2, maxCount)));
   return {
-    'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.15, top, 1],
-    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.8, 9, 2.2],
+    'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.12, top, 1],
+    // Held near 1 so a bin's weight lands on the colour ramp more or less
+    // unchanged; the normalisation above already absorbs the shift in scale.
+    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.95, 16, 1.15],
     // Server bins sit 11-23 CSS px apart depending on the zoom fraction, so the
     // radius has to stay well above that or the grid shows through as dots.
     'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 30, 10, 40, 16, 48],
@@ -110,12 +113,14 @@ function heatPaint(maxCount) {
       'interpolate',
       ['linear'],
       ['heatmap-density'],
-      0, 'rgba(0,0,0,0)',
-      0.15, 'rgba(120,168,214,0.55)',
-      0.35, 'rgba(94,200,178,0.75)',
-      0.6, 'rgba(243,199,94,0.85)',
-      0.85, 'rgba(226,122,64,0.9)',
-      1, 'rgba(190,52,52,0.95)',
+      // Fades to a transparent version of the first colour. Transparent black
+      // would interpolate through grey and fog the whole map.
+      0, 'rgba(120,168,214,0)',
+      0.12, 'rgba(120,168,214,0.45)',
+      0.3, 'rgba(94,200,178,0.7)',
+      0.55, 'rgba(243,199,94,0.85)',
+      0.78, 'rgba(226,122,64,0.92)',
+      1, 'rgba(190,52,52,0.97)',
     ],
   };
 }
@@ -271,7 +276,9 @@ export default function MapView({
     source.setData(toGeoJson(active ? bins : []));
     instance.setLayoutProperty(HEAT_LAYER, 'visibility', active ? 'visible' : 'none');
     if (active && bins && bins.length) {
-      const paint = heatPaint(Math.max(...bins.map((b) => b.count)));
+      // Reduced rather than spread: the server returns up to 20k bins and
+      // Math.max(...) that long overflows the call stack.
+      const paint = heatPaint(bins.reduce((m, b) => (b.count > m ? b.count : m), 0));
       Object.entries(paint).forEach(([k, v]) => instance.setPaintProperty(HEAT_LAYER, k, v));
     }
   }, [bins, mode, ready]);
