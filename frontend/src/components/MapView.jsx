@@ -103,10 +103,10 @@ function heatPaint(maxCount) {
   return {
     'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.12, top, 1],
     // MapLibre scales its kernel by GAUSS_COEF (~0.399) so it integrates to 1,
-    // which caps a lone bin at 40% of its weight. Undoing most of that lets the
-    // densest bins in view reach the top of the ramp; a shade under 1/0.399
-    // keeps red for genuine peaks rather than every above-average cluster.
-    'heatmap-intensity': 2.0,
+    // which caps a lone bin at 40% of its weight. This undoes enough of that to
+    // put the densest clusters in view at the top of the ramp, discounted for
+    // the wide radius below, which already stacks neighbouring bins together.
+    'heatmap-intensity': 1.2,
     // Cells are square in degrees, so at US latitudes they land ~1.3x further
     // apart vertically than horizontally. The radius has to clear the taller
     // gap or the bins read as rows of horizontal dashes.
