@@ -98,7 +98,8 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `POSTGRES_HOST` | — | required |
 | `POSTGRES_DB` | — | required |
 | `POSTGRES_USER` | — | required; the Entra principal when using token auth |
-| `POSTGRES_PORT` | `5432` | |
+| `POSTGRES_PORT` | `5432` | `6432` when going through the built-in PgBouncer |
+| `POSTGRES_PGBOUNCER` | `false` | set with port `6432`; the server pools in transaction mode, so the app applies `search_path`/`statement_timeout` per transaction and turns off server-side prepared statements |
 | `POSTGRES_SCHEMA` | `public` | e.g. `pcr-dev`, `pcr-prod` |
 | `POSTGRES_AUTH_METHOD` | `entra` | or `password` |
 | `POSTGRES_PASSWORD` | — | ignored under `entra` |
@@ -283,6 +284,11 @@ The API reads a small number of objects:
   kept in a side table so the large text never rides along on list queries.
 - **`cola_search_dirty`** — triggers on `colas` and its children push changed
   `cola_id`s here for the materialiser to drain.
+- **`cola_permit_search`** — one indexed row per permit, backing the permit/business
+  typeahead. Carries a trigram-indexed `names_blob` of every name the permit has
+  traded under, so a former business name still matches. The API never aggregates
+  `cola_permits` per request. Display fields are null until at least one of the
+  permit's COLAs has been detail-filled; `cola_count` is populated either way.
 - **`cola_images`** — image metadata plus `image_feature_vector` and
   `text_feature_vector` (`vector(768)`, HNSW/cosine), and the blob name used by
   the image proxy.
@@ -419,6 +425,13 @@ tables have not been built in the target `POSTGRES_SCHEMA`, or the connecting
 role lacks `USAGE` on that schema. Postgres silently drops schemas the role
 cannot access from `search_path`, so a missing grant reports as a missing table.
 Check with `has_schema_privilege('<role>', '<schema>', 'USAGE')`.
+
+**`unsupported startup parameter in options: search_path`** — the app is
+pointed at PgBouncer (port 6432) without `POSTGRES_PGBOUNCER=true`, or an older
+build that passed the schema as a libpq startup option. Azure's built-in
+PgBouncer does not expose `track_extra_parameters`, so `search_path` cannot be
+sent that way; with the flag on, the app applies `search_path` and
+`statement_timeout` inside the transaction that runs each query instead.
 
 **HTTP 504 from a search** — the query exceeded
 `POSTGRES_STATEMENT_TIMEOUT_MS`. Usually a filter with no supporting index;

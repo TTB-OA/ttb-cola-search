@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     postgres_connect_timeout: int = 30
     postgres_pool_min: int = 1
     postgres_pool_max: int = 16
+    # Set when connecting through the built-in PgBouncer of Azure Database for
+    # PostgreSQL (port 6432). Its transaction pooling mode drops session state
+    # between statements, so session settings move into the startup options and
+    # server-side prepared statements are disabled.
+    postgres_pgbouncer: bool = False
     # Ceiling on any single statement, so a runaway query cannot pin a pool slot.
     postgres_statement_timeout_ms: int = 15000
     # Image search reads the upload into memory before embedding it.

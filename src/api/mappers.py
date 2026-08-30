@@ -32,6 +32,9 @@ MAP_DIRTY_TABLE = "cola_map_dirty"
 # Pipeline coverage by calendar year of completed_date, rebuilt whole by the
 # same job that maintains cola_search.
 COVERAGE_TABLE = "cola_coverage_year"
+# One indexed row per permit, rebuilt whole by the same job. Replaces the
+# per-request roll-up of cola_permits that used to back the typeahead.
+PERMIT_TABLE = "cola_permit_search"
 
 # Columns needed to build a ColaSummary. Selected explicitly so list and
 # vector queries never drag along the large jsonb rollups (images,

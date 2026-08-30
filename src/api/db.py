@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, cast
 
 import certifi
 from azure.identity.aio import DefaultAzureCredential
-from psycopg import AsyncConnection
+from psycopg import AsyncConnection, AsyncCursor
 from psycopg.abc import QueryNoTemplate
 from psycopg.rows import dict_row
 from psycopg.sql import SQL, Identifier, Literal
@@ -81,6 +83,10 @@ def _base_kwargs(settings: Settings) -> dict[str, Any]:
         "row_factory": dict_row,
         "autocommit": True,
     }
+    if settings.postgres_pgbouncer:
+        # PgBouncer's default max_prepared_statements=0 cannot track psycopg's
+        # automatic prepared statements across pooled server connections.
+        kwargs["prepare_threshold"] = None
     if settings.postgres_sslrootcert:
         kwargs["sslrootcert"] = settings.postgres_sslrootcert
     elif settings.postgres_sslmode in ("verify-ca", "verify-full"):
@@ -106,6 +112,44 @@ async def _configure(conn: AsyncConnection) -> None:
         )
 
 
+async def _set_local(cur: AsyncCursor[Any]) -> None:
+    """Transaction-scoped form of :func:`_configure`, for PgBouncer.
+
+    Under transaction pooling each statement can land on a different server
+    connection, so session-level settings never survive; settings applied
+    inside the transaction that runs the query do. Both go through one
+    ``set_config`` statement to keep it to a single round trip.
+    """
+    settings = get_settings()
+    await cur.execute(
+        "SELECT set_config('search_path', %s, true), "
+        "set_config('statement_timeout', %s, true)",
+        [
+            f'"{settings.postgres_schema}", public',
+            str(settings.postgres_statement_timeout_ms),
+        ],
+    )
+
+
+@asynccontextmanager
+async def transaction_cursor() -> AsyncIterator[AsyncCursor[Any]]:
+    """Cursor in an explicit transaction, so the settings apply to the query."""
+    async with get_pool().connection() as conn, conn.transaction(), conn.cursor() as cur:
+        if get_settings().postgres_pgbouncer:
+            await _set_local(cur)
+        yield cur
+
+
+@asynccontextmanager
+async def _cursor() -> AsyncIterator[AsyncCursor[Any]]:
+    if get_settings().postgres_pgbouncer:
+        async with transaction_cursor() as cur:
+            yield cur
+    else:
+        async with get_pool().connection() as conn, conn.cursor() as cur:
+            yield cur
+
+
 _pool: AsyncConnectionPool | None = None
 
 
@@ -123,7 +167,7 @@ def _make_pool() -> AsyncConnectionPool:
         kwargs=kwargs,
         min_size=settings.postgres_pool_min,
         max_size=settings.postgres_pool_max,
-        configure=_configure,
+        configure=None if settings.postgres_pgbouncer else _configure,
         open=False,
     )
 
@@ -153,7 +197,7 @@ async def close_pool() -> None:
 
 
 async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
-    async with get_pool().connection() as conn, conn.cursor() as cur:
+    async with _cursor() as cur:
         await cur.execute(cast(QueryNoTemplate, query), params)
         rows = await cur.fetchall()
         # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
@@ -161,7 +205,7 @@ async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[st
 
 
 async def fetch_one(query: str, params: list[Any] | None = None) -> dict[str, Any] | None:
-    async with get_pool().connection() as conn, conn.cursor() as cur:
+    async with _cursor() as cur:
         await cur.execute(cast(QueryNoTemplate, query), params)
         row = await cur.fetchone()
         # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.

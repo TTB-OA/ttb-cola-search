@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from ..config import get_settings
 from ..db import fetch_one
 from ..embedding import available_providers
-from ..mappers import COVERAGE_TABLE, OCR_TABLE, SEARCH_TABLE
+from ..mappers import COVERAGE_TABLE, OCR_TABLE, PERMIT_TABLE, SEARCH_TABLE
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,12 @@ router = APIRouter(tags=["health"])
 # connection works: when search_path points at a schema that does not hold these
 # it still succeeds while every real query fails with UndefinedTable, so resolve
 # the names as well as the connection.
-REQUIRED_RELATIONS: tuple[str, ...] = (SEARCH_TABLE, OCR_TABLE, COVERAGE_TABLE)
+REQUIRED_RELATIONS: tuple[str, ...] = (
+    SEARCH_TABLE,
+    OCR_TABLE,
+    COVERAGE_TABLE,
+    PERMIT_TABLE,
+)
 
 # to_regclass() resolves through search_path exactly as a query would, and is a
 # catalog lookup rather than a scan, so this stays cheap enough for a probe.
