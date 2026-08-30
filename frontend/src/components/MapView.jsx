@@ -16,6 +16,11 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 const SOURCE = 'protomaps';
 const HEAT_SOURCE = 'cola-heat';
 const HEAT_LAYER = 'cola-heat-layer';
+const AREA_SOURCE = 'cola-area';
+const AREA_FILL = 'cola-area-fill';
+const AREA_LINE = 'cola-area-line';
+// --blue-dark; MapLibre paint cannot read a CSS custom property.
+const AREA_COLOR = '#1a4480';
 const ATTRIBUTION = '<a href="https://openstreetmap.org">OpenStreetMap</a> via <a href="https://protomaps.com">Protomaps</a>';
 
 // maplibre resolves pmtiles:// URLs through a global protocol handler, so this
@@ -68,6 +73,24 @@ function toGeoJson(bins) {
       properties: { count: b.count },
       geometry: { type: 'Point', coordinates: [b.lng, b.lat] },
     })),
+  };
+}
+
+function areaGeoJson(area) {
+  if (!area) return { type: 'FeatureCollection', features: [] };
+  const { west, south, east, north } = area;
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        properties: {},
+        geometry: {
+          type: 'Polygon',
+          coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]],
+        },
+      },
+    ],
   };
 }
 
@@ -125,6 +148,7 @@ export default function MapView({
   mode = 'heat',
   bins,
   points,
+  area,
   view,
   interactive = true,
   onViewportChange,
@@ -185,6 +209,23 @@ export default function MapView({
       instance.on('load', () => {
         instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
         instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint(1) });
+
+        instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
+        // Added after the heat layer so the box reads on top of the density it
+        // is selecting; the fill is barely there so it does not tint the counts.
+        instance.addLayer({
+          id: AREA_FILL,
+          type: 'fill',
+          source: AREA_SOURCE,
+          paint: { 'fill-color': AREA_COLOR, 'fill-opacity': 0.08 },
+        });
+        instance.addLayer({
+          id: AREA_LINE,
+          type: 'line',
+          source: AREA_SOURCE,
+          paint: { 'line-color': AREA_COLOR, 'line-width': 2, 'line-dasharray': [3, 2] },
+        });
+
         setReady(true);
         report(instance);
       });
@@ -234,6 +275,13 @@ export default function MapView({
       Object.entries(paint).forEach(([k, v]) => instance.setPaintProperty(HEAT_LAYER, k, v));
     }
   }, [bins, mode, ready]);
+
+  // Selected area box
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    instance.getSource(AREA_SOURCE)?.setData(areaGeoJson(area));
+  }, [area?.west, area?.south, area?.east, area?.north, ready]);
 
   // Image pins
   useEffect(() => {

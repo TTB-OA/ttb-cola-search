@@ -418,6 +418,7 @@ export default function MapPage() {
             mode={mode}
             bins={data?.bins}
             points={data?.points}
+            area={area}
             view={initialView}
             onViewportChange={onViewportChange}
             onSelectArea={onSelectArea}
