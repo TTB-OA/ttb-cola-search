@@ -102,9 +102,11 @@ function heatPaint(maxCount) {
   const top = Math.max(0.5, Math.log10(Math.max(2, maxCount)));
   return {
     'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.12, top, 1],
-    // Held near 1 so a bin's weight lands on the colour ramp more or less
-    // unchanged; the normalisation above already absorbs the shift in scale.
-    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.95, 16, 1.15],
+    // MapLibre scales its kernel by GAUSS_COEF (~0.399) so it integrates to 1,
+    // which caps a lone bin at 40% of its weight. Undoing that makes density
+    // land on the colour ramp at the weight it was given, so the densest bin
+    // in view hits red and the 0.12 floor lands on the faintest stop.
+    'heatmap-intensity': 2.5,
     // Server bins sit 11-23 CSS px apart depending on the zoom fraction, so the
     // radius has to stay well above that or the grid shows through as dots.
     'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 30, 10, 40, 16, 48],
