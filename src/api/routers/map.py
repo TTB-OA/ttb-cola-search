@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter, defaultdict
 from datetime import date
 from typing import Annotated, Any
 
@@ -38,6 +39,7 @@ from ..mappers import (
 )
 from ..models import (
     FacetBucket,
+    FacetGroup,
     MapAreaResponse,
     MapHeatBin,
     MapImagePoint,
@@ -444,10 +446,11 @@ async def map_area(
         SELECT ct_commodity, ct_source, origin, class_type
           FROM {MAP_TABLE} {where} LIMIT %s
     )
-    SELECT 'commodity' AS dim, ct_commodity AS value, count(*) AS count FROM m GROUP BY 1, 2
-    UNION ALL SELECT 'source', ct_source, count(*) FROM m GROUP BY 1, 2
-    UNION ALL SELECT 'origin', origin, count(*) FROM m GROUP BY 1, 2
-    UNION ALL SELECT 'classType', class_type, count(*) FROM m GROUP BY 1, 2
+    SELECT 'commodity' AS dim, ct_commodity AS value, NULL::text AS parent,
+           count(*) AS count FROM m GROUP BY 1, 2, 3
+    UNION ALL SELECT 'source', ct_source, NULL, count(*) FROM m GROUP BY 1, 2, 3
+    UNION ALL SELECT 'origin', origin, ct_source, count(*) FROM m GROUP BY 1, 2, 3
+    UNION ALL SELECT 'classType', class_type, NULL, count(*) FROM m GROUP BY 1, 2, 3
     """
     items_sql = f"""--sql
     WITH m AS (
@@ -482,6 +485,31 @@ async def map_area(
         )
         return [FacetBucket(value=label(r["value"]), count=r["count"]) for r in rows]
 
+    def source_groups() -> list[FacetGroup]:
+        # Totals are summed after labelling because source_label collapses the
+        # 'import' and 'unknown' codes onto one label.
+        totals: Counter[str] = Counter()
+        for row in grouped.get("source", []):
+            if row["value"]:
+                totals[source_label(row["value"])] += row["count"]
+
+        children: dict[str, Counter[str]] = defaultdict(Counter)
+        for row in grouped.get("origin", []):
+            if row["value"] and row["parent"]:
+                children[source_label(row["parent"])][row["value"]] += row["count"]
+
+        return [
+            FacetGroup(
+                value=label,
+                count=count,
+                children=[
+                    FacetBucket(value=origin, count=n)
+                    for origin, n in children[label].most_common()
+                ],
+            )
+            for label, count in totals.most_common()
+        ]
+
     raw_total = int(total_row["n"]) if total_row else 0
     capped = raw_total > cap
 
@@ -489,8 +517,7 @@ async def map_area(
         total=cap if capped else raw_total,
         total_is_capped=capped,
         commodity=buckets("commodity", commodity_label),
-        source=buckets("source", source_label),
-        origin=buckets("origin"),
+        source=source_groups(),
         class_type=buckets("classType"),
         items=[summary_from_row(r) for r in item_rows],
     )

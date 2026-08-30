@@ -113,22 +113,71 @@ function ActiveChips({ criteria, onClear }) {
 }
 
 /* ---------- area drill-in ---------- */
+function Bar({ label, count, total, className }) {
+  return (
+    <div className={className ? `map-bar ${className}` : 'map-bar'}>
+      <span className="map-bar-label">{label}</span>
+      <span className="map-bar-track">
+        <span style={{ width: `${total > 0 ? (count / total) * 100 : 0}%` }} />
+      </span>
+      <span className="map-bar-count mono">{num(count)}</span>
+    </div>
+  );
+}
+
 function Breakdown({ title, buckets, total }) {
   if (!buckets || !buckets.length) return null;
   return (
     <div className="map-breakdown">
       <div className="d-label">{title}</div>
       {buckets.slice(0, 5).map((b) => (
-        <div className="map-bar" key={b.value}>
-          <span className="map-bar-label">{b.value}</span>
-          <span className="map-bar-track">
-            <span style={{ width: `${total > 0 ? (b.count / total) * 100 : 0}%` }} />
-          </span>
-          <span className="map-bar-count mono">{num(b.count)}</span>
+        <Bar key={b.value} label={b.value} count={b.count} total={total} />
+      ))}
+    </div>
+  );
+}
+
+// Origins are only comparable inside their own source, so each child bar is
+// scaled to its group rather than to the area.
+function SourceBreakdown({ groups, total }) {
+  if (!groups || !groups.length) return null;
+  return (
+    <div className="map-breakdown">
+      <div className="d-label">Source &amp; origin</div>
+      {groups.map((g) => (
+        <div className="map-group" key={g.value}>
+          <Bar label={g.value} count={g.count} total={total} className="map-bar-head" />
+          {(g.children || []).slice(0, 5).map((c) => (
+            <Bar
+              key={c.value}
+              label={c.value}
+              count={c.count}
+              total={g.count}
+              className="map-bar-child"
+            />
+          ))}
         </div>
       ))}
     </div>
   );
+}
+
+// A permit takes the position of its most recent COLA, so the grouped list
+// keeps the recency order of the page it was built from.
+function groupByPermit(items) {
+  const groups = [];
+  const seen = new Map();
+  for (const r of items || []) {
+    const key = r.permitId || r.permit || '';
+    let group = seen.get(key);
+    if (!group) {
+      group = { key, code: r.permitId || r.permit, name: r.permitName, items: [] };
+      seen.set(key, group);
+      groups.push(group);
+    }
+    group.items.push(r);
+  }
+  return groups;
 }
 
 function AreaPanel({ state, onClose }) {
@@ -156,27 +205,32 @@ function AreaPanel({ state, onClose }) {
           </div>
 
           <Breakdown title="Commodity" buckets={data.commodity} total={data.total} />
-          <Breakdown title="Source" buckets={data.source} total={data.total} />
-          <Breakdown title="Origin" buckets={data.origin} total={data.total} />
+          <SourceBreakdown groups={data.source} total={data.total} />
 
           <div className="d-label" style={{ marginTop: 14 }}>Records</div>
-          <div className="map-items">
-            {(data.items || []).map((r) => (
-              <Link className="map-item" key={r.id} to={`/cola/${encodeURIComponent(r.id)}`}>
-                <div className="map-item-main">
-                  <div className="map-item-brand">{r.brand || r.ttbId}</div>
-                  <div className="map-item-meta muted">
-                    <span className="mono">{r.ttbId}</span>
-                    {r.origin ? <span> · {r.origin}</span> : null}
-                    {r.approvalDate ? <span> · {fmtDate(r.approvalDate)}</span> : null}
-                  </div>
-                  <div className="row gap-8" style={{ marginTop: 4 }}>
-                    <CatTag rec={r} />
-                    <StatusBadge status={r.status} />
-                  </div>
+          <div className="map-groups">
+            {groupByPermit(data.items).map((g) => (
+              <div className="map-permit" key={g.key}>
+                <div className="map-permit-head">
+                  {g.code ? <span className="mono map-permit-code">{g.code}</span> : null}
+                  <span className="map-permit-name">{g.name || (g.code ? '' : 'Permit not recorded')}</span>
+                  <span className="map-permit-count mono">{num(g.items.length)}</span>
                 </div>
-                <Icon name="chevRight" size={16} className="muted" />
-              </Link>
+                {g.items.map((r) => (
+                  <Link className="map-item" key={r.id} to={`/cola/${encodeURIComponent(r.id)}`}>
+                    <div className="map-item-main">
+                      <div className="map-item-brand">{r.brand || r.ttbId}</div>
+                      <div className="map-item-meta muted">
+                        <span className="mono">{r.ttbId}</span>
+                        {r.approvalDate ? <span> · {fmtDate(r.approvalDate)}</span> : null}
+                      </div>
+                    </div>
+                    {r.status && r.status !== 'Approved' ? <StatusBadge status={r.status} /> : null}
+                    <CatTag rec={r} />
+                    <Icon name="chevRight" size={16} className="muted" />
+                  </Link>
+                ))}
+              </div>
             ))}
           </div>
           {data.totalIsCapped || (data.items || []).length < data.total ? (

@@ -213,8 +213,8 @@ def _area_rows(query):
         return [
             {"dim": "commodity", "value": "wine", "count": 5},
             {"dim": "source", "value": "domestic", "count": 5},
-            {"dim": "origin", "value": "California", "count": 4},
-            {"dim": "origin", "value": None, "count": 1},
+            {"dim": "origin", "value": "California", "parent": "domestic", "count": 4},
+            {"dim": "origin", "value": None, "parent": "domestic", "count": 1},
         ]
     return [{"cola_id": "26J087", "brand_name": "Test Brand", "ct_commodity": "wine"}]
 
@@ -231,8 +231,36 @@ def test_an_area_summary_labels_its_codes(client, monkeypatch):
 
 def test_an_area_summary_drops_unlabelled_buckets(client, monkeypatch):
     stub(monkeypatch, _area_rows, one={"n": 5})
-    origins = client.get(AREA, params=VIEWPORT).json()["origin"]
+    origins = client.get(AREA, params=VIEWPORT).json()["source"][0]["children"]
     assert [o["value"] for o in origins] == ["California"]
+
+
+def test_origins_are_nested_under_the_source_they_came_from(client, monkeypatch):
+    stub(monkeypatch, _area_rows, one={"n": 5})
+    groups = client.get(AREA, params=VIEWPORT).json()["source"]
+    assert [g["value"] for g in groups] == ["Domestic"]
+    assert groups[0]["children"][0] == {"value": "California", "count": 4}
+
+
+def test_the_import_and_unknown_codes_share_one_source_group(client, monkeypatch):
+    """Both label as Imported, so two groups would split one real total."""
+
+    def rows(query):
+        if "dim" in query:
+            return [
+                {"dim": "source", "value": "import", "parent": None, "count": 3},
+                {"dim": "source", "value": "unknown", "parent": None, "count": 2},
+                {"dim": "origin", "value": "ITALY", "parent": "import", "count": 3},
+                {"dim": "origin", "value": "SPAIN", "parent": "unknown", "count": 2},
+            ]
+        return []
+
+    stub(monkeypatch, rows, one={"n": 5})
+    groups = client.get(AREA, params=VIEWPORT).json()["source"]
+
+    assert [g["value"] for g in groups] == ["Imported"]
+    assert groups[0]["count"] == 5
+    assert [c["value"] for c in groups[0]["children"]] == ["ITALY", "SPAIN"]
 
 
 def test_an_area_summary_reports_a_capped_total_as_a_floor(client, monkeypatch):

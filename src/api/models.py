@@ -304,12 +304,21 @@ class MapPointsResponse(ApiModel):
     varietal_available: bool = False
 
 
+class FacetGroup(ApiModel):
+    """A facet bucket with its own breakdown nested underneath."""
+
+    value: str
+    count: int
+    children: list[FacetBucket] = []
+
+
 class MapAreaResponse(ApiModel):
     total: int = 0
     total_is_capped: bool = False
     commodity: list[FacetBucket] = []
-    source: list[FacetBucket] = []
-    origin: list[FacetBucket] = []
+    # Origin is nested under source: states read under Domestic, countries
+    # under Imported. Flat, the two lists could not be read against each other.
+    source: list[FacetGroup] = []
     class_type: list[FacetBucket] = []
     items: list[ColaSummary] = []
 
