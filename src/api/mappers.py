@@ -219,15 +219,23 @@ def hero_first_sql(alias: str, search_alias: str = "vi_hero") -> str:
 def image_display_order_sql(
     alias: str, search_alias: str = "vi_hero", out: str | None = "vi"
 ) -> str:
-    """Hero image first, then most-visually-interesting, then the type-rank fallback.
+    """Sort key for label artwork images.
 
-    The score is only usable when the `images` rollup was joined; without it the
-    hero column alone lifts the winner and type rank orders the rest.
+    For wine, visual interest (hero image and visual interest score) takes precedence,
+    falling back to image type rank and file name.
+    For non-wine (beer, distilled spirits, other), image type rank (Brand front/keg collar
+    first, back second, other third) takes precedence, with ties broken by visual interest
+    hero, score, and file name.
     """
-    keys = [hero_first_sql(alias, search_alias)]
+    type_rank = image_type_rank_sql(alias)
+    is_wine = f"coalesce(lower({search_alias}.ct_commodity), '') = 'wine'"
+    non_wine_type_rank = f"CASE WHEN {is_wine} THEN 0 ELSE {type_rank} END"
+    wine_type_rank = f"CASE WHEN {is_wine} THEN {type_rank} ELSE 0 END"
+
+    keys = [non_wine_type_rank, hero_first_sql(alias, search_alias)]
     if out:
         keys.append(f"{out}.visual_interest_score DESC NULLS LAST")
-    keys.append(image_type_rank_sql(alias))
+    keys.append(wine_type_rank)
     keys.append(f"{alias}.file_name")
     return ", ".join(keys)
 

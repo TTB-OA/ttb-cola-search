@@ -69,13 +69,12 @@ def test_type_rank_qualifies_every_column_reference():
     assert " img_type" not in image_type_rank_sql("ci")
 
 
-def test_display_order_puts_hero_before_score_and_type_rank():
+def test_display_order_sql_structure():
     order = image_display_order_sql("ci")
-    hero = order.index("image_visual_interest_best_file_name")
-    score = order.index("visual_interest_score DESC NULLS LAST")
-    type_rank = order.index("strpos")
-    file_name = order.rindex("ci.file_name")
-    assert hero < score < type_rank < file_name
+    assert "coalesce(lower(vi_hero.ct_commodity), '') = 'wine'" in order
+    assert "image_visual_interest_best_file_name" in order
+    assert "visual_interest_score DESC NULLS LAST" in order
+    assert order.endswith("ci.file_name")
 
 
 def test_display_order_without_rollup_drops_the_score_key():
@@ -83,7 +82,87 @@ def test_display_order_without_rollup_drops_the_score_key():
     order = image_display_order_sql("ci", out=None)
     assert "vi.visual_interest_score" not in order
     assert "image_visual_interest_best_file_name" in order
-    assert "strpos" in order
+    assert "coalesce(lower(vi_hero.ct_commodity), '') = 'wine'" in order
+
+
+def _simulate_sort(
+    images: list[dict],
+    commodity: str | None,
+    hero_file: str | None,
+    with_scores: bool = True,
+) -> list[dict]:
+    """Python simulation of `image_display_order_sql` sorting semantics."""
+    def sort_key(img):
+        fn = img["file_name"]
+        tr = face_rank(image_face(img.get("img_type")))
+        is_hero = 0 if (hero_file is not None and fn == hero_file) else 1
+        score = img.get("visual_interest_score")
+        score_key = -score if score is not None else float("inf")
+        is_wine = (commodity or "").lower() == "wine"
+        non_wine_tr = 0 if is_wine else tr
+        wine_tr = tr if is_wine else 0
+        if with_scores:
+            return (non_wine_tr, is_hero, score_key, wine_tr, fn)
+        return (non_wine_tr, is_hero, wine_tr, fn)
+
+    return sorted(images, key=sort_key)
+
+
+def test_wine_display_order_prefers_hero_over_front_type():
+    images = [
+        {"file_name": "front.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 60.0},
+        {"file_name": "back.jpg", "img_type": "Back", "visual_interest_score": 85.0},
+    ]
+    ordered = _simulate_sort(images, commodity="wine", hero_file="back.jpg")
+    assert ordered[0]["file_name"] == "back.jpg"
+
+
+def test_wine_display_order_breaks_ties_by_score_and_type_rank():
+    images = [
+        {"file_name": "back.jpg", "img_type": "Back", "visual_interest_score": 40.0},
+        {"file_name": "front.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 40.0},
+    ]
+    ordered = _simulate_sort(images, commodity="wine", hero_file=None)
+    assert ordered[0]["file_name"] == "front.jpg"
+
+
+def test_non_wine_display_order_prefers_front_type_over_hero_back():
+    images = [
+        {"file_name": "front.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 60.0},
+        {"file_name": "back.jpg", "img_type": "Back", "visual_interest_score": 95.0},
+    ]
+    # For beer, front wins even if back is hero and has higher score
+    ordered = _simulate_sort(images, commodity="beer", hero_file="back.jpg")
+    assert ordered[0]["file_name"] == "front.jpg"
+
+    # Same for distilled spirits
+    ordered_spirits = _simulate_sort(images, commodity="distilled_spirits", hero_file="back.jpg")
+    assert ordered_spirits[0]["file_name"] == "front.jpg"
+
+
+def test_non_wine_display_order_breaks_type_ties_by_hero_and_score():
+    images = [
+        {"file_name": "front2.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 70.0},
+        {"file_name": "front1.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 90.0},
+    ]
+    ordered = _simulate_sort(images, commodity="beer", hero_file="front1.jpg")
+    assert ordered[0]["file_name"] == "front1.jpg"
+
+    # Neither is hero: highest visual interest score breaks tie
+    ordered_score = _simulate_sort(images, commodity="beer", hero_file=None)
+    assert ordered_score[0]["file_name"] == "front1.jpg"
+
+
+def test_unknown_commodity_defaults_to_type_rank_first():
+    images = [
+        {"file_name": "front.jpg", "img_type": "Brand (front) or keg collar", "visual_interest_score": 50.0},
+        {"file_name": "back.jpg", "img_type": "Back", "visual_interest_score": 95.0},
+    ]
+    ordered_none = _simulate_sort(images, commodity=None, hero_file="back.jpg")
+    assert ordered_none[0]["file_name"] == "front.jpg"
+
+    ordered_unknown = _simulate_sort(images, commodity="unknown", hero_file="back.jpg")
+    assert ordered_unknown[0]["file_name"] == "front.jpg"
 
 
 def test_visual_interest_join_guards_a_non_array_rollup():
