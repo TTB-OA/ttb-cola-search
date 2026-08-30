@@ -21,10 +21,35 @@ const ROLE_LABELS = {
   product_origin: 'Product origin',
 };
 
+// A primary premise is also a permit premise, so the same address arrives under
+// both roles. Ordering puts the primary first, so it is the one kept.
+function dedupeLocations(points) {
+  const seen = new Map();
+  for (const p of points) {
+    const who = p.permitId || p.sourceKey || p.permitName || '';
+    const kind = p.role === 'product_origin' ? 'origin' : 'permit';
+    const key = `${kind}|${who}|${p.lat.toFixed(5)}|${p.lng.toFixed(5)}`;
+    if (!seen.has(key)) seen.set(key, p);
+  }
+  return [...seen.values()];
+}
+
 // The record's own coordinates, drawn as a locator. Deliberately not
 // interactive: this answers "where is this", and the map page answers the rest.
-function LocationPanel({ locations, status }) {
-  const points = locations || [];
+function LocationPanel({ locations, status, origin }) {
+  const points = useMemo(() => dedupeLocations(locations || []), [locations]);
+  const nameOf = (p) => (p.role === 'product_origin' ? origin || p.sourceKey : p.permitName || p.sourceKey);
+  const pins = useMemo(
+    () =>
+      points.map((p, i) => ({
+        ...p,
+        id: `loc-${i}`,
+        index: i + 1,
+        label: `${i + 1}. ${ROLE_LABELS[p.role] || p.role}${nameOf(p) ? ` — ${nameOf(p)}` : ''}`,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [points, origin]
+  );
 
   if (!points.length) {
     if (status === 'located') return null;
@@ -49,21 +74,35 @@ function LocationPanel({ locations, status }) {
   }
 
   const primary = points[0];
-  const view = { center: [primary.lng, primary.lat], zoom: 9 };
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  const view = {
+    center: [primary.lng, primary.lat],
+    zoom: 9,
+    // A permit holder's premises can span several states, so a fixed zoom on the
+    // first one would leave the rest off screen.
+    bounds:
+      points.length > 1
+        ? [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)]
+        : null,
+  };
   return (
     <>
       <h3 className="d-section">Location</h3>
       <div className="d-minimap">
         <Suspense fallback={<div className="skel" style={{ height: '100%' }} />}>
-          <MapView mode="image" points={points.map((p, i) => ({ ...p, id: `loc-${i}` }))} view={view} interactive={false} />
+          <MapView mode="locator" points={pins} view={view} interactive={false} />
         </Suspense>
       </div>
       <div className="d-permits" style={{ marginTop: 10 }}>
-        {points.map((p, i) => (
-          <div className="d-permit" key={`${p.role}-${p.sourceKey || i}`}>
-            <div style={{ fontWeight: 600 }}>{ROLE_LABELS[p.role] || p.role}</div>
+        {pins.map((p) => (
+          <div className="d-permit" key={p.id}>
+            <div style={{ fontWeight: 600 }}>
+              <span className={'d-pin-no' + (p.role === 'product_origin' ? ' is-origin' : '')}>{p.index}</span>
+              {ROLE_LABELS[p.role] || p.role}
+            </div>
             <div className="muted" style={{ fontSize: 13 }}>
-              {p.permitName || p.sourceKey || '—'}
+              {nameOf(p) || '—'}
             </div>
             <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
               {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
@@ -658,7 +697,7 @@ export default function DetailPage() {
                 </>
               )}
 
-              <LocationPanel locations={rec.locations} status={proc.geocoding} />
+              <LocationPanel locations={rec.locations} status={proc.geocoding} origin={rec.origin} />
 
               {rec.qualificationItems && rec.qualificationItems.length > 0 ? (
                 <>

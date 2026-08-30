@@ -393,6 +393,12 @@ section > .d-notice { margin-bottom: 0; }
 .map-pin.is-blank { background: var(--accent-lighter); border-color: var(--accent-light); }
 .map-pin.is-blank img { display: none; }
 
+/* Numbered locator dots, keyed to the address cards under the mini-map. */
+.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--white); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
+.map-dot.is-origin { background: var(--base-dark); }
+.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.d-pin-no.is-origin { background: var(--base-dark); }
+
 /* The mini-map on a COLA record: a locator, not an explorer. */
 .d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
 

@@ -185,6 +185,19 @@ function heatPaint(bins, instance) {
   };
 }
 
+// A locator answers "which of these places is which", so it is a numbered dot
+// rather than the label thumbnail the map page pins carry.
+function locatorElement(point) {
+  const el = document.createElement('div');
+  el.className = 'map-dot' + (point.role === 'product_origin' ? ' is-origin' : '');
+  el.textContent = point.index != null ? String(point.index) : '';
+  if (point.label) {
+    el.title = point.label;
+    el.setAttribute('aria-label', point.label);
+  }
+  return el;
+}
+
 function markerElement(point, onSelect) {
   const el = document.createElement('button');
   el.type = 'button';
@@ -354,9 +367,13 @@ export default function MapView({
     if (!instance || !ready) return;
     markers.current.forEach((m) => m.remove());
     markers.current = [];
-    if (mode !== 'image') return;
+    if (mode !== 'image' && mode !== 'locator') return;
     (points || []).forEach((p) => {
-      const marker = new maplibregl.Marker({ element: markerElement(p, (pt) => handlers.current.onSelectPoint?.(pt)) })
+      const element =
+        mode === 'locator'
+          ? locatorElement(p)
+          : markerElement(p, (pt) => handlers.current.onSelectPoint?.(pt));
+      const marker = new maplibregl.Marker({ element })
         .setLngLat([p.lng, p.lat])
         .addTo(instance);
       markers.current.push(marker);
@@ -366,8 +383,14 @@ export default function MapView({
   // Programmatic recentring, for links that open the map at a known place.
   useEffect(() => {
     if (!map.current || !ready || !view) return;
+    if (view.bounds) {
+      const [w, s, e, n] = view.bounds;
+      map.current.fitBounds([[w, s], [e, n]], { padding: 44, duration: 0, maxZoom: 9 });
+      return;
+    }
     map.current.jumpTo({ center: view.center, zoom: view.zoom });
-  }, [view?.center?.[0], view?.center?.[1], view?.zoom, ready]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view?.center?.[0], view?.center?.[1], view?.zoom, view?.bounds?.join(','), ready]);
 
   return <div ref={holder} className={`map-canvas ${className}`} />;
 }
