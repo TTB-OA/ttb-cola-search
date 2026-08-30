@@ -42,7 +42,7 @@ function LocationPanel({ locations, status }) {
         >
           {status === 'no_match'
             ? 'Geocoding ran but found no match for the permit address, so this record does not appear on the map.'
-            : 'Coordinates are added by a separate process that has not reached this record yet. The permit address above is unaffected.'}
+            : 'Coordinates are added by a separate process that has not reached this record yet.'}
         </Notice>
       </>
     );
