@@ -70,7 +70,15 @@ FILTER_KEYS = (
 FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status")
 
 # Map filters are a subset of the search ones plus the two map-only controls.
-MAP_FILTER_KEYS = ("commodity", "source", "origin", "classType", "dateFrom", "dateTo")
+MAP_FILTER_KEYS = (
+    "commodity",
+    "source",
+    "origin",
+    "classType",
+    "varietal",
+    "dateFrom",
+    "dateTo",
+)
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 

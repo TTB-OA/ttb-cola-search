@@ -8,6 +8,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
+import Combobox, { matchOptions } from '../components/Combobox.jsx';
 import { CatTag, StatusBadge } from '../components/Badges.jsx';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
@@ -19,7 +20,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 // main bundle means the search page is unaffected by the map existing.
 const MapView = lazy(() => import('../components/MapView.jsx'));
 
-const FILTER_KEYS = ['commodity', 'source', 'origin', 'classType', 'dateFrom', 'dateTo'];
+const FILTER_KEYS = ['commodity', 'source', 'origin', 'classType', 'varietal', 'dateFrom', 'dateTo'];
 
 const MODES = [
   { key: 'heat', label: 'Heat', icon: 'layers', hint: 'Density of approvals' },
@@ -41,6 +42,7 @@ const CHIP_LABELS = {
   source: 'Source',
   origin: 'Origin',
   classType: 'Class/Type',
+  varietal: 'Varietal',
   dateFrom: 'From',
   dateTo: 'To',
 };
@@ -299,6 +301,13 @@ export default function MapPage() {
     () => [...(facets.domesticOrigins || []), ...(facets.importedOrigins || [])].sort((a, b) => a.localeCompare(b)),
     [facets.domesticOrigins, facets.importedOrigins]
   );
+  // The map surface only recently gained a varietal column; where it is absent
+  // the API rejects the filter, so the control is not offered at all.
+  const varietalReady = Boolean(data?.varietalAvailable);
+  const varietalOptions = useMemo(
+    () => matchOptions(facets.varietals || [], criteria.varietal || ''),
+    [facets.varietals, criteria.varietal]
+  );
 
   return (
     <div className="map-page">
@@ -311,6 +320,20 @@ export default function MapPage() {
             <FilterSelect label="Commodity" name="commodity" value={criteria.commodity} options={facets.categories} onChange={setFilter} />
             <FilterSelect label="Source" name="source" value={criteria.source} options={facets.sources} onChange={setFilter} />
             <FilterSelect label="Origin" name="origin" value={criteria.origin} options={origins} onChange={setFilter} />
+
+            {varietalReady ? (
+              <label className="map-filter map-filter-wide">
+                <span className="d-label">Varietal</span>
+                <Combobox
+                  ariaLabel="Grape varietal"
+                  placeholder="Any varietal"
+                  value={criteria.varietal || ''}
+                  onChange={(v) => setFilter('varietal', v)}
+                  options={varietalOptions}
+                  emptyText="No matching varietal"
+                />
+              </label>
+            ) : null}
 
             <label className="map-filter">
               <span className="d-label">Approved from</span>

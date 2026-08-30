@@ -245,8 +245,12 @@ A few semantics are worth knowing before writing queries against it:
   have an image and then the most recent.
 - If `cola_map_search` does not exist, the endpoints return **503**, not an empty
   result: "not built here" and "nothing in this area" are different answers.
-- Varietal is not yet filterable on the map; `cola_map_search` carries no varietal
-  column, and adding one upstream is a prerequisite.
+- Varietal filtering is gated on the surface actually carrying a `grape_varietal`
+  column. The API probes for it once per process and reports the answer as
+  `varietalAvailable`; the map hides the control when it is false, and an explicit
+  `varietal=` is rejected with **400** rather than silently ignored. Adding the
+  column upstream is all that is needed to enable it — see
+  [docs/geocoding-setup.sql](docs/geocoding-setup.sql).
 
 ### Basemap
 

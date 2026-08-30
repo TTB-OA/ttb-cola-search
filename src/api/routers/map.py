@@ -62,6 +62,31 @@ AREA_PAGE_SIZE = 24
 
 _limiter: SlidingWindowLimiter | None = None
 
+# Varietal reached cola_map_search after the rest of the map did, so the column
+# may not be there. Probed once rather than assumed, because the alternative is
+# either a 500 on a filter the UI offered or silently unfiltered results.
+_has_varietal: bool | None = None
+
+
+async def varietal_supported() -> bool:
+    global _has_varietal
+    if _has_varietal is None:
+        try:
+            row = await fetch_one(
+                """--sql
+                SELECT 1 AS ok
+                  FROM information_schema.columns
+                 WHERE table_name = %s AND column_name = 'grape_varietal'
+                 LIMIT 1
+                """,
+                [MAP_TABLE],
+            )
+            _has_varietal = row is not None
+        except Exception:
+            logger.warning("could not probe for map varietal support", exc_info=True)
+            return False
+    return _has_varietal
+
 
 def _map_limiter() -> SlidingWindowLimiter:
     global _limiter
@@ -74,8 +99,9 @@ def _map_limiter() -> SlidingWindowLimiter:
 
 
 def reset_limiter() -> None:
-    global _limiter
+    global _limiter, _has_varietal
     _limiter = None
+    _has_varietal = None
 
 
 def _enforce_rate_limit(request: Request) -> None:
@@ -145,6 +171,7 @@ def build_map_filters(
     class_type: str | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
+    varietal: str | None = None,
 ) -> tuple[str, list[Any]]:
     """WHERE clause for a viewport query, and the parameters it binds."""
     bbox_sql, params = _bbox_condition(west, south, east, north)
@@ -172,6 +199,11 @@ def build_map_filters(
     if date_to:
         conditions.append("completed_date <= %s")
         params.append(date_to)
+    if varietal:
+        # Partial match, as on the search endpoint: a COLA's varietal column is a
+        # joined list, so an equality test would miss every blend.
+        conditions.append("grape_varietal ILIKE %s")
+        params.append(f"%{varietal}%")
 
     return "WHERE " + " AND ".join(conditions), params
 
@@ -185,6 +217,18 @@ def _validate(role: str, mode: str | None = None) -> None:
         raise HTTPException(
             status_code=400, detail=f"mode must be one of {', '.join(MODES)}"
         )
+
+
+async def _resolve_varietal(varietal: str | None) -> str | None:
+    """Reject a varietal filter the surface cannot honour, rather than ignore it."""
+    if not varietal:
+        return None
+    if not await varietal_supported():
+        raise HTTPException(
+            status_code=400,
+            detail="Varietal is not filterable on the map in this environment.",
+        )
+    return varietal
 
 
 def _unavailable(exc: Exception) -> HTTPException:
@@ -314,14 +358,24 @@ async def map_points(
     class_type: Annotated[str | None, Query(alias="classType")] = None,
     date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
+    varietal: Annotated[
+        str | None,
+        Query(
+            description=(
+                "Grape varietal (partial match). Rejected with 400 where the map "
+                "surface carries no varietal column; check `varietalAvailable`."
+            )
+        ),
+    ] = None,
 ) -> MapPointsResponse:
     _enforce_rate_limit(request)
     _validate(role, mode)
 
     settings = get_settings()
+    supports_varietal = await varietal_supported()
     where, params = build_map_filters(
         west, south, east, north, role, commodity, source, origin,
-        class_type, date_from, date_to,
+        class_type, date_from, date_to, await _resolve_varietal(varietal),
     )
 
     try:
@@ -333,6 +387,7 @@ async def map_points(
                 points=points,
                 total=len(points),
                 total_is_capped=len(points) >= settings.map_image_point_cap,
+                varietal_available=supports_varietal,
             )
 
         bins, total, capped = await _heat_bins(
@@ -342,7 +397,12 @@ async def map_points(
         raise _unavailable(exc) from exc
 
     return MapPointsResponse(
-        mode=mode, role=role, bins=bins, total=total, total_is_capped=capped
+        mode=mode,
+        role=role,
+        bins=bins,
+        total=total,
+        total_is_capped=capped,
+        varietal_available=supports_varietal,
     )
 
 
@@ -360,6 +420,7 @@ async def map_area(
     class_type: Annotated[str | None, Query(alias="classType")] = None,
     date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
+    varietal: str | None = None,
     page: Annotated[int, Query(ge=1, le=100)] = 1,
 ) -> MapAreaResponse:
     """Summarise one selected area of the map, and list the COLAs in it."""
@@ -370,7 +431,7 @@ async def map_area(
     cap = settings.map_scan_cap
     where, params = build_map_filters(
         west, south, east, north, role, commodity, source, origin,
-        class_type, date_from, date_to,
+        class_type, date_from, date_to, await _resolve_varietal(varietal),
     )
 
     # Same shape as the search facets: one materialised CTE, scanned once and

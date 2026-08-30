@@ -48,6 +48,11 @@ def stub(monkeypatch, rows=(), one=None) -> list[tuple[str, list]]:
     return calls
 
 
+def bound(calls) -> list:
+    """Parameters bound by the map queries, ignoring the capability probe."""
+    return [p for query, params in calls if "information_schema" not in query for p in params]
+
+
 def _bin(gx: int, gy: int, n: int, scanned: int = 3):
     return {"gx": gx, "gy": gy, "n": n, "scanned": scanned}
 
@@ -101,9 +106,8 @@ def test_an_empty_viewport_is_not_an_error(client, monkeypatch):
 def test_the_scan_is_capped_in_sql_not_after_the_fact(client, monkeypatch):
     calls = stub(monkeypatch, [])
     client.get(POINTS, params=VIEWPORT)
-    query, params = calls[0]
-    assert "LIMIT" in query
-    assert map_router.get_settings().map_scan_cap + 1 in params
+    assert any("LIMIT" in query for query, _p in calls)
+    assert map_router.get_settings().map_scan_cap + 1 in bound(calls)
 
 
 # --- image mode -------------------------------------------------------------
@@ -129,7 +133,7 @@ def test_a_pin_without_a_label_has_no_thumbnail_rather_than_a_broken_one(
 def test_image_mode_is_capped_so_the_map_stays_readable(client, monkeypatch):
     calls = stub(monkeypatch, [])
     client.get(POINTS, params={**VIEWPORT, "mode": "image"})
-    assert map_router.get_settings().map_image_point_cap in calls[0][1]
+    assert map_router.get_settings().map_image_point_cap in bound(calls)
 
 
 # --- validation -------------------------------------------------------------
@@ -147,7 +151,7 @@ def test_a_missing_viewport_is_rejected(client, monkeypatch):
 def test_the_role_reaches_the_query(client, monkeypatch):
     calls = stub(monkeypatch, [])
     client.get(POINTS, params={**VIEWPORT, "role": "product_origin"})
-    assert "product_origin" in calls[0][1]
+    assert "product_origin" in bound(calls)
 
 
 # --- degraded states --------------------------------------------------------
@@ -169,6 +173,38 @@ def test_repeated_panning_is_rate_limited(client, monkeypatch):
 
     codes = [client.get(POINTS, params=VIEWPORT).status_code for _ in range(3)]
     assert codes == [200, 200, 429]
+
+
+# --- varietal capability gate -----------------------------------------------
+def test_varietal_is_reported_unavailable_when_the_column_is_missing(client, monkeypatch):
+    stub(monkeypatch, [], one=None)
+    body = client.get(POINTS, params=VIEWPORT).json()
+    assert body["varietalAvailable"] is False
+
+
+def test_a_varietal_filter_the_surface_cannot_apply_is_refused(client, monkeypatch):
+    """Ignoring it would return unfiltered results under a filtered heading."""
+    stub(monkeypatch, [], one=None)
+    response = client.get(POINTS, params={**VIEWPORT, "varietal": "Cabernet"})
+    assert response.status_code == 400
+    assert "varietal" in response.json()["detail"].lower()
+
+
+def test_a_varietal_filter_is_applied_where_the_column_exists(client, monkeypatch):
+    calls = stub(monkeypatch, [], one={"ok": 1})
+    response = client.get(POINTS, params={**VIEWPORT, "varietal": "Cabernet"})
+
+    assert response.status_code == 200
+    assert response.json()["varietalAvailable"] is True
+    assert "%Cabernet%" in bound(calls)
+
+
+def test_the_column_probe_runs_once_rather_than_per_viewport(client, monkeypatch):
+    """Panning would otherwise add a catalogue query to every frame."""
+    calls = stub(monkeypatch, [], one={"ok": 1})
+    for _ in range(3):
+        client.get(POINTS, params=VIEWPORT)
+    assert sum("information_schema" in q for q, _p in calls) == 1
 
 
 # --- area drill-in ----------------------------------------------------------

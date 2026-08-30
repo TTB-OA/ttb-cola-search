@@ -468,6 +468,7 @@ Table cola_map_search {
   class_type           text
   origin_code          varchar
   origin               text
+  grape_varietal       text        [note: 'PLANNED. Denormalized join of cola_grape_varietals.vartl_name, matching cola_search.grape_varietal. The map filters it with ILIKE; until it exists the API reports varietalAvailable=false and rejects the filter with 400.']
   completed_date       date
   application_date     date
   permit_id            varchar
@@ -486,6 +487,7 @@ Table cola_map_search {
     (class_type_code, completed_date)
     (origin_code, completed_date)
     (geolocation_quality, completed_date)
+    grape_varietal [type: gin, note: 'PLANNED, gin_trgm_ops: the varietal filter is a substring match.']
   }
 }
 

@@ -22,6 +22,7 @@ FILTER_VALUES = {
     "class_type": "TABLE RED WINE",
     "date_from": date(2020, 1, 1),
     "date_to": date(2024, 12, 31),
+    "varietal": "Cabernet",
 }
 
 EMPTY = {name: None for name in FILTER_VALUES}
@@ -44,6 +45,13 @@ def test_each_filter_binds_its_own_placeholders(name):
 
 def test_all_filters_together():
     assert_aligned(*build(**FILTER_VALUES))
+
+
+def test_varietal_matches_on_a_substring():
+    """The column is a joined list, so a blend only matches partially."""
+    where, params = build(varietal="Cabernet")
+    assert "grape_varietal ILIKE %s" in where
+    assert "%Cabernet%" in params
 
 
 def test_the_role_is_always_constrained():

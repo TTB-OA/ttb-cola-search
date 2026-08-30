@@ -331,6 +331,7 @@ section > .d-notice { margin-bottom: 0; }
 .map-bar { background: var(--white); border-bottom: 1px solid var(--base-lighter); padding: 14px 0; position: sticky; top: 0; z-index: 20; }
 .map-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .map-filter { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
+.map-filter-wide { min-width: 220px; }
 .map-filter .select, .map-filter .input { min-width: 150px; }
 .map-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; min-height: 20px; }
 .map-chips { flex: 1; }

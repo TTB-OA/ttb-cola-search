@@ -299,6 +299,9 @@ class MapPointsResponse(ApiModel):
     # True when the scan cap was reached; `total` is then a floor and the
     # rendered set is a sample rather than everything in view.
     total_is_capped: bool = False
+    # Whether the map surface carries a varietal column. The filter is offered
+    # in the UI only where it can actually be applied.
+    varietal_available: bool = False
 
 
 class MapAreaResponse(ApiModel):
