@@ -94,23 +94,73 @@ function areaGeoJson(area) {
   };
 }
 
+// MapLibre stacks one gaussian per bin, each contributing
+// weight * intensity * GAUSS_COEF * exp(-4.5 * (distance / radius)^2).
+const GAUSS_COEF = 0.3989422804014327;
+const HEAT_FALLOFF = 4.5;
+// Cells are square in degrees, so at US latitudes they land ~1.3x further apart
+// vertically than horizontally. The radius has to clear the taller gap or the
+// bins read as rows of horizontal dashes.
+const HEAT_RADIUS = ['interpolate', ['linear'], ['zoom'], 0, 40, 10, 46, 16, 52];
+const WEIGHT_FLOOR = 0.12;
+const BASE_INTENSITY = 1.2;
+const MAX_INTENSITY = 6;
+// Enough probes to cover the plausible peaks without an O(n^2) pass over 20k bins.
+const PEAK_PROBES = 12;
+
+function heatRadius(zoom) {
+  if (zoom <= 0) return 40;
+  if (zoom <= 10) return 40 + zoom * 0.6;
+  return Math.min(52, 46 + (zoom - 10));
+}
+
+// The ramp reads heatmap-density, which is the stacked kernel rather than any
+// one bin's weight, so what turns red depends on how many bins fall within a
+// radius of each other. Zoomed out they pile up and saturate; zoomed into a
+// metro they stand apart and the hottest cluster tops out at GAUSS_COEF of its
+// weight, halfway up the ramp, which is the muted smudge. Measuring the peak
+// the view will actually produce lets the intensity lift it back to red.
+function heatIntensity(bins, weightOf, instance) {
+  const radius = heatRadius(instance.getZoom());
+  // exp(-4.5 * 4) is ~1e-8, so nothing beyond two radii moves the sum.
+  const reach = radius * 2;
+  const pts = bins.map((b) => {
+    const { x, y } = instance.project([b.lng, b.lat]);
+    return { x, y, w: weightOf(b.count) };
+  });
+  const probes = [...pts].sort((a, b) => b.w - a.w).slice(0, PEAK_PROBES);
+  let peak = 0;
+  for (const probe of probes) {
+    let stacked = 0;
+    for (const p of pts) {
+      const dx = p.x - probe.x;
+      const dy = p.y - probe.y;
+      if (dx < -reach || dx > reach || dy < -reach || dy > reach) continue;
+      stacked += p.w * Math.exp((-HEAT_FALLOFF * (dx * dx + dy * dy)) / (radius * radius));
+    }
+    if (stacked > peak) peak = stacked;
+  }
+  if (peak <= 0) return BASE_INTENSITY;
+  // Never below the base: zoomed out the peak already saturates, and dividing
+  // into it would flatten the national surface this ramp was tuned against.
+  return Math.min(MAX_INTENSITY, Math.max(BASE_INTENSITY, 1 / (peak * GAUSS_COEF)));
+}
+
 // Counts across a viewport routinely span four orders of magnitude, so weight
 // is taken from the log: a linear ramp would render everything outside the
 // densest metro as blank. The top of the ramp is the densest bin currently in
 // view, so whatever is hottest on screen reads red at any zoom or filter.
-function heatPaint(maxCount) {
+function heatPaint(bins, instance) {
+  // Reduced rather than spread: the server returns up to 20k bins and
+  // Math.max(...) that long overflows the call stack.
+  const maxCount = bins.reduce((m, b) => (b.count > m ? b.count : m), 0);
   const top = Math.max(0.5, Math.log10(Math.max(2, maxCount)));
+  const weightOf = (count) =>
+    WEIGHT_FLOOR + (Math.log10(Math.max(count, 1)) / top) * (1 - WEIGHT_FLOOR);
   return {
-    'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.12, top, 1],
-    // MapLibre scales its kernel by GAUSS_COEF (~0.399) so it integrates to 1,
-    // which caps a lone bin at 40% of its weight. This undoes enough of that to
-    // put the densest clusters in view at the top of the ramp, discounted for
-    // the wide radius below, which already stacks neighbouring bins together.
-    'heatmap-intensity': 1.2,
-    // Cells are square in degrees, so at US latitudes they land ~1.3x further
-    // apart vertically than horizontally. The radius has to clear the taller
-    // gap or the bins read as rows of horizontal dashes.
-    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 40, 10, 46, 16, 52],
+    'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, WEIGHT_FLOOR, top, 1],
+    'heatmap-intensity': bins.length ? heatIntensity(bins, weightOf, instance) : BASE_INTENSITY,
+    'heatmap-radius': HEAT_RADIUS,
     'heatmap-opacity': 0.82,
     'heatmap-color': [
       'interpolate',
@@ -216,7 +266,7 @@ export default function MapView({
 
       instance.on('load', () => {
         instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
-        instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint(1) });
+        instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
 
         instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
         // Added after the heat layer so the box reads on top of the density it
@@ -279,9 +329,7 @@ export default function MapView({
     source.setData(toGeoJson(active ? bins : []));
     instance.setLayoutProperty(HEAT_LAYER, 'visibility', active ? 'visible' : 'none');
     if (active && bins && bins.length) {
-      // Reduced rather than spread: the server returns up to 20k bins and
-      // Math.max(...) that long overflows the call stack.
-      const paint = heatPaint(bins.reduce((m, b) => (b.count > m ? b.count : m), 0));
+      const paint = heatPaint(bins, instance);
       Object.entries(paint).forEach(([k, v]) => instance.setPaintProperty(HEAT_LAYER, k, v));
     }
   }, [bins, mode, ready]);
