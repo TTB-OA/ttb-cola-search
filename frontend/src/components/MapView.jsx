@@ -79,9 +79,9 @@ function heatPaint(maxCount) {
   return {
     'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, 0.15, top, 1],
     'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 0.8, 9, 2.2],
-    // Server bins sit 32 CSS px apart, so the radius has to clear that or the
-    // grid shows through as separate dots.
-    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 26, 10, 38, 16, 46],
+    // Server bins sit 11-23 CSS px apart depending on the zoom fraction, so the
+    // radius has to stay well above that or the grid shows through as dots.
+    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 30, 10, 40, 16, 48],
     'heatmap-opacity': 0.82,
     'heatmap-color': [
       'interpolate',

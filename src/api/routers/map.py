@@ -58,7 +58,9 @@ MODES = ("heat", "image")
 
 # Bins are already an aggregate; past this many the map is a solid block and the
 # payload is pointless. Ordered by count, so what is dropped is the sparse tail.
-BIN_CAP = 5000
+# A wide desktop viewport is ~14 tiles, so this has to clear 14k to avoid
+# punching holes in the sparse areas the grid is finest for.
+BIN_CAP = 20000
 # Records listed alongside an area summary, per page.
 AREA_PAGE_SIZE = 24
 
@@ -120,16 +122,18 @@ def _enforce_rate_limit(request: Request) -> None:
 
 
 def _cell_size(zoom: int) -> float:
-    """Grid cell in degrees for a zoom level, at roughly 16 bins per tile.
+    """Grid cell in degrees for a zoom level, at roughly 32 bins per tile.
 
     Halving with each zoom step keeps a bin the same size on screen however far
     in the user is, so the heat surface does not re-scale as they navigate.
 
-    16 bins per tile puts bin centres 32 CSS px apart, close enough that the
-    heatmap kernels merge; at 8 the grid itself was visible as a lattice.
+    32 bins per tile puts bin centres 16 CSS px apart. The client rounds its
+    zoom, so the real spacing runs 11-23 px, and the radius ramp below in
+    MapView clears even the top of that; at 8 and 16 bins the sparse areas read
+    as a lattice of separate dots rather than a surface.
     """
     z = min(max(zoom, 0), 16)
-    return 360.0 / (2**z) / 16
+    return 360.0 / (2**z) / 32
 
 
 def _wrap_longitude(value: float) -> float:
