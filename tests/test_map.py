@@ -76,7 +76,7 @@ def test_bins_are_returned_at_the_centre_of_their_cell(client, monkeypatch):
     stub(monkeypatch, [_bin(0, 0, 3)])
     body = client.get(POINTS, params={**VIEWPORT, "zoom": 0}).json()
 
-    cell = 360.0 / 8
+    cell = map_router._cell_size(0)
     assert body["bins"][0]["lng"] == pytest.approx(cell / 2)
     assert body["bins"][0]["lat"] == pytest.approx(cell / 2)
 

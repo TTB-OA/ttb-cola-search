@@ -118,13 +118,16 @@ def _enforce_rate_limit(request: Request) -> None:
 
 
 def _cell_size(zoom: int) -> float:
-    """Grid cell in degrees for a zoom level, at roughly 8 bins per tile.
+    """Grid cell in degrees for a zoom level, at roughly 16 bins per tile.
 
     Halving with each zoom step keeps a bin the same size on screen however far
     in the user is, so the heat surface does not re-scale as they navigate.
+
+    16 bins per tile puts bin centres 32 CSS px apart, close enough that the
+    heatmap kernels merge; at 8 the grid itself was visible as a lattice.
     """
     z = min(max(zoom, 0), 16)
-    return 360.0 / (2**z) / 8
+    return 360.0 / (2**z) / 16
 
 
 def _wrap_longitude(value: float) -> float:
