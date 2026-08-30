@@ -2,7 +2,9 @@
 //
 // The DDL is one idempotent script, src/cola/core/pcr_baseline.py, applied by
 // schema_migrate.py. This file documents that script for dbdiagram.io and
-// should be updated whenever the baseline changes.
+// should be updated whenever the baseline changes. The explicitly marked
+// planned geolocation section is the design contract for work not yet added
+// to the baseline or deployed.
 //
 // Column provenance:
 //   [list]   CfmPublicRegistryMvDTO, GET /colas
@@ -58,7 +60,7 @@ Table cola_images {
   dimensions_txt  varchar
   blob_name       text
   blob_url        text
-  download_status varchar     [note: 'SUCCESS or NONE are terminal']
+  download_status varchar     [note: 'SUCCESS, NONE and UNAVAILABLE are terminal. NONE means TTB said there is no label; UNAVAILABLE means its detail page could not be read, so the answer is unknown.']
   scraped_on      timestamptz
 
   // Written only by code/image_embedding.py. pgvector, 768 dimensions to match
@@ -118,16 +120,16 @@ Table image_analysis_items {
   }
 }
 
-// One row per billable API unit, written by code/image_analysis.py (OCR pages)
-// and code/image_embedding.py (embedding calls). code/usage_summary.py rolls
-// these up by month and prices them. A provider populates only the measures it
-// reports, so the count columns are nullable except record_count.
+// One row per billable API unit, written by image analysis, embedding, and
+// Azure Maps geolocation. usage_summary.py rolls these up by month and prices
+// them. A provider populates only the measures it reports, so the count columns
+// are nullable except record_count.
 Table api_usage {
   id            bigint      [pk, increment]
-  component     varchar     [note: 'image_analysis | image_embedding']
-  provider      varchar     [note: 'azure_document_intelligence | google_gemini']
-  model         varchar     [note: 'e.g. prebuilt-read, gemini-embedding-2']
-  operation     varchar     [note: 'ocr | image_embedding | text_embedding']
+  component     varchar     [note: 'image_analysis | image_embedding | geolocation']
+  provider      varchar     [note: 'azure_document_intelligence | google_gemini | azure_maps']
+  model         varchar     [note: 'model name or provider API version']
+  operation     varchar     [note: 'ocr | image_embedding | text_embedding | geocoding']
   cola_id       text        [note: 'FK to colas, nullable']
   file_name     varchar     [note: 'image the unit was billed for']
   business_date date        [note: 'day being processed, for reference']
@@ -264,6 +266,227 @@ Table schema_migrations {
   checksum     char(64)     [note: 'sha-256 hex digest of the migration text']
   applied_on   timestamptz
   applied_by   varchar(120)
+}
+
+// -----------------------------------------------------------------------------
+// GEOLOCATION PROVENANCE DEPLOYED; MAP SEARCH PLANNED
+//
+// The provenance, selection, and dirty-queue tables are deployed in pcr-prod.
+// cola_map_search remains planned for the map-materialization phase.
+//
+// Location roles:
+//   permit_premise   every permit address observed on a COLA
+//   primary_premise  primary permit address; a subset of permit_premise for
+//                    both domestic and imported COLAs
+//   product_origin   curated origin-code centroid for every COLA: U.S. state
+//                    for domestic products and country for imported products
+//
+// Targets are reusable cache identities. Observations preserve per-COLA source
+// semantics, results are append-only provider attempts, and selections identify
+// the current result without mutating provider history.
+// -----------------------------------------------------------------------------
+
+// Versioned local spatial enrichment for the TTB-owned origin vocabulary.
+// ref_origins remains authoritative for code descriptions; this table adds only
+// geographic interpretation and dataset provenance. A run selects one dataset
+// version and writes its chosen row as a curated_origin provider result.
+Table ref_origin_locations {
+  origin_code        varchar     [not null, note: 'logical FK to ref_origins; description is joined from there']
+  dataset_version    varchar     [not null]
+  geography_level    varchar     [not null, note: 'us_state | country']
+  iso_country_code   char(2)
+  subdivision_code   varchar     [note: 'ISO 3166-2 or equivalent for domestic state origins']
+  location           "geography(POINT,4326)" [not null, note: 'representative centroid; requires PostGIS']
+  latitude           double      [not null]
+  longitude          double      [not null]
+  source_name        varchar     [not null]
+  source_url         text
+  source_license     text
+  source_date        date
+  loaded_on          timestamptz [not null]
+
+  indexes {
+    (origin_code, dataset_version) [pk]
+    (dataset_version, geography_level)
+    location [type: gist]
+  }
+}
+
+Table geolocation_run {
+  run_id                 bigint      [pk, increment]
+  run_name               varchar     [not null]
+  component              varchar     [not null, note: 'geolocation; advisory-locked, not day-ledger managed']
+  status                 varchar     [not null, note: 'running | complete | failed | stopped']
+  provider_chain         jsonb       [not null, note: 'ordered providers and versions used by this run']
+  provider_config        jsonb       [note: 'non-secret limits, retry policy, and paid fallback settings']
+  normalizer_version     varchar     [not null]
+  selection_rule_version varchar     [not null]
+  target_count           integer
+  result_count           integer
+  selected_count         integer
+  fallback_count         integer
+  billable_transactions  integer
+  estimated_cost_usd     numeric
+  started_on             timestamptz [not null]
+  completed_on           timestamptz
+  terminal_error         text
+
+  indexes {
+    (status, started_on)
+    run_name [unique]
+  }
+}
+
+Table geolocation_target {
+  target_kind        varchar     [not null, note: 'permit_address | product_origin']
+  normalizer_version varchar     [not null, note: 'identity changes when normalization semantics change']
+  target_key         char(64)    [not null, note: 'SHA-256 of target kind, normalizer version, and canonical input']
+  origin_code        varchar     [note: 'product_origin only; joins authoritative details from ref_origins']
+  canonical_input    jsonb       [not null, note: 'provider-neutral structured address or origin value']
+  display_text       text        [not null]
+  validity_status    varchar     [not null, note: 'valid | invalid']
+  created_on         timestamptz [not null]
+  last_seen_on       timestamptz [not null]
+
+  indexes {
+    (target_kind, normalizer_version, target_key) [pk]
+    (target_kind, validity_status, last_seen_on)
+  }
+}
+
+Table geolocation_observation {
+  cola_id            text        [not null, note: 'historical per-COLA source observation']
+  location_role      varchar     [not null, note: 'permit_premise | primary_premise | product_origin']
+  source_key         varchar     [not null, note: 'permit_id or origin_code']
+  target_kind        varchar     [not null]
+  normalizer_version varchar     [not null]
+  target_key         char(64)    [not null]
+  primary_permit_flg boolean
+  observed_on        timestamptz [not null]
+
+  indexes {
+    (cola_id, location_role, source_key) [pk]
+    (target_kind, normalizer_version, target_key)
+  }
+}
+
+Table geolocation_result {
+  result_id             bigint      [pk, increment]
+  run_id                bigint      [not null]
+  target_kind           varchar     [not null]
+  normalizer_version    varchar     [not null]
+  target_key            char(64)    [not null]
+  provider              varchar     [not null, note: 'census | curated_origin | azure_maps']
+  provider_version      varchar
+  status                varchar     [not null, note: 'matched | unmatched | ambiguous | invalid | error']
+  location              "geography(POINT,4326)" [note: 'WGS84; requires PostGIS']
+  latitude              double
+  longitude             double
+  matched_address       text
+  native_confidence     varchar     [note: 'provider-native value retained verbatim; never synthesized']
+  native_match_codes    jsonb
+  calculation_method    varchar     [note: 'Rooftop | Parcel | Interpolation | centroid, provider-native where available']
+  quality_class         varchar     [note: 'rooftop | parcel | interpolated | centroid | up_hierarchy | ambiguous | unmatched | invalid']
+  quality_rule_version  varchar     [not null]
+  response_metadata     jsonb
+  requested_on          timestamptz [not null]
+  completed_on          timestamptz
+  retry_count           integer     [not null, default: 0]
+  error_code            varchar
+  error_message         text
+  billable_transactions integer     [not null, default: 0]
+
+  indexes {
+    (target_kind, normalizer_version, target_key, provider, completed_on)
+    run_id
+    location [type: gist]
+  }
+}
+
+Table geolocation_selection {
+  target_kind            varchar     [not null]
+  normalizer_version     varchar     [not null]
+  target_key             char(64)    [not null]
+  result_id              bigint      [not null, unique]
+  selection_rule_version varchar     [not null]
+  selected_on            timestamptz [not null]
+
+  indexes {
+    (target_kind, normalizer_version, target_key) [pk]
+  }
+}
+
+Table geolocation_dirty {
+  target_kind        varchar     [not null]
+  normalizer_version varchar     [not null]
+  target_key         char(64)    [not null]
+  marked_at          timestamptz [not null]
+
+  indexes {
+    (target_kind, normalizer_version, target_key) [pk]
+    (marked_at, target_kind, target_key)
+  }
+}
+
+Table geolocation_source_dirty {
+  cola_id   text        [pk, note: 'COLA whose current permits/origin must be normalized and reconciled']
+  marked_at timestamptz [not null]
+
+  indexes {
+    (marked_at, cola_id)
+  }
+
+  Note: 'COLA-keyed because a new or deleted source has no normalized target key yet. The geolocation CLI claims one row at a time with FOR UPDATE SKIP LOCKED.'
+}
+
+Table cola_map_dirty {
+  cola_id   text        [pk]
+  marked_at timestamptz [not null]
+
+  indexes {
+    (marked_at, cola_id)
+  }
+}
+
+Table cola_map_search {
+  cola_id              text        [not null]
+  location_role        varchar     [not null]
+  source_key           varchar     [not null]
+  target_kind          varchar     [not null]
+  normalizer_version   varchar     [not null]
+  target_key           char(64)    [not null]
+  result_id            bigint      [not null]
+  location             "geography(POINT,4326)" [not null, note: 'indexed source of truth for viewport and distance queries']
+  latitude             double      [not null]
+  longitude            double      [not null]
+  geolocation_provider varchar     [not null]
+  geolocation_quality  varchar     [not null]
+  geolocation_method   varchar
+  ct_commodity         text
+  ct_source            text
+  class_type_code      varchar
+  class_type           text
+  origin_code          varchar
+  origin               text
+  completed_date       date
+  application_date     date
+  permit_id            varchar
+  permit_name          text
+  best_image_file_name varchar
+  best_image_blob_url  text
+  best_image_score     numeric
+  _loaded_at           timestamptz [not null]
+
+  indexes {
+    (cola_id, location_role, source_key) [pk]
+    location [type: gist]
+    (location_role, completed_date)
+    (ct_commodity, completed_date)
+    (ct_source, completed_date)
+    (class_type_code, completed_date)
+    (origin_code, completed_date)
+    (geolocation_quality, completed_date)
+  }
 }
 
 // Asynchronous Gemini batch embedding jobs, written by image_embedding.py.
@@ -404,7 +627,41 @@ Table cola_coverage_year {
   image_cola_count     bigint      [note: 'colas with >= 1 stored image [local]']
   ocr_cola_count       bigint      [note: 'colas whose every stored image has a terminal analysis [local]']
   embedding_cola_count bigint      [note: 'colas whose every stored image has an image_feature_vector [local]']
+  origin_geocoded_cola_count bigint [note: 'COLAs with a selected spatial product_origin observation [local]']
+  permit_geocoded_cola_count bigint [note: 'COLAs with any selected spatial permit_premise observation [local]']
+  primary_permit_geocoded_cola_count bigint [note: 'COLAs with a selected spatial primary_premise observation [local]']
   _loaded_at           timestamptz [note: 'as-of time this row was materialised [local]']
+}
+
+// One row per permit_id, rebuilt whole by search_materialize.py on every run.
+// cola_permits only holds detail-filled COLAs, so cola_count is rolled up from
+// cola_permits UNION colas.permit_num for COLAs cola_permits hasn't reached yet,
+// keeping it the true count rather than the detail-filled subset. A permit's
+// display fields (permit_name, addresses) come only from cola_permits, so they
+// stay null until at least one of its COLAs is detail-filled.
+Table cola_permit_search {
+  permit_id              varchar     [pk, note: 'as scraped, already uppercase [local]']
+  permit_name            text        [note: 'latest by completed_date, for display [local]']
+  name_variants          text[]      [note: 'every distinct name seen, for recall [local]']
+  names_blob             text        [note: 'name_variants joined with " | ", trigram-indexed [local]']
+  permit_frst_strt_addr  text        [note: '[local]']
+  permit_secnd_strt_addr text        [note: '[local]']
+  permit_city_addr       varchar     [note: '[local]']
+  permit_state_addr      varchar     [note: '[local]']
+  permit_zip_addr        varchar     [note: '[local]']
+  permit_zip4_addr       varchar     [note: '[local]']
+  permit_cntry_addr      varchar     [note: '[local]']
+  cola_count             bigint      [note: 'distinct COLAs on this permit, list+detail sourced [local]']
+  primary_cola_count     bigint      [note: 'of cola_count, where this was the primary permit [local]']
+  first_completed_date   date        [note: '[local]']
+  last_completed_date    date        [note: '[local]']
+  _loaded_at             timestamptz [note: 'as-of time this row was materialised [local]']
+
+  indexes {
+    (permit_id) [name: 'cola_permit_search_permit_id_pattern_idx']
+    names_blob [type: gin, name: 'cola_permit_search_names_trgm_idx']
+    (cola_count, permit_id) [name: 'cola_permit_search_cola_count_idx']
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -436,8 +693,27 @@ Ref: cola_grape_varietals.cola_id > colas.cola_id
 Ref: cola_search.cola_id - colas.cola_id
 Ref: cola_search_ocr.cola_id - cola_search.cola_id
 Ref: cola_search_dirty.cola_id > colas.cola_id
+Ref: cola_permit_search.permit_id - cola_permits.permit_id
 Ref: embedding_batch_item.job_id > embedding_batch_job.job_id
 Ref: embedding_batch_item.(cola_id, file_name) > cola_images.(cola_id, file_name)
+
+// Physical geolocation foreign keys.
+Ref: ref_origin_locations.origin_code > ref_origins.origin_code
+Ref: geolocation_observation.(target_kind, normalizer_version, target_key) > geolocation_target.(target_kind, normalizer_version, target_key)
+Ref: geolocation_result.run_id > geolocation_run.run_id
+Ref: geolocation_result.(target_kind, normalizer_version, target_key) > geolocation_target.(target_kind, normalizer_version, target_key)
+Ref: geolocation_selection.(target_kind, normalizer_version, target_key) - geolocation_target.(target_kind, normalizer_version, target_key)
+Ref: geolocation_selection.result_id - geolocation_result.result_id
+Ref: geolocation_dirty.(target_kind, normalizer_version, target_key) - geolocation_target.(target_kind, normalizer_version, target_key)
+
+// Logical geolocation relationships. COLA source/observation links are not
+// enforced so partial pipeline state remains valid; cola_map_search is planned.
+Ref: geolocation_target.origin_code > ref_origins.origin_code
+Ref: geolocation_observation.cola_id > colas.cola_id
+Ref: geolocation_source_dirty.cola_id > colas.cola_id
+Ref: cola_map_dirty.cola_id > colas.cola_id
+Ref: cola_map_search.cola_id > colas.cola_id
+Ref: cola_map_search.result_id > geolocation_result.result_id
 
 Ref: colas.status_code > ref_status_types.status_code
 Ref: colas.class_type_code > ref_product_class_types.class_type_code

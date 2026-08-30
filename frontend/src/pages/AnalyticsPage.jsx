@@ -31,6 +31,7 @@ const FILTER_LABELS = {
   qualification: 'Qualification',
   labelText: 'Label text',
   commodity: 'Commodity',
+  classType: 'Class/Type',
   source: 'Source',
   origin: 'Origin',
   status: 'Status',
@@ -279,6 +280,35 @@ export default function AnalyticsPage() {
 
             <Card title="Uploaded image sizes">
               <BarList items={panels.uploadSizes} color="var(--gold-dark)" />
+            </Card>
+
+            <Card title="Map usage">
+              <TimeSeries
+                label="Map viewports, area summaries and label clicks over time"
+                points={panels.mapOverTime}
+                series={[
+                  { key: 'viewports', label: 'Viewports', color: 'var(--accent)' },
+                  { key: 'areas', label: 'Areas opened', color: 'var(--mint)' },
+                  { key: 'markers', label: 'Labels clicked', color: 'var(--green)' },
+                  { key: 'sessions', label: 'Sessions', color: 'var(--base-dark)' },
+                ]}
+              />
+            </Card>
+
+            <Card title="How the map is read">
+              <BarList items={panels.mapModeUsage} color="var(--mint)" />
+            </Card>
+
+            <Card title="Map filters used">
+              <BarList items={panels.mapFilterUsage} format={(k) => FILTER_LABELS[k] || k} />
+            </Card>
+
+            <Card title="Map zoom levels">
+              <BarList
+                items={panels.mapZoomUsage}
+                color="var(--green)"
+                format={(z) => `Zoom ${z}`}
+              />
             </Card>
           </div>
 

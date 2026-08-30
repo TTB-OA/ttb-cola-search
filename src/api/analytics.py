@@ -33,6 +33,8 @@ EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
     ("GET", "/colas/{cola_id}"): "detail_viewed",
     ("GET", "/colas/{cola_id}/similar"): "similar_requested",
     ("POST", "/search/image"): "image_search_performed",
+    ("GET", "/map/points"): "map_viewport_loaded",
+    ("GET", "/map/area"): "map_area_summarized",
 }
 
 
@@ -66,6 +68,9 @@ FILTER_KEYS = (
 
 # Closed vocabularies, safe to record verbatim.
 FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status")
+
+# Map filters are a subset of the search ones plus the two map-only controls.
+MAP_FILTER_KEYS = ("commodity", "source", "origin", "classType", "dateFrom", "dateTo")
 
 _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
@@ -140,6 +145,28 @@ def shape_detail_event(path_params: Mapping[str, Any]) -> dict[str, Any]:
     """Attributes for a detail view. The id is public data, not an identifier."""
     cola_id = str(path_params.get("cola_id") or "").strip()
     return {"cola_id": cola_id[:32]} if cola_id else {}
+
+
+def shape_map_event(params: Mapping[str, str]) -> dict[str, Any]:
+    """Attributes for a map viewport call.
+
+    Zoom is recorded but the viewport itself is not: which part of the country a
+    given session was looking at says more about the user than it does about the
+    product.
+    """
+    used = [k for k in MAP_FILTER_KEYS if (params.get(k) or "").strip()]
+    attrs: dict[str, Any] = {
+        "mode": params.get("mode") or "heat",
+        "role": params.get("role") or "primary_premise",
+        "zoom": _int(params, "zoom", 4),
+        "filters_used": ",".join(used),
+        "filter_count": len(used),
+    }
+    for key in FILTER_VALUE_KEYS:
+        value = (params.get(key) or "").strip()
+        if value:
+            attrs[key] = value[:64]
+    return attrs
 
 
 def shape_image_search_event(

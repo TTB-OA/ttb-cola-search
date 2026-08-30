@@ -82,6 +82,17 @@ export const api = {
   searchByDescription: ({ q, commodity, limit = 24 }, signal) =>
     request(`/search/describe${toQuery({ q, commodity, limit })}`, { signal }),
 
+  // Aggregated map viewport. Heat mode returns binned counts, image mode
+  // returns individual pins; the server picks the bin size from the zoom.
+  mapPoints: (params, signal) => request(`/map/points${toQuery(params)}`, { signal }),
+
+  // Breakdown plus a first page of COLAs for a boxed-in part of the map.
+  mapArea: (params, signal) => request(`/map/area${toQuery(params)}`, { signal }),
+
+  // The basemap is proxied out of private storage, so MapLibre needs the URL
+  // rather than a response; the pmtiles reader fetches byte ranges from it.
+  basemapUrl: () => `${BASE}/map/basemap`,
+
   // Unlisted usage dashboard. 404s unless the deployment enables it.
   analyticsDashboard: (params, signal) =>
     request(`/analytics/dashboard${toQuery(params)}`, { signal }),

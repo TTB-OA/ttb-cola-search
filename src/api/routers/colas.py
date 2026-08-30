@@ -2,15 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from psycopg.errors import UndefinedTable
 
 from ..db import fetch_all, fetch_one
 from ..mappers import (
     COMMODITY_CODE,
     DETAIL_COLUMNS,
+    MAP_TABLE,
     OCR_TABLE,
     SEARCH_TABLE,
     SOURCE_CODE,
@@ -23,6 +26,8 @@ from ..mappers import (
     visual_interest_join_sql,
 )
 from ..models import ColaDetail, FacetBucket, Facets, SearchResponse
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["colas"])
 
@@ -566,5 +571,42 @@ async def load_detail(cola_id: str) -> ColaDetail:
         "WHERE i.cola_id = %s ORDER BY i.id",
         [cola_id],
     )
+    locations, geo_status = await _geocoding(cola_id)
 
-    return detail_from_rows(base, images, items)
+    return detail_from_rows(base, images, items, locations, geo_status)
+
+
+async def _geocoding(cola_id: str) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """Geocoded points for a COLA, plus why there are none when there are none.
+
+    Both halves are optional: geolocation is a later pipeline stage than search,
+    so its tables may not exist in an environment yet, and the detail page is
+    still worth rendering without them.
+    """
+    try:
+        locations = await fetch_all(
+            f"SELECT location_role, source_key, permit_id, permit_name, latitude, longitude, "
+            f"geolocation_quality, geolocation_provider, geolocation_method "
+            f"FROM {MAP_TABLE} WHERE cola_id = %s "
+            "ORDER BY (location_role <> 'primary_premise'), location_role, source_key",
+            [cola_id],
+        )
+        # An observation exists once the address was normalised; a selection
+        # exists once a provider answered, whether or not it matched.
+        status = await fetch_one(
+            """--sql
+            SELECT count(*) AS observed_count,
+                   count(s.result_id) AS selected_count
+              FROM geolocation_observation o
+              LEFT JOIN geolocation_selection s
+                     ON s.target_kind = o.target_kind
+                    AND s.normalizer_version = o.normalizer_version
+                    AND s.target_key = o.target_key
+             WHERE o.cola_id = %s
+            """,
+            [cola_id],
+        )
+    except UndefinedTable:
+        logger.warning("geolocation tables are not available", exc_info=True)
+        return [], None
+    return locations, status

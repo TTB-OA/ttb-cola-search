@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # the embedding call, but still worth a ceiling.
     form_render_rate_limit: int = 30
     form_render_rate_window_seconds: int = 60
+    # Map panning fires a viewport query per move; each one is a spatial scan.
+    map_rate_limit: int = 120
+    map_rate_window_seconds: int = 60
     # Only enable behind a reverse proxy that overwrites X-Forwarded-For;
     # otherwise clients can spoof the header and reset their own bucket.
     trust_forwarded_for: bool = True
@@ -51,6 +54,16 @@ class Settings(BaseSettings):
     # --- Blob storage (label images) ---------------------------------------
     blob_account_url: str | None = None
     blob_container: str | None = None
+
+    # --- Map ----------------------------------------------------------------
+    # Rows a single viewport query may scan before it reports a floor instead.
+    map_scan_cap: int = 20000
+    # Pins drawn in image mode. Past a few hundred the map is unreadable and the
+    # thumbnail requests, one blob read each, outweigh the query itself.
+    map_image_point_cap: int = 250
+    # Basemap vector tiles (PMTiles archive) in the blob container above.
+    # Unset means the map page has no basemap and says so.
+    map_basemap_blob: str | None = None
 
     # --- Embedding provider (pluggable) ------------------------------------
     embedding_provider: str = "gemini"

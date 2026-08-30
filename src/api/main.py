@@ -22,6 +22,7 @@ from .analytics import (
     session_id_from,
     shape_detail_event,
     shape_image_search_event,
+    shape_map_event,
     shape_search_event,
     shape_similar_event,
 )
@@ -37,6 +38,7 @@ from .routers import (
     health,
     images,
     insights,
+    map,
     reference,
     search,
     suggest,
@@ -94,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router, prefix=API_PREFIX)
     app.include_router(images.router, prefix=API_PREFIX)
     app.include_router(colas.router, prefix=API_PREFIX)
+    app.include_router(map.router, prefix=API_PREFIX)
     app.include_router(forms.router, prefix=API_PREFIX)
     app.include_router(events.router, prefix=API_PREFIX)
     app.include_router(insights.router, prefix=API_PREFIX)
@@ -155,6 +158,8 @@ def _record_event(
                 int(length) if length and length.isdigit() else None,
                 request.headers.get("content-type"),
             )
+        elif name in ("map_viewport_loaded", "map_area_summarized"):
+            attrs |= shape_map_event(params)
 
         attrs |= getattr(request.state, "analytics", {})
         emit(name, attrs)

@@ -39,6 +39,12 @@ ALLOWED_EVENTS = frozenset(
         "describe_search_submitted",
         "image_search_abandoned",
         "image_search_state_lost",
+        # Map mode and role are chosen client-side and never reach the URL the
+        # viewport query carries, so the server cannot infer them.
+        "map_mode_changed",
+        "map_role_changed",
+        "map_marker_clicked",
+        "map_area_opened",
         "client_api_error",
     }
 )

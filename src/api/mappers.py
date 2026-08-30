@@ -9,6 +9,7 @@ from .config import API_PREFIX
 from .models import (
     ColaDetail,
     ColaSummary,
+    GeoLocation,
     ImageItem,
     ImageRef,
     PermitRef,
@@ -23,6 +24,11 @@ OCR_TABLE = "cola_search_ocr"
 # Refresh queue drained by the materialisation job; its depth is how far the
 # search surface currently trails the source tables.
 DIRTY_TABLE = "cola_search_dirty"
+# Materialised map surface: one row per COLA per geocoded location, so a COLA
+# with several permits appears once per premise. Maintained from the geolocation
+# provenance tables by the same pipeline that maintains cola_search.
+MAP_TABLE = "cola_map_search"
+MAP_DIRTY_TABLE = "cola_map_dirty"
 # Pipeline coverage by calendar year of completed_date, rebuilt whole by the
 # same job that maintains cola_search.
 COVERAGE_TABLE = "cola_coverage_year"
@@ -408,10 +414,41 @@ def processing_from_row(base: Mapping[str, Any]) -> ProcessingStatus:
     )
 
 
+def geocoding_state(locations: list[GeoLocation], observed: Any, selected: Any) -> str:
+    """Distinguish the four reasons a COLA may have no coordinates.
+
+    An address the geocoder rejected is a different fact from one it has not
+    reached yet, and both differ from a COLA whose addresses were never queued.
+    """
+    if locations:
+        return "located"
+    if not _positive(observed):
+        return "not_processed"
+    if not _positive(selected):
+        return "pending"
+    return "no_match"
+
+
+def location_from_row(row: Mapping[str, Any]) -> GeoLocation:
+    return GeoLocation(
+        role=str(row["location_role"]),
+        source_key=row.get("source_key"),
+        permit_id=row.get("permit_id"),
+        permit_name=row.get("permit_name"),
+        lat=float(row["latitude"]),
+        lng=float(row["longitude"]),
+        quality=row.get("geolocation_quality"),
+        provider=row.get("geolocation_provider"),
+        method=row.get("geolocation_method"),
+    )
+
+
 def detail_from_rows(
     base: dict[str, Any],
     images: list[dict[str, Any]],
     items: list[dict[str, Any]],
+    locations: list[dict[str, Any]] | None = None,
+    geo_status: Mapping[str, Any] | None = None,
 ) -> ColaDetail:
     summary = summary_from_row(base)
     varietals = [
@@ -428,6 +465,13 @@ def detail_from_rows(
         for q in (base.get("qualifications") or [])
     ]
     bottle_capacity = base.get("bottle_capacity")
+    points = [location_from_row(r) for r in (locations or [])]
+    processing = processing_from_row(base)
+    processing.geocoding = geocoding_state(
+        points,
+        (geo_status or {}).get("observed_count"),
+        (geo_status or {}).get("selected_count"),
+    )
     return ColaDetail(
         **summary.model_dump(by_alias=False),
         class_type_code=base.get("class_type_code"),
@@ -459,7 +503,8 @@ def detail_from_rows(
         submitter_fax=base.get("fax_no"),
         images=[image_ref_from_row(r) for r in images],
         image_items=sorted((image_item_from_row(r) for r in items), key=_item_sort_key),
+        locations=points,
         details_url=base.get("cola_details_url"),
         form_url=base.get("cola_form_url"),
-        processing=processing_from_row(base),
+        processing=processing,
     )

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
@@ -10,6 +10,75 @@ import { track } from '../lib/analytics.js';
 import { fmtDate, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+
+// Same reason as the map page: maplibre must not land in the main bundle just
+// because a record might have coordinates.
+const MapView = lazy(() => import('../components/MapView.jsx'));
+
+const ROLE_LABELS = {
+  primary_premise: 'Primary permit address',
+  permit_premise: 'Permit address',
+  product_origin: 'Product origin',
+};
+
+// The record's own coordinates, drawn as a locator. Deliberately not
+// interactive: this answers "where is this", and the map page answers the rest.
+function LocationPanel({ locations, status }) {
+  const points = locations || [];
+
+  if (!points.length) {
+    if (status === 'located') return null;
+    return (
+      <>
+        <h3 className="d-section">Location</h3>
+        <Notice
+          title={
+            status === 'no_match'
+              ? 'This address could not be placed on a map.'
+              : status === 'pending'
+                ? 'This address is queued for geocoding.'
+                : 'This address has not been geocoded.'
+          }
+        >
+          {status === 'no_match'
+            ? 'Geocoding ran but found no match for the permit address, so this record does not appear on the map.'
+            : 'Coordinates are added by a separate process that has not reached this record yet. The permit address above is unaffected.'}
+        </Notice>
+      </>
+    );
+  }
+
+  const primary = points[0];
+  const view = { center: [primary.lng, primary.lat], zoom: 9 };
+  return (
+    <>
+      <h3 className="d-section">Location</h3>
+      <div className="d-minimap">
+        <Suspense fallback={<div className="skel" style={{ height: '100%' }} />}>
+          <MapView mode="image" points={points.map((p, i) => ({ ...p, id: `loc-${i}` }))} view={view} interactive={false} />
+        </Suspense>
+      </div>
+      <div className="d-permits" style={{ marginTop: 10 }}>
+        {points.map((p, i) => (
+          <div className="d-permit" key={`${p.role}-${p.sourceKey || i}`}>
+            <div style={{ fontWeight: 600 }}>{ROLE_LABELS[p.role] || p.role}</div>
+            <div className="muted" style={{ fontSize: 13 }}>
+              {p.permitName || p.sourceKey || '—'}
+            </div>
+            <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
+              {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
+              {p.quality ? ` · ${p.quality}` : ''}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="an-note muted">
+        Coordinates are approximated from the address on file.{' '}
+        <Link to={`/map?lat=${primary.lat}&lng=${primary.lng}&zoom=9`}>See this area on the map</Link>
+      </p>
+    </>
+  );
+}
 
 function isBlank(value) {
   return value == null || value === false || (typeof value === 'string' && !value.trim());
@@ -573,6 +642,8 @@ export default function DetailPage() {
                   </div>
                 </>
               )}
+
+              <LocationPanel locations={rec.locations} status={proc.geocoding} />
 
               {rec.qualificationItems && rec.qualificationItems.length > 0 ? (
                 <>
