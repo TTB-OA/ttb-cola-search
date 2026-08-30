@@ -328,7 +328,13 @@ section > .d-notice { margin-bottom: 0; }
 /* ============================================================
    Map
    ============================================================ */
-.map-bar { background: var(--white); border-bottom: 1px solid var(--base-lighter); padding: 14px 0; position: sticky; top: 0; z-index: 20; }
+/* Named .map-bar until it collided with the breakdown bars below and silently
+   rendered this toolbar as a three-column grid. */
+.map-toolbar { background: var(--white); border-bottom: 1px solid var(--base-lighter); padding: 14px 0; position: sticky; top: 0; z-index: 20; }
+.map-toolbar-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.map-filters { margin-top: 12px; }
+.map-filters-toggle, .map-sheet-head, .map-sheet-grab, .map-backdrop { display: none; }
+.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; }
 .map-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .map-filter { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
 .map-filter-wide { min-width: 220px; }
@@ -348,7 +354,9 @@ section > .d-notice { margin-bottom: 0; }
 .map-overlay h3 { margin: 10px 0 6px; }
 .map-overlay p { font-size: 13.5px; line-height: 1.55; margin-bottom: 14px; }
 
-.map-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; z-index: 6; overflow-y: auto; padding: 16px 18px; border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; }
+.map-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; z-index: 6; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; }
+.map-panel-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -16px -18px 0; padding: 16px 18px 10px; background: var(--white); border-bottom: 1px solid var(--base-lightest); }
+.map-clear { flex: none; }
 .map-total { font-size: 20px; margin: 12px 0 16px; }
 .map-total strong { font-size: 26px; font-weight: 800; }
 .map-breakdown { margin-bottom: 16px; }
@@ -398,10 +406,43 @@ section > .d-notice { margin-bottom: 0; }
 }
 @media (max-width: 720px) {
   .wrap { padding: 0 18px; }
-  .map-stage { height: calc(100vh - 320px); }
+
+  /* The map is the page on a phone. The stage takes whatever the toolbar does
+     not, so no height has to be guessed as the controls wrap. 151px is the
+     banner plus the site header above. dvh keeps the collapsing browser
+     toolbar from cropping the map on iOS. */
+  .map-page { display: flex; flex-direction: column; min-height: calc(100vh - 151px); min-height: calc(100dvh - 151px); }
+  .map-stage { display: flex; flex-direction: column; flex: 1 1 auto; height: auto; min-height: 320px; }
+  /* MapLibre's own stylesheet wins over .map-canvas and makes the container
+     relative, so a percentage height has nothing definite to resolve against.
+     Stretching it as a flex item sizes it without one. */
+  .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
   .map-stage.has-panel .map-canvas { right: 0; }
-  .map-panel { width: 100%; top: auto; height: 58%; border-top: 1px solid var(--base-lighter); }
-  .map-filter, .map-filter .select, .map-filter .input { min-width: 130px; }
+  .map-toolbar { padding: 8px 0; }
+  .map-toolbar-top { gap: 8px; }
+  .map-filters-toggle { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+  /* Filters and the area summary open over the map rather than pushing it down
+     the document, so the map never leaves the viewport. */
+  .map-filters, .map-panel {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: 100%; z-index: 40;
+    background: var(--white); border: 0; border-top: 1px solid var(--base-lighter);
+    border-radius: 14px 14px 0 0; box-shadow: var(--shadow-2);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .map-filters { display: none; max-height: 72dvh; margin-top: 0; padding: 0 18px 24px; }
+  .map-filters.is-open { display: block; }
+  .map-panel { height: auto; max-height: 50dvh; padding: 0 18px 24px; }
+
+  /* The grab strip pins with the head, or list rows scroll through the gap
+     above it. The bar itself is drawn by the pseudo-element. */
+  .map-sheet-grab { display: block; position: sticky; top: 0; z-index: 3; width: auto; height: auto; margin: 0 -18px; padding: 6px 0 2px; border-radius: 0; background: var(--white); }
+  .map-sheet-grab::before { content: ''; display: block; width: 40px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--base-lighter); }
+  .map-sheet-head, .map-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 12px; z-index: 2; margin: 0 -18px; padding: 4px 18px 10px; background: var(--white); }
+  .map-backdrop { display: block; position: fixed; inset: 0; z-index: 35; border: 0; padding: 0; background: rgba(0, 0, 0, .35); }
+
+  .map-controls { flex-direction: column; align-items: stretch; gap: 12px; }
+  .map-filter, .map-filter-wide, .map-filter .select, .map-filter .input { min-width: 0; width: 100%; }
   .adv-grid { grid-template-columns: 1fr 1fr; }
   .adv-grid .field { grid-column: span 2 !important; }
   .d-permits { grid-template-columns: 1fr; }

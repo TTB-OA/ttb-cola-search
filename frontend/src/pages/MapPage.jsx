@@ -15,6 +15,7 @@ import { track } from '../lib/analytics.js';
 import { fmtDate } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
+import { useIsMobile } from '../hooks/useIsMobile.js';
 
 // maplibre is by far the largest thing this site loads; keeping it out of the
 // main bundle means the search page is unaffected by the map existing.
@@ -26,6 +27,10 @@ const MODES = [
   { key: 'heat', label: 'Heat', icon: 'layers', hint: 'Density of approvals' },
   { key: 'image', label: 'Labels', icon: 'image', hint: 'Individual label images' },
 ];
+
+// Two segmented controls plus a filter button do not fit across a phone, so the
+// long forms collapse to a word that still distinguishes the two choices.
+const SHORT = { primary_premise: 'Permit', product_origin: 'Origin' };
 
 // A COLA has a permit address and a product origin, and they are often nowhere
 // near each other. Which one is plotted changes what the map means, so it is a
@@ -54,7 +59,7 @@ function paramsToObject(sp) {
 }
 
 /* ---------- controls ---------- */
-function Segmented({ options, value, onChange, label }) {
+function Segmented({ options, value, onChange, label, short }) {
   return (
     <div className="seg" role="group" aria-label={label}>
       {options.map((o) => (
@@ -64,10 +69,11 @@ function Segmented({ options, value, onChange, label }) {
           className={value === o.key ? 'active' : ''}
           title={o.hint}
           aria-pressed={value === o.key}
+          aria-label={o.label}
           onClick={() => onChange(o.key)}
         >
           {o.icon ? <Icon name={o.icon} size={14} /> : null}
-          {o.label}
+          {short && SHORT[o.key] ? SHORT[o.key] : o.label}
         </button>
       ))}
     </div>
@@ -182,12 +188,24 @@ function groupByPermit(items) {
 
 function AreaPanel({ state, onClose }) {
   const { data, loading, error } = state;
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <aside className="map-panel panel" aria-label="Selected area">
-      <div className="row between">
+      <div className="map-sheet-grab" aria-hidden="true" />
+      {/* Sticky so the way out stays reachable however far the list is scrolled. */}
+      <div className="map-panel-head">
         <div className="section-title">Selected area</div>
-        <button className="linkbtn" onClick={onClose} aria-label="Close area summary">
-          <Icon name="close" size={16} />
+        <button type="button" className="btn secondary sm map-clear" onClick={onClose}>
+          <Icon name="close" size={14} />
+          Clear selection
         </button>
       </div>
 
@@ -255,8 +273,11 @@ export default function MapPage() {
 
   const [viewport, setViewport] = useState(null);
   const [area, setArea] = useState(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const lastMode = useRef(mode);
+  const stageRef = useRef(null);
+  const isMobile = useIsMobile();
 
   // Deep links can name a starting place; after that the map owns its own view.
   const initialView = useMemo(() => {
@@ -309,6 +330,23 @@ export default function MapPage() {
     }
   }, [mode, role]);
 
+  useEffect(() => {
+    if (!filtersOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setFiltersOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [filtersOpen]);
+
+  // The area sheet covers the lower half of the screen, so on a phone the map
+  // has to come up out of the document first or there is nothing left to see.
+  useEffect(() => {
+    if (area && isMobile && stageRef.current) {
+      stageRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  }, [area, isMobile]);
+
   function patch(mutator) {
     const next = paramsToObject(searchParams);
     mutator(next);
@@ -328,9 +366,12 @@ export default function MapPage() {
 
   const onViewportChange = useCallback((v) => setViewport(v), []);
 
+  const clearArea = useCallback(() => setArea(null), []);
+
   const onSelectArea = useCallback(
     (box) => {
       track('map_area_opened', { mode });
+      setFiltersOpen(false);
       setArea(box);
     },
     [mode]
@@ -339,6 +380,7 @@ export default function MapPage() {
   const onSelectPoint = useCallback(
     (point) => {
       track('map_marker_clicked', { mode });
+      setFiltersOpen(false);
       // A single label is a small box around itself, so the panel is the same
       // component whether the user clicked a pin or empty space.
       setArea({ west: point.lng - 0.02, south: point.lat - 0.02, east: point.lng + 0.02, north: point.lat + 0.02 });
@@ -362,41 +404,73 @@ export default function MapPage() {
     () => matchOptions(facets.varietals || [], criteria.varietal || ''),
     [facets.varietals, criteria.varietal]
   );
+  const activeFilters = FILTER_KEYS.filter((k) => criteria[k]).length;
 
   return (
     <div className="map-page">
-      <div className="map-bar">
+      <div className="map-toolbar">
         <div className="wrap">
-          <div className="map-controls">
-            <Segmented options={MODES} value={mode} onChange={setMode} label="Map mode" />
-            <Segmented options={ROLES} value={role} onChange={setRole} label="Location plotted" />
+          <div className="map-toolbar-top">
+            <Segmented options={MODES} value={mode} onChange={setMode} label="Map mode" short={isMobile} />
+            <Segmented options={ROLES} value={role} onChange={setRole} label="Location plotted" short={isMobile} />
+            <button
+              type="button"
+              className="btn secondary sm map-filters-toggle"
+              aria-expanded={filtersOpen}
+              aria-controls="map-filters"
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <Icon name="filter" size={14} />
+              Filters
+              {activeFilters ? <span className="map-filter-count">{activeFilters}</span> : null}
+            </button>
+          </div>
 
-            <FilterSelect label="Commodity" name="commodity" value={criteria.commodity} options={facets.categories} onChange={setFilter} />
-            <FilterSelect label="Source" name="source" value={criteria.source} options={facets.sources} onChange={setFilter} />
-            <FilterSelect label="Origin" name="origin" value={criteria.origin} options={origins} onChange={setFilter} />
+          {filtersOpen ? (
+            <button
+              type="button"
+              className="map-backdrop"
+              aria-label="Close filters"
+              onClick={() => setFiltersOpen(false)}
+            />
+          ) : null}
 
-            {varietalReady ? (
-              <label className="map-filter map-filter-wide">
-                <span className="d-label">Varietal</span>
-                <Combobox
-                  ariaLabel="Grape varietal"
-                  placeholder="Any varietal"
-                  value={criteria.varietal || ''}
-                  onChange={(v) => setFilter('varietal', v)}
-                  options={varietalOptions}
-                  emptyText="No matching varietal"
-                />
+          <div id="map-filters" className={`map-filters${filtersOpen ? ' is-open' : ''}`}>
+            <div className="map-sheet-grab" aria-hidden="true" />
+            <div className="map-sheet-head">
+              <div className="section-title">Filters</div>
+              <button type="button" className="btn secondary sm" onClick={() => setFiltersOpen(false)}>
+                Done
+              </button>
+            </div>
+            <div className="map-controls">
+              <FilterSelect label="Commodity" name="commodity" value={criteria.commodity} options={facets.categories} onChange={setFilter} />
+              <FilterSelect label="Source" name="source" value={criteria.source} options={facets.sources} onChange={setFilter} />
+              <FilterSelect label="Origin" name="origin" value={criteria.origin} options={origins} onChange={setFilter} />
+
+              {varietalReady ? (
+                <label className="map-filter map-filter-wide">
+                  <span className="d-label">Varietal</span>
+                  <Combobox
+                    ariaLabel="Grape varietal"
+                    placeholder="Any varietal"
+                    value={criteria.varietal || ''}
+                    onChange={(v) => setFilter('varietal', v)}
+                    options={varietalOptions}
+                    emptyText="No matching varietal"
+                  />
+                </label>
+              ) : null}
+
+              <label className="map-filter">
+                <span className="d-label">Approved from</span>
+                <input className="input" type="date" value={criteria.dateFrom || ''} onChange={(e) => setFilter('dateFrom', e.target.value)} />
               </label>
-            ) : null}
-
-            <label className="map-filter">
-              <span className="d-label">Approved from</span>
-              <input className="input" type="date" value={criteria.dateFrom || ''} onChange={(e) => setFilter('dateFrom', e.target.value)} />
-            </label>
-            <label className="map-filter">
-              <span className="d-label">to</span>
-              <input className="input" type="date" value={criteria.dateTo || ''} onChange={(e) => setFilter('dateTo', e.target.value)} />
-            </label>
+              <label className="map-filter">
+                <span className="d-label">to</span>
+                <input className="input" type="date" value={criteria.dateTo || ''} onChange={(e) => setFilter('dateTo', e.target.value)} />
+              </label>
+            </div>
           </div>
 
           <div className="map-status">
@@ -412,7 +486,7 @@ export default function MapPage() {
         </div>
       </div>
 
-      <div className={`map-stage${area ? ' has-panel' : ''}`} data-tour="map-stage">
+      <div className={`map-stage${area ? ' has-panel' : ''}`} data-tour="map-stage" ref={stageRef}>
         <Suspense fallback={<div className="skel map-canvas" />}>
           <MapView
             mode={mode}
@@ -443,7 +517,7 @@ export default function MapPage() {
           </div>
         ) : null}
 
-        {area ? <AreaPanel state={areaState} onClose={() => setArea(null)} /> : null}
+        {area ? <AreaPanel state={areaState} onClose={clearArea} /> : null}
       </div>
 
       <p className="wrap muted an-note map-note">
