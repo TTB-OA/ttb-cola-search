@@ -88,12 +88,13 @@ def test_the_total_counts_records_not_bins(client, monkeypatch):
     assert body["totalIsCapped"] is False
 
 
-def test_hitting_the_scan_cap_reports_a_floor(client, monkeypatch):
+def test_the_heat_total_is_exact_not_a_floor(client, monkeypatch):
+    """The grid aggregates every row in view, so there is nothing to cap."""
     cap = map_router.get_settings().map_scan_cap
     stub(monkeypatch, [_bin(0, 0, cap + 1, scanned=cap + 1)])
     body = client.get(POINTS, params=VIEWPORT).json()
-    assert body["total"] == cap
-    assert body["totalIsCapped"] is True
+    assert body["total"] == cap + 1
+    assert body["totalIsCapped"] is False
 
 
 def test_an_empty_viewport_is_not_an_error(client, monkeypatch):
@@ -103,11 +104,12 @@ def test_an_empty_viewport_is_not_an_error(client, monkeypatch):
     assert body["total"] == 0
 
 
-def test_the_scan_is_capped_in_sql_not_after_the_fact(client, monkeypatch):
+def test_the_heat_scan_is_not_capped_but_the_bins_are(client, monkeypatch):
+    """An unordered row LIMIT would drop whole regions from the surface."""
     calls = stub(monkeypatch, [])
     client.get(POINTS, params=VIEWPORT)
-    assert any("LIMIT" in query for query, _p in calls)
-    assert map_router.get_settings().map_scan_cap + 1 in bound(calls)
+    assert map_router.get_settings().map_scan_cap + 1 not in bound(calls)
+    assert map_router.BIN_CAP in bound(calls)
 
 
 # --- image mode -------------------------------------------------------------

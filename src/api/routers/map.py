@@ -250,12 +250,20 @@ def _unavailable(exc: Exception) -> HTTPException:
 
 
 async def _heat_bins(
-    where: str, params: list[Any], cell: float, cap: int
-) -> tuple[list[MapHeatBin], int, bool]:
+    where: str, params: list[Any], cell: float
+) -> tuple[list[MapHeatBin], int]:
+    """Grid every row in the viewport, not a prefix of them.
+
+    An unordered LIMIT here used to bound the scan, but it made the surface a
+    lie: Postgres returns whichever rows the plan reaches first, so at national
+    zoom whole regions dropped out and reappeared when the viewport nudged. The
+    output is bounded by BIN_CAP instead, and grouping is cheap because it reads
+    two columns behind the GiST bbox filter.
+    """
     rows = await fetch_all(
         f"""--sql
         WITH m AS (
-            SELECT latitude, longitude FROM {MAP_TABLE} {where} LIMIT %s
+            SELECT latitude, longitude FROM {MAP_TABLE} {where}
         ), g AS (
             SELECT floor(longitude / %s) AS gx, floor(latitude / %s) AS gy,
                    count(*) AS n
@@ -264,11 +272,10 @@ async def _heat_bins(
         SELECT gx, gy, n, (SELECT count(*) FROM m) AS scanned
           FROM g ORDER BY n DESC LIMIT %s
         """,
-        [*params, cap + 1, cell, cell, BIN_CAP],
+        [*params, cell, cell, BIN_CAP],
     )
 
-    scanned = int(rows[0]["scanned"]) if rows else 0
-    capped = scanned > cap
+    total = int(rows[0]["scanned"]) if rows else 0
     bins = [
         MapHeatBin(
             # The grid index is the cell's lower corner; the point drawn is its
@@ -279,7 +286,7 @@ async def _heat_bins(
         )
         for r in rows
     ]
-    return bins, min(scanned, cap), capped
+    return bins, total
 
 
 async def _image_points(
@@ -399,9 +406,7 @@ async def map_points(
                 varietal_available=supports_varietal,
             )
 
-        bins, total, capped = await _heat_bins(
-            where, params, _cell_size(zoom), settings.map_scan_cap
-        )
+        bins, total = await _heat_bins(where, params, _cell_size(zoom))
     except UndefinedTable as exc:
         raise _unavailable(exc) from exc
 
@@ -410,7 +415,7 @@ async def map_points(
         role=role,
         bins=bins,
         total=total,
-        total_is_capped=capped,
+        total_is_capped=False,
         varietal_available=supports_varietal,
     )
 
