@@ -237,15 +237,12 @@ function AreaPanel({ state, onClose }) {
                 {g.items.map((r) => (
                   <Link className="map-item" key={r.id} to={`/cola/${encodeURIComponent(r.id)}`}>
                     <div className="map-item-main">
-                      <div className="map-item-brand">{r.brand || r.ttbId}</div>
-                      <div className="map-item-meta muted">
-                        <span className="mono">{r.ttbId}</span>
-                        {r.approvalDate ? <span> · {fmtDate(r.approvalDate)}</span> : null}
-                      </div>
+                      {/* Ellipsised to keep the row on one line, so the full name needs a tooltip. */}
+                      <div className="map-item-brand" title={r.brand || r.ttbId}>{r.brand || r.ttbId}</div>
+                      {r.approvalDate ? <div className="map-item-meta muted">{fmtDate(r.approvalDate)}</div> : null}
                     </div>
                     {r.status && r.status !== 'Approved' ? <StatusBadge status={r.status} /> : null}
                     <CatTag rec={r} />
-                    <Icon name="chevRight" size={16} className="muted" />
                   </Link>
                 ))}
               </div>
