@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import math
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -112,6 +113,19 @@ def _clean(value: object) -> str:
 
 def _joined(*parts: object, sep: str = ", ") -> str:
     return sep.join(p for p in (_clean(v) for v in parts) if p)
+
+
+def _phone(value: object) -> str:
+    """Format a North American number; anything else is passed through as-is."""
+    text = _clean(value)
+    digits = re.sub(r"\D", "", text)
+    if len(digits) == 11 and digits.startswith("1"):
+        digits = digits[1:]
+    if len(digits) == 10:
+        return f"({digits[0:3]}) {digits[3:6]}-{digits[6:]}"
+    if len(digits) == 7:
+        return f"{digits[0:3]}-{digits[3:]}"
+    return text
 
 
 def _date(value: date | None) -> str:
@@ -523,7 +537,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         "11. WINE APPELLATION (If on label)",
         _clean(detail.appellation),
     )
-    _field(c, LEFT, 650, 124, 34, "12. PHONE NUMBER", _clean(detail.submitter_phone))
+    _field(c, LEFT, 650, 124, 34, "12. PHONE NUMBER", _phone(detail.submitter_phone))
     _field(c, LEFT + 124, 650, 232, 34, "13. EMAIL ADDRESS")
 
     flags = _application_flags(detail)

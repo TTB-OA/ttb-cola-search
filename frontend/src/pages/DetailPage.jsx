@@ -7,7 +7,7 @@ import Highlight from '../components/Highlight.jsx';
 import { toPct } from '../components/ScoreMeter.jsx';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { fmtDate, orderFaces } from '../lib/format.js';
+import { fmtDate, fmtPhone, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 
@@ -696,8 +696,8 @@ export default function DetailPage() {
                 fields={[
                   { label: 'Name', value: rec.submitter },
                   { label: 'Submitter ID', value: rec.submitterId, mono: true },
-                  { label: 'Telephone', value: rec.submitterPhone, mono: true },
-                  { label: 'Fax', value: rec.submitterFax, mono: true },
+                  { label: 'Telephone', value: rec.submitterPhone && fmtPhone(rec.submitterPhone), mono: true },
+                  { label: 'Fax', value: rec.submitterFax && fmtPhone(rec.submitterFax), mono: true },
                 ]}
               />
 
