@@ -318,13 +318,27 @@ export default function MapView({
       instance.on('click', (e) => {
         if (!handlers.current.onSelectArea) return;
         // Box a click into a small area rather than a point: the underlying data
-        // is binned, so a bare coordinate would almost never hit anything.
-        const span = 40 / 2 ** instance.getZoom() * 6;
+        // is binned, so a bare coordinate would almost never hit anything. The
+        // box is sized in screen pixels, not degrees, so it stays well inside a
+        // phone viewport instead of reaching far past the visible map.
+        const canvas = instance.getCanvas();
+        const width = canvas.clientWidth || canvas.width || 1;
+        const height = canvas.clientHeight || canvas.height || 1;
+        const half = Math.max(28, Math.min(width, height) * 0.18);
+        const halfX = Math.min(half, width * 0.35);
+        const halfY = Math.min(half, height * 0.35);
+        // Keep the whole box on screen with a generous margin, even near an edge.
+        const marginX = Math.max(halfX + width * 0.06, 0);
+        const marginY = Math.max(halfY + height * 0.06, 0);
+        const cx = Math.min(Math.max(e.point.x, marginX), width - marginX);
+        const cy = Math.min(Math.max(e.point.y, marginY), height - marginY);
+        const a = instance.unproject([cx - halfX, cy - halfY]);
+        const b = instance.unproject([cx + halfX, cy + halfY]);
         handlers.current.onSelectArea({
-          west: e.lngLat.lng - span,
-          south: e.lngLat.lat - span / 2,
-          east: e.lngLat.lng + span,
-          north: e.lngLat.lat + span / 2,
+          west: Math.min(a.lng, b.lng),
+          south: Math.min(a.lat, b.lat),
+          east: Math.max(a.lng, b.lng),
+          north: Math.max(a.lat, b.lat),
         });
       });
     });
