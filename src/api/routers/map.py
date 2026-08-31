@@ -141,10 +141,27 @@ def _wrap_longitude(value: float) -> float:
     return ((value + 180.0) % 360.0) - 180.0
 
 
+# ST_MakeEnvelope carries only four corners, and casting to geography turns its
+# edges into great-circle arcs. In the northern hemisphere the southern edge
+# bows poleward — at a continental viewport width that lifts it tens of degrees
+# above the latitude asked for, worst at the centre longitude and nil at the
+# corners, so the bottom of a wide viewport silently returns nothing. Densifying
+# the edges first keeps each segment within a few hundred metres of its parallel.
+ENVELOPE_SEGMENT_DEG = 1.0
+
+_ENVELOPE = (
+    "location && "
+    "ST_Segmentize(ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s)::geography"
+)
+
+
 def _bbox_condition(
     west: float, south: float, east: float, north: float
 ) -> tuple[str, list[Any]]:
     """Viewport predicate against the GiST-indexed geography column.
+
+    The geography test is a bounding-box filter that rides the index; the plain
+    latitude/longitude bounds alongside it are what make the result exact.
 
     A viewport straddling the antimeridian arrives with west greater than east
     and has to be tested as two envelopes; one envelope spanning the difference
@@ -155,17 +172,28 @@ def _bbox_condition(
     if north < south:
         south, north = north, south
 
-    envelope = "location && ST_MakeEnvelope(%s, %s, %s, %s, 4326)::geography"
+    lat = "latitude BETWEEN %s AND %s"
+
+    # Zoomed out past a whole world there is no longitude left to constrain, and
+    # a global envelope is the one shape geography handles worst.
     if east - west >= 360.0:
-        return envelope, [-180.0, south, 180.0, north]
+        return lat, [south, north]
 
     west, east = _wrap_longitude(west), _wrap_longitude(east)
     if west > east:
         return (
-            f"({envelope} OR {envelope})",
-            [west, south, 180.0, north, -180.0, south, east, north],
+            f"({_ENVELOPE} OR {_ENVELOPE}) "
+            f"AND (longitude >= %s OR longitude <= %s) AND {lat}",
+            [
+                west, south, 180.0, north, ENVELOPE_SEGMENT_DEG,
+                -180.0, south, east, north, ENVELOPE_SEGMENT_DEG,
+                west, east, south, north,
+            ],
         )
-    return envelope, [west, south, east, north]
+    return (
+        f"{_ENVELOPE} AND longitude BETWEEN %s AND %s AND {lat}",
+        [west, south, east, north, ENVELOPE_SEGMENT_DEG, west, east, south, north],
+    )
 
 
 def build_map_filters(

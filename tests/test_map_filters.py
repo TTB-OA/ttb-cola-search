@@ -11,7 +11,12 @@ from datetime import date
 
 import pytest
 
-from src.api.routers.map import _cell_size, _wrap_longitude, build_map_filters
+from src.api.routers.map import (
+    ENVELOPE_SEGMENT_DEG,
+    _cell_size,
+    _wrap_longitude,
+    build_map_filters,
+)
 
 BBOX = (-125.0, 32.0, -114.0, 42.0)
 
@@ -67,10 +72,48 @@ def test_a_viewport_crossing_the_antimeridian_binds_two_envelopes():
     assert_aligned(where, params)
 
 
-def test_a_viewport_wider_than_the_world_collapses_to_one_envelope():
+def test_a_viewport_wider_than_the_world_drops_the_longitude_test():
+    """Zoomed fully out there is no longitude left to constrain.
+
+    The whole-globe envelope this used to build is the one shape geography
+    handles worst, and it matched nothing at all.
+    """
     where, params = build(bbox=(-400.0, -80.0, 400.0, 80.0))
-    assert where.count("ST_MakeEnvelope") == 1
-    assert params[:4] == [-180.0, -80.0, 180.0, 80.0]
+    assert "ST_MakeEnvelope" not in where
+    assert "latitude BETWEEN %s AND %s" in where
+    assert params[:2] == [-80.0, 80.0]
+    assert_aligned(where, params)
+
+
+def test_the_envelope_is_densified_before_it_becomes_geography():
+    """Four corners cast to geography give great-circle edges.
+
+    The southern edge then bows poleward, tens of degrees at continental widths,
+    and the bottom of a wide viewport returns nothing. See ENVELOPE_SEGMENT_DEG.
+    """
+    where, params = build()
+    assert "ST_Segmentize(ST_MakeEnvelope(%s, %s, %s, %s, 4326), %s)" in where
+    assert ENVELOPE_SEGMENT_DEG in params
+    assert_aligned(where, params)
+
+
+def test_the_latitude_bounds_are_applied_exactly():
+    """The geography test only rides the index; these make the answer right."""
+    where, params = build(bbox=(-156.0, 22.0, -36.0, 51.0))
+    assert "latitude BETWEEN %s AND %s" in where
+    assert "longitude BETWEEN %s AND %s" in where
+    # The role is bound after the viewport, so the bounds are the pair before it.
+    assert params[-3:-1] == [22.0, 51.0]
+    assert_aligned(where, params)
+
+
+@pytest.mark.parametrize("span", [63.0, 120.0, 240.0, 359.0])
+def test_wide_viewports_still_bound_the_south(span):
+    """A wide viewport used to lose everything below the great-circle bulge."""
+    where, params = build(bbox=(-96.0 - span / 2, 22.0, -96.0 + span / 2, 51.0))
+    assert "latitude BETWEEN %s AND %s" in where
+    assert 22.0 in params
+    assert_aligned(where, params)
 
 
 def test_latitudes_are_clamped_to_the_projection():
