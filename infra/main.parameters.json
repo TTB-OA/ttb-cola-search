@@ -11,6 +11,9 @@
     "blobContainer": {
       "value": "ttb-public-cola-registry-images"
     },
+    "mapBasemapBlob": {
+      "value": "basemap/basemap.pmtiles"
+    },
     "embeddingProvider": {
       "value": "gemini"
     },

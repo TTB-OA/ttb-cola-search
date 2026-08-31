@@ -157,6 +157,44 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize count() by bucket = tostring(Properties.upload_size)
             | order by count_ desc
         """,
+        # --- Map ---------------------------------------------------------------
+        "map_over_time": f"""
+            AppEvents
+            | where Name in ("map_viewport_loaded", "map_area_summarized", "map_marker_clicked")
+            | summarize
+                viewports = countif(Name == "map_viewport_loaded"),
+                areas = countif(Name == "map_area_summarized"),
+                markers = countif(Name == "map_marker_clicked"),
+                sessions = dcount(tostring(Properties.session_id))
+              by bin(TimeGenerated, {bucket})
+            | order by TimeGenerated asc
+        """,
+        # Panning fires a viewport load per stop, so counting events would say
+        # more about how the map is dragged than about which reading is used.
+        # Sessions is the honest denominator here.
+        "map_mode_usage": """
+            AppEvents
+            | where Name == "map_viewport_loaded"
+            | extend reading = strcat(tostring(Properties.mode), " \u00b7 ", tostring(Properties.role))
+            | where reading != " \u00b7 "
+            | summarize count_ = dcount(tostring(Properties.session_id)) by reading
+            | top 10 by count_ desc
+        """,
+        "map_filter_usage": """
+            AppEvents
+            | where Name == "map_viewport_loaded"
+            | extend used = split(tostring(Properties.filters_used), ",")
+            | mv-expand filter = used to typeof(string)
+            | where isnotempty(filter)
+            | summarize count() by filter
+            | top 10 by count_ desc
+        """,
+        "map_zoom_usage": """
+            AppEvents
+            | where Name == "map_viewport_loaded"
+            | summarize count() by zoom = tostring(toint(Properties.zoom))
+            | order by toint(zoom) asc
+        """,
     }
 
 

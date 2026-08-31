@@ -63,6 +63,28 @@ class ProcessingStatus(ApiModel):
     images_loaded: bool = False
     text_analyzed: bool = False
     embedded: bool = False
+    # not_processed | pending | no_match | located. Geocoding runs per address
+    # rather than per COLA, so "no coordinates" has several distinct causes.
+    geocoding: str = "not_processed"
+
+
+class GeoLocation(ApiModel):
+    """One geocoded point for a COLA.
+
+    `role` is permit_premise, primary_premise or product_origin: a permit
+    premise is a street address, a product origin is a state or country
+    centroid, so the two are not interchangeable on a map.
+    """
+
+    role: str
+    source_key: str | None = None
+    permit_id: str | None = None
+    permit_name: str | None = None
+    lat: float
+    lng: float
+    quality: str | None = None
+    provider: str | None = None
+    method: str | None = None
 
 
 class ColaSummary(ApiModel):
@@ -123,6 +145,7 @@ class ColaDetail(ColaSummary):
     submitter_fax: str | None = None
     images: list[ImageRef] = []
     image_items: list[ImageItem] = []
+    locations: list[GeoLocation] = []
     details_url: str | None = None
     form_url: str | None = None
     processing: ProcessingStatus = ProcessingStatus()
@@ -186,6 +209,11 @@ class CoverageCounts(ApiModel):
     image_count: int = 0
     ocr_count: int = 0
     embedding_count: int = 0
+    # Geocoding is not a successor stage to embedding: it runs off the detail
+    # pass, so these are not cumulative with the image stages above.
+    origin_geocoded_count: int = 0
+    permit_geocoded_count: int = 0
+    primary_permit_geocoded_count: int = 0
 
 
 class CoverageYear(CoverageCounts):
@@ -215,15 +243,84 @@ class CompleteRange(ApiModel):
     latest: ColaSummary | None = None
 
 
+class MapIndexStatus(ApiModel):
+    """How far the materialised map surface trails the geocoding results."""
+
+    # Planner estimate, as for the search surface.
+    mapped_point_count: int | None = None
+    pending_count: int = 0
+    oldest_pending_at: datetime | None = None
+
+
 class CoverageResponse(ApiModel):
     years: list[CoverageYear] = []
     totals: CoverageCounts = CoverageCounts()
     # Null when the status query failed, so the rest of the page still renders.
     search: SearchIndexStatus | None = None
+    # Null when the map surface has not been built yet, or the query failed.
+    map: MapIndexStatus | None = None
     # Null when the lookup failed; the rest of the page still renders.
     complete_range: CompleteRange | None = None
     # When the coverage table was last rebuilt; absent if it has never run.
     as_of: datetime | None = None
+
+
+# ---------------------------------------------------------------------------
+# Map
+# ---------------------------------------------------------------------------
+class MapHeatBin(ApiModel):
+    """Points aggregated onto a server-side grid cell, at the cell centre."""
+
+    lat: float
+    lng: float
+    count: int
+
+
+class MapImagePoint(ApiModel):
+    """One COLA pinned at a geocoded location, with its label thumbnail."""
+
+    id: str
+    lat: float
+    lng: float
+    brand: str | None = None
+    category: str | None = None
+    origin: str | None = None
+    approval_date: date | None = None
+    thumb_url: str | None = None
+
+
+class MapPointsResponse(ApiModel):
+    mode: str
+    role: str
+    bins: list[MapHeatBin] = []
+    points: list[MapImagePoint] = []
+    # Rows the viewport actually matched, up to the scan cap.
+    total: int = 0
+    # True when the scan cap was reached; `total` is then a floor and the
+    # rendered set is a sample rather than everything in view.
+    total_is_capped: bool = False
+    # Whether the map surface carries a varietal column. The filter is offered
+    # in the UI only where it can actually be applied.
+    varietal_available: bool = False
+
+
+class FacetGroup(ApiModel):
+    """A facet bucket with its own breakdown nested underneath."""
+
+    value: str
+    count: int
+    children: list[FacetBucket] = []
+
+
+class MapAreaResponse(ApiModel):
+    total: int = 0
+    total_is_capped: bool = False
+    commodity: list[FacetBucket] = []
+    # Origin is nested under source: states read under Domestic, countries
+    # under Imported. Flat, the two lists could not be read against each other.
+    source: list[FacetGroup] = []
+    class_type: list[FacetBucket] = []
+    items: list[ColaSummary] = []
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +370,10 @@ class DashboardPanels(ApiModel):
     status_codes: list[NamedCount] | None = None
     image_search_over_time: list[TimePoint] | None = None
     upload_sizes: list[NamedCount] | None = None
+    map_over_time: list[TimePoint] | None = None
+    map_mode_usage: list[NamedCount] | None = None
+    map_filter_usage: list[NamedCount] | None = None
+    map_zoom_usage: list[NamedCount] | None = None
 
 
 class DashboardTotals(ApiModel):

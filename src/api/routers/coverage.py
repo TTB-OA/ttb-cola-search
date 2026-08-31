@@ -22,6 +22,8 @@ from ..db import fetch_all, fetch_one
 from ..mappers import (
     COVERAGE_TABLE,
     DIRTY_TABLE,
+    MAP_DIRTY_TABLE,
+    MAP_TABLE,
     OCR_TABLE,
     SEARCH_TABLE,
     SUMMARY_COLUMN_LIST,
@@ -33,6 +35,7 @@ from ..models import (
     CoverageCounts,
     CoverageResponse,
     CoverageYear,
+    MapIndexStatus,
     SearchIndexStatus,
 )
 
@@ -52,6 +55,9 @@ _STAGE_COLUMNS = (
     ("image_count", "image_cola_count"),
     ("ocr_count", "ocr_cola_count"),
     ("embedding_count", "embedding_cola_count"),
+    ("origin_geocoded_count", "origin_geocoded_cola_count"),
+    ("permit_geocoded_count", "permit_geocoded_cola_count"),
+    ("primary_permit_geocoded_count", "primary_permit_geocoded_cola_count"),
 )
 
 
@@ -65,6 +71,13 @@ SELECT (SELECT count(*) FROM {DIRTY_TABLE}) AS pending_count,
          WHERE oid = to_regclass('{SEARCH_TABLE}')) AS searchable_count,
        (SELECT reltuples::bigint FROM pg_class
          WHERE oid = to_regclass('{OCR_TABLE}')) AS label_text_count
+"""
+
+_MAP_STATUS_SQL = f"""--sql
+SELECT (SELECT count(*) FROM {MAP_DIRTY_TABLE}) AS pending_count,
+       (SELECT min(marked_at) FROM {MAP_DIRTY_TABLE}) AS oldest_pending_at,
+       (SELECT reltuples::bigint FROM pg_class
+         WHERE oid = to_regclass('{MAP_TABLE}')) AS mapped_point_count
 """
 
 # A COLA is fully processed once the detail pass has run and every image it
@@ -157,6 +170,24 @@ async def _search_status() -> SearchIndexStatus | None:
     )
 
 
+async def _map_status() -> MapIndexStatus | None:
+    """Null rather than zeroes when the map surface has not been built yet."""
+    try:
+        row = await fetch_one(_MAP_STATUS_SQL)
+    except Exception:  # noqa: BLE001 - the map stage may not exist in this environment
+        logger.warning("could not read map index status", exc_info=True)
+        return None
+    if row is None:
+        return None
+
+    stamp = row.get("oldest_pending_at")
+    return MapIndexStatus(
+        mapped_point_count=_estimate(row.get("mapped_point_count")),
+        pending_count=_count(row.get("pending_count")),
+        oldest_pending_at=stamp if isinstance(stamp, datetime) else None,
+    )
+
+
 async def _complete_range() -> CompleteRange | None:
     try:
         rows = await fetch_all(_COMPLETE_RANGE_SQL)
@@ -206,6 +237,9 @@ async def _load() -> CoverageResponse:
                image_cola_count,
                ocr_cola_count,
                embedding_cola_count,
+               origin_geocoded_cola_count,
+               permit_geocoded_cola_count,
+               primary_permit_geocoded_cola_count,
                _loaded_at
           FROM {COVERAGE_TABLE}
          WHERE coverage_year IS NOT NULL
@@ -219,6 +253,7 @@ async def _load() -> CoverageResponse:
         years=years,
         totals=_totals(years),
         search=await _search_status(),
+        map=await _map_status(),
         complete_range=await _complete_range(),
         as_of=as_of,
     )

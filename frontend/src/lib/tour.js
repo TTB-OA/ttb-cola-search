@@ -142,6 +142,16 @@ export const TOUR_STEPS = [
       'Each record links to similar COLAs from the same industry member and from other industry members — useful for comparing prior approvals and trade dress.',
   },
   {
+    id: 'map',
+    route: '/map',
+    target: '[data-tour="map-stage"]',
+    placement: 'top',
+    requireTarget: true,
+    title: 'See where approvals come from',
+    body:
+      'The map plots permit addresses and stated product origins. Switch between a density view and the label images themselves, filter it like a search, and click anywhere to break down that area and open the records behind it.',
+  },
+  {
     id: 'coverage',
     route: '/',
     target: '[data-tour="coverage-link"]',

@@ -47,6 +47,22 @@ const STAGES = [
     hint: 'Every stored label indexed for similarity',
     color: 'var(--green)',
   },
+  // Geocoding is not downstream of the enrichment above it — it runs off the
+  // addresses alone — so these are shown last but measured against ingested.
+  {
+    key: 'primaryPermitGeocodedCount',
+    denominator: 'ingestedCount',
+    label: 'Permit located',
+    hint: 'Primary permit address placed on the map',
+    color: 'var(--gold-dark)',
+  },
+  {
+    key: 'originGeocodedCount',
+    denominator: 'ingestedCount',
+    label: 'Origin located',
+    hint: 'Stated product origin placed on the map',
+    color: 'var(--gold-dark)',
+  },
 ];
 
 const num = (n) => Number(n || 0).toLocaleString();
@@ -106,6 +122,35 @@ function SearchIndex({ search, asOf }) {
         label="Last rebuilt"
         value={fmtDateTime(asOf)}
         hint="Coverage and the index refresh together"
+      />
+    </div>
+  );
+}
+
+function MapIndex({ map }) {
+  if (!map) {
+    return (
+      <p className="muted an-note">
+        Locations have not been built for this deployment, so the map has nothing to plot.
+      </p>
+    );
+  }
+  const pending = Number(map.pendingCount || 0);
+  return (
+    <div className="cv-facts">
+      <Fact
+        label="Mappable locations"
+        value={approx(map.mappedPointCount)}
+        hint="Coordinates the map can draw"
+      />
+      <Fact
+        label="Awaiting geocoding"
+        value={pending === 0 ? 'Up to date' : num(pending)}
+        hint={
+          pending === 0
+            ? 'Every known address has been through geocoding'
+            : `Queued since ${fmtDateTime(map.oldestPendingAt)}`
+        }
       />
     </div>
   );
@@ -262,6 +307,16 @@ export default function CoveragePage() {
           <section className="an-card panel cv-index">
             <h2>Search index</h2>
             <SearchIndex search={data?.search} asOf={data?.asOf} />
+          </section>
+
+          <section className="an-card panel cv-index">
+            <h2>Map locations</h2>
+            <MapIndex map={data?.map} />
+            <p className="muted an-note">
+              A COLA can contribute several points: its permit addresses and its stated product
+              origin are geocoded separately, and a record is missing from the map only if none of
+              them resolved. A coordinate approximates an address, not a production site.
+            </p>
           </section>
 
           <section className="an-card panel cv-index">

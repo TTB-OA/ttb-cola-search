@@ -172,6 +172,12 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
             ("performed", "abandoned", "stateLost"),
         ),
         upload_sizes=_counts(panels.get("upload_sizes") or [], "bucket"),
+        map_over_time=_series(
+            panels.get("map_over_time") or [], ("viewports", "areas", "markers", "sessions")
+        ),
+        map_mode_usage=_counts(panels.get("map_mode_usage") or [], "reading"),
+        map_filter_usage=_counts(panels.get("map_filter_usage") or [], "filter"),
+        map_zoom_usage=_counts(panels.get("map_zoom_usage") or [], "zoom"),
     )
 
     return DashboardData(

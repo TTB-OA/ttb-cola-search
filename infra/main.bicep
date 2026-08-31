@@ -51,6 +51,9 @@ param postgresSslmode string = 'verify-full'
 param blobAccountUrl string
 param blobContainer string
 
+@description('Blob holding the PMTiles basemap, uploaded by scripts/provision_basemap.py. Empty disables the map basemap.')
+param mapBasemapBlob string = ''
+
 // --- Embedding provider ----------------------------------------------------
 param embeddingProvider string = 'gemini'
 param embeddingModel string = 'gemini-embedding-2'
@@ -249,6 +252,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'POSTGRES_SSLMODE', value: postgresSslmode }
               { name: 'BLOB_ACCOUNT_URL', value: blobAccountUrl }
               { name: 'BLOB_CONTAINER', value: blobContainer }
+              { name: 'MAP_BASEMAP_BLOB', value: mapBasemapBlob }
               { name: 'EMBEDDING_PROVIDER', value: embeddingProvider }
               { name: 'EMBEDDING_MODEL', value: embeddingModel }
               { name: 'EMBEDDING_DIM', value: string(embeddingDim) }

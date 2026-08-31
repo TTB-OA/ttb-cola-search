@@ -25,6 +25,9 @@ def _row(year: int, **overrides):
         "image_cola_count": 70,
         "ocr_cola_count": 60,
         "embedding_cola_count": 50,
+        "origin_geocoded_cola_count": 40,
+        "permit_geocoded_cola_count": 30,
+        "primary_permit_geocoded_cola_count": 20,
         "_loaded_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
     } | overrides
 
@@ -35,6 +38,7 @@ def _status(**overrides):
         "oldest_pending_at": None,
         "searchable_count": 2_900_000,
         "label_text_count": 2_100_000,
+        "mapped_point_count": 1_400_000,
     } | overrides
 
 
@@ -163,8 +167,37 @@ def test_repeat_requests_are_served_from_cache(client, monkeypatch):
     calls = stub(monkeypatch, [_row(2025)])
     client.get(PATH)
     client.get(PATH)
-    # Coverage, status and complete-range reads, and nothing on the second request.
-    assert len(calls) == 3
+    # Coverage, search status, map status and complete-range reads, and nothing
+    # on the second request.
+    assert len(calls) == 4
+
+
+def test_geocoding_stages_are_reported(client, monkeypatch):
+    stub(monkeypatch, [_row(2025), _row(2024)])
+    body = client.get(PATH).json()
+    assert body["years"][0]["originGeocodedCount"] == 40
+    assert body["years"][0]["primaryPermitGeocodedCount"] == 20
+    assert body["totals"]["permitGeocodedCount"] == 60
+
+
+def test_map_index_status_is_reported(client, monkeypatch):
+    stub(monkeypatch, [_row(2025)])
+    assert client.get(PATH).json()["map"]["mappedPointCount"] == 1_400_000
+
+
+def test_a_missing_map_surface_leaves_the_rest_of_the_page_intact(client, monkeypatch):
+    """Geolocation is a later pipeline stage; its tables may not exist yet."""
+    stub(monkeypatch, [_row(2025)])
+
+    async def selective(query, params=None):
+        if "cola_map_dirty" in query:
+            raise RuntimeError('relation "cola_map_dirty" does not exist')
+        return _status()
+
+    monkeypatch.setattr(coverage_router, "fetch_one", selective)
+    body = client.get(PATH).json()
+    assert body["map"] is None
+    assert body["search"]["searchableCount"] == 2_900_000
 
 
 def test_complete_range_reports_both_ends(client, monkeypatch):

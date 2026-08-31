@@ -55,10 +55,24 @@ _ANN_OVERFETCH = 6
 # floor of 64 the scan lost the true 1st and 2nd nearest neighbours outright.
 # 1000 is pgvector's ceiling, and the needed value scales with the corpus: 600 gave
 # full recall at 80k indexed images but already dropped a true rank-3 label at 157k.
-# The embedding backfill is still running, so once it lands this cannot be raised
-# further and the index itself has to improve (partial index over the ~16% of rows
-# that are embedded, plus a rebuild at higher m / ef_construction).
+# At 1.2M it is no longer sufficient on its own — see _ANN_MIN_CANDIDATES — and the
+# next lever is the index itself (a rebuild at higher m / ef_construction).
 _HNSW_EF_SEARCH = 1000
+
+# hnsw.iterative_scan only resumes once the executor asks for more tuples than the
+# first pass produced, so a candidate LIMIT at or below ef_search leaves it inert
+# and recall stays at whatever the single greedy descent found. At 1.2M indexed
+# vectors that costs a fifth of the true top 48 on a text query; pulling 5000
+# candidates forces the scan to keep widening and recovers them for ~130 ms.
+_ANN_MIN_CANDIDATES = 5000
+
+# Ceiling on tuples the resumed scan may visit before it gives up.
+_HNSW_MAX_SCAN_TUPLES = 200_000
+
+# The iterative scan buffers its candidates in work_mem * scan_mem_multiplier, and
+# on the 4MB default it exhausts that budget and stops long before max_scan_tuples.
+_HNSW_SCAN_MEM_MULTIPLIER = 4
+_ANN_WORK_MEM = "64MB"
 
 _QUERY_VECTOR_CACHE_SIZE = 256
 _query_vector_cache: OrderedDict[str, str] = OrderedDict()
@@ -107,7 +121,7 @@ async def _nearest_by_vector(
         params.append(permit_num)
     inner_where = " AND ".join(filters)
 
-    candidates = limit * _ANN_OVERFETCH
+    candidates = max(limit * _ANN_OVERFETCH, _ANN_MIN_CANDIDATES)
     # The ORDER BY must be the bare distance operator (not an alias) for the
     # HNSW index to serve it; the literal is therefore bound twice.
     params.extend([vector_literal, candidates])
@@ -146,6 +160,15 @@ async def _nearest_by_vector(
         # top-ranked labels on a text query. relaxed_order is safe because the outer
         # query re-sorts on b.dist.
         await cur.execute(SQL("SET LOCAL hnsw.iterative_scan TO relaxed_order"))
+        await cur.execute(
+            SQL("SET LOCAL hnsw.max_scan_tuples TO {}").format(Literal(_HNSW_MAX_SCAN_TUPLES))
+        )
+        await cur.execute(
+            SQL("SET LOCAL hnsw.scan_mem_multiplier TO {}").format(
+                Literal(_HNSW_SCAN_MEM_MULTIPLIER)
+            )
+        )
+        await cur.execute(SQL("SET LOCAL work_mem TO {}").format(Literal(_ANN_WORK_MEM)))
         # pgvector prices an HNSW scan off ef_search, so raising it with the candidate
         # count eventually makes a sequential scan look cheaper. It is not: that plan
         # detoasts every 768-d vector in the table and takes ~30s where the index

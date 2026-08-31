@@ -131,6 +131,16 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `IMAGE_SEARCH_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 + `Retry-After` |
 | `TRUST_FORWARDED_FOR` | `true` | set `false` if not behind a trusted reverse proxy |
 
+**Map**
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `MAP_BASEMAP_BLOB` | unset | PMTiles archive in `BLOB_CONTAINER`; unset renders the map without a basemap |
+| `MAP_RATE_LIMIT` | `120` | viewport requests per window, per client — panning is chatty |
+| `MAP_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 + `Retry-After` |
+| `MAP_SCAN_CAP` | `20000` | rows a single viewport may aggregate; over it the total is reported as a floor |
+| `MAP_IMAGE_POINT_CAP` | `250` | label pins returned per viewport in image mode |
+
 `run.py` also honours `API_HOST` and `API_PORT`.
 
 > The rate limiter keeps state in process, so the effective ceiling is the limit
@@ -170,6 +180,9 @@ All routes are mounted under `/api`.
 | `GET` | `/colas/{cola_id}` | Full COLA detail with images and label analysis |
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
+| `GET` | `/map/points` | Geocoded COLAs in a viewport: binned counts in heat mode, individual labels in image mode |
+| `GET` | `/map/area` | Commodity/source/origin breakdown plus a page of records for a boxed-in area |
+| `GET` | `/map/basemap` | Proxies the PMTiles basemap out of private storage, honouring byte ranges (206) |
 | `POST` | `/search/image` | Reverse image search from an upload |
 | `GET` | `/search/describe` | Cross-modal search: a plain-language artwork description matched against label image embeddings |
 | `POST` | `/events` | Collects UI interaction events from the SPA; returns 204 |
@@ -215,6 +228,62 @@ A few semantics are worth knowing before writing queries against it:
   rather than paging deeper.
 - Result ordering always includes `cola_id` as a tiebreaker, so pagination stays
   stable across ties.
+
+### Map behaviour
+
+- `/map/points` plots one location role at a time (`primary_premise`,
+  `permit_premise`, `product_origin`). A COLA has several locations and they are
+  often far apart, so mixing roles would count the same record more than once and
+  make the surface unreadable.
+- Heat mode bins server-side on a grid that halves with each zoom step, so a bin
+  covers a constant area on screen. The bin centre is returned, not its corner.
+- A viewport that crosses the antimeridian is queried as two envelopes; one wider
+  than the world collapses to a single world envelope.
+- Both endpoints scan at most `MAP_SCAN_CAP` rows. When that is reached, `total`
+  is a floor and `totalIsCapped` is `true` — the same contract as search.
+- Image mode returns at most `MAP_IMAGE_POINT_CAP` labels, preferring records that
+  have an image and then the most recent.
+- If `cola_map_search` does not exist, the endpoints return **503**, not an empty
+  result: "not built here" and "nothing in this area" are different answers.
+- Varietal filtering is gated on the surface actually carrying a `grape_varietal`
+  column. The API probes for it once per process and reports the answer as
+  `varietalAvailable`; the map hides the control when it is false, and an explicit
+  `varietal=` is rejected with **400** rather than silently ignored. Adding the
+  column upstream is all that is needed to enable it — see
+  [docs/geocoding-setup.sql](docs/geocoding-setup.sql).
+
+### Basemap
+
+The map draws on a single [Protomaps](https://protomaps.com) PMTiles archive kept
+in the same private container as the label images and read by the browser as
+byte-range requests through `/api/map/basemap`. There is no tile server and no
+per-tile metering; the cost is storage plus egress.
+
+```powershell
+uv run python -m scripts.provision_basemap --source <url-or-path-to.pmtiles> --fonts <glyph-dir>
+```
+
+`--fonts` mirrors a glyph directory from
+[protomaps/basemaps-assets](https://github.com/protomaps/basemaps-assets) so place
+labels render without calling a third-party font host. Both are optional: with no
+archive the map still plots data on a blank background, and with no fonts it
+renders unlabelled.
+
+The deployed archive is world z0-10 plus CONUS (`-125,24,-66,50`) z11-13, cut from
+a Protomaps daily planet build and merged. `pmtiles merge` needs disjoint inputs,
+so each band is cut with `--minzoom`/`--maxzoom` rather than as overlapping
+pyramids:
+
+```powershell
+pmtiles extract <planet-url> world-z10.pmtiles    --maxzoom=10
+pmtiles extract <planet-url> conus-z11-12.pmtiles --bbox=-125,24,-66,50 --minzoom=11 --maxzoom=12
+pmtiles extract <planet-url> conus-z13.pmtiles    --bbox=-125,24,-66,50 --minzoom=13 --maxzoom=13
+pmtiles merge world-z10.pmtiles conus-z11-12.pmtiles conus-z13.pmtiles basemap.pmtiles
+```
+
+Splitting the CONUS pull by zoom band is also what makes it finish: the build CDN
+resets HTTP/2 streams on multi-GB single extracts. Alaska, Hawaii and Puerto Rico
+fall outside the bbox and so render at world detail; beyond z13 MapLibre overzooms.
 
 ## Data model
 

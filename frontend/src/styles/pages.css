@@ -328,6 +328,83 @@ section > .d-notice { margin-bottom: 0; }
 .cv-fact-value { font-size: 20px; font-weight: 800; color: var(--ink); line-height: 1.2; }
 
 /* ============================================================
+   Map
+   ============================================================ */
+/* Named .map-bar until it collided with the breakdown bars below and silently
+   rendered this toolbar as a three-column grid. */
+.map-toolbar { background: var(--white); border-bottom: 1px solid var(--base-lighter); padding: 14px 0; position: sticky; top: 0; z-index: 20; }
+.map-toolbar-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
+.map-filters { margin-top: 12px; }
+.map-filters-toggle, .map-sheet-head, .map-sheet-grab, .map-backdrop { display: none; }
+.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; }
+.map-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
+.map-filter { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
+.map-filter-wide { min-width: 220px; }
+.map-filter .select, .map-filter .input { min-width: 150px; }
+.map-status { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; min-height: 20px; }
+.map-chips { flex: 1; }
+.map-count { font-size: 13px; white-space: nowrap; }
+.map-note { padding-top: 12px; padding-bottom: 24px; }
+
+/* The map is the page: a fixed height rather than a growing one, so panning
+   never moves the controls or the surrounding chrome. */
+.map-stage { position: relative; height: calc(100vh - 260px); min-height: 420px; }
+.map-canvas { position: absolute; inset: 0; width: 100%; height: 100%; background: var(--gray-2); }
+.map-stage.has-panel .map-canvas { right: 360px; }
+
+.map-overlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; max-width: 420px; padding: 26px; text-align: center; }
+.map-overlay h3 { margin: 10px 0 6px; }
+.map-overlay p { font-size: 13.5px; line-height: 1.55; margin-bottom: 14px; }
+
+.map-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; z-index: 6; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; }
+.map-panel-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -16px -18px 0; padding: 16px 18px 10px; background: var(--white); border-bottom: 1px solid var(--base-lightest); }
+.map-clear { flex: none; }
+.map-total { font-size: 20px; margin: 12px 0 16px; }
+.map-total strong { font-size: 26px; font-weight: 800; }
+.map-breakdown { margin-bottom: 16px; }
+.map-bar { display: grid; grid-template-columns: 1fr 70px 52px; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
+.map-bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-bar-track { height: 6px; background: var(--base-lightest); border-radius: var(--radius); overflow: hidden; }
+.map-bar-track > span { display: block; height: 100%; background: var(--accent); }
+.map-bar-count { text-align: right; font-size: 12px; color: var(--base-dark); }
+.map-group + .map-group { margin-top: 10px; }
+.map-bar-head .map-bar-label { font-weight: 700; }
+.map-bar-child .map-bar-label { padding-left: 12px; color: var(--base-dark); }
+.map-bar-child .map-bar-track > span { background: var(--base-light); }
+
+.map-groups { margin-top: 6px; }
+.map-permit + .map-permit { margin-top: 14px; }
+.map-permit-head { display: flex; align-items: baseline; gap: 6px; padding: 4px 8px; background: var(--gray-2); border-radius: var(--radius); }
+.map-permit-code { font-size: 12px; font-weight: 700; }
+.map-permit-name { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-permit-count { font-size: 12px; color: var(--base-dark); }
+
+.map-items { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.map-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--base-lightest); text-decoration: none; color: inherit; }
+.map-item:hover { background: var(--gray-2); }
+/* One line per record: the panel is tall and narrow, and vertical room is the scarce axis. */
+.map-item-main { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
+.map-item-brand { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-item-meta { flex: none; font-size: 11px; white-space: nowrap; }
+.map-item .tag { font-size: 9.5px; padding: 2px 5px; letter-spacing: .02em; }
+
+/* Markers are plain DOM, so they carry the label thumbnail directly. */
+.map-pin { width: 34px; height: 42px; padding: 0; cursor: pointer; background: var(--white); border: 2px solid var(--white); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; display: block; transition: transform .12s; }
+.map-pin:hover { transform: scale(1.18); z-index: 2; }
+.map-pin img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.map-pin.is-blank { background: var(--accent-lighter); border-color: var(--accent-light); }
+.map-pin.is-blank img { display: none; }
+
+/* Numbered locator dots, keyed to the address cards under the mini-map. */
+.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--white); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
+.map-dot.is-origin { background: var(--base-dark); }
+.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.d-pin-no.is-origin { background: var(--base-dark); }
+
+/* The mini-map on a COLA record: a locator, not an explorer. */
+.d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
+
+/* ============================================================
    Responsive
    ============================================================ */
 @media (max-width: 1080px) {
@@ -339,6 +416,43 @@ section > .d-notice { margin-bottom: 0; }
 }
 @media (max-width: 720px) {
   .wrap { padding: 0 18px; }
+
+  /* The map is the page on a phone. The stage takes whatever the toolbar does
+     not, so no height has to be guessed as the controls wrap. 151px is the
+     banner plus the site header above. dvh keeps the collapsing browser
+     toolbar from cropping the map on iOS. */
+  .map-page { display: flex; flex-direction: column; min-height: calc(100vh - 151px); min-height: calc(100dvh - 151px); }
+  .map-stage { display: flex; flex-direction: column; flex: 1 1 auto; height: auto; min-height: 320px; }
+  /* MapLibre's own stylesheet wins over .map-canvas and makes the container
+     relative, so a percentage height has nothing definite to resolve against.
+     Stretching it as a flex item sizes it without one. */
+  .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
+  .map-stage.has-panel .map-canvas { right: 0; }
+  .map-toolbar { padding: 8px 0; }
+  .map-toolbar-top { gap: 8px; }
+  .map-filters-toggle { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+  /* Filters and the area summary open over the map rather than pushing it down
+     the document, so the map never leaves the viewport. */
+  .map-filters, .map-panel {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: 100%; z-index: 40;
+    background: var(--white); border: 0; border-top: 1px solid var(--base-lighter);
+    border-radius: 14px 14px 0 0; box-shadow: var(--shadow-2);
+    overflow-y: auto; overscroll-behavior: contain;
+  }
+  .map-filters { display: none; max-height: 72dvh; margin-top: 0; padding: 0 18px 24px; }
+  .map-filters.is-open { display: block; }
+  .map-panel { height: auto; max-height: 50dvh; padding: 0 18px 24px; }
+
+  /* The grab strip pins with the head, or list rows scroll through the gap
+     above it. The bar itself is drawn by the pseudo-element. */
+  .map-sheet-grab { display: block; position: sticky; top: 0; z-index: 3; width: auto; height: auto; margin: 0 -18px; padding: 6px 0 2px; border-radius: 0; background: var(--white); }
+  .map-sheet-grab::before { content: ''; display: block; width: 40px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--base-lighter); }
+  .map-sheet-head, .map-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 12px; z-index: 2; margin: 0 -18px; padding: 4px 18px 10px; background: var(--white); }
+  .map-backdrop { display: block; position: fixed; inset: 0; z-index: 35; border: 0; padding: 0; background: rgba(0, 0, 0, .35); }
+
+  .map-controls { flex-direction: column; align-items: stretch; gap: 12px; }
+  .map-filter, .map-filter-wide, .map-filter .select, .map-filter .input { min-width: 0; width: 100%; }
   .adv-grid { grid-template-columns: 1fr 1fr; }
   .adv-grid .field { grid-column: span 2 !important; }
   .d-permits { grid-template-columns: 1fr; }
