@@ -19,7 +19,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas
 
-from ..models import ColaDetail
+from ..models import ColaDetail, PermitRef
 
 PAGE_W, PAGE_H = 612.0, 1008.0
 LEFT, RIGHT = 18.0, 594.0
@@ -49,6 +49,15 @@ TARGET_ROW_H = 210.0
 CAPTION_H = 26.0
 
 CONT_X, CONT_Y, CONT_W, CONT_H = LEFT, 30.0, RIGHT - LEFT, 940.0
+
+# Page 1's "QUALIFICATIONS" box is fixed by the real form; anything that will not
+# fit inside it is moved wholesale to an addendum page, as is the permit list
+# whenever a record carries more than one permit.
+QUAL_BOX_W, QUAL_BOX_H, QUAL_BOX_SIZE = 458.0, 74.0, 7.5
+ADDENDUM_SIZE = 8.0
+ADDENDUM_LEAD = ADDENDUM_SIZE + 3.5
+QUAL_TITLE = "QUALIFICATIONS (CONTINUED FROM PART III)"
+PERMIT_TITLE = "ASSOCIATED PERMITS (CONTINUED FROM ITEM 2)"
 
 # Label artwork is re-encoded before embedding: it bounds the PDF size and keeps
 # ReportLab off image formats it can only read through PIL anyway.
@@ -177,6 +186,19 @@ def _field(
         c.drawString(x + 4, cursor, line)
         cursor -= value_size + 1.5
     _reset_style(c)
+
+
+def _field_value_lines(h: float, w: float, caption: str, value_size: float) -> int:
+    """How many value lines `_field` can draw before it runs out of box."""
+    cursor = h - CAPTION_SIZE - 2
+    for _ in _wrap(caption, BODY, CAPTION_SIZE, w - 6):
+        cursor -= CAPTION_SIZE + 0.8
+    cursor -= 2
+    count = 0
+    while cursor >= 2:
+        count += 1
+        cursor -= value_size + 1.5
+    return count
 
 
 def _band(c: canvas.Canvas, x: float, y: float, w: float, h: float, text: str) -> None:
@@ -390,12 +412,77 @@ def _applicant_block(detail: ColaDetail) -> str:
     )
 
 
-def _qualifications(detail: ColaDetail) -> str:
+def _address_key(value: str) -> str:
+    """Letters and digits only, so punctuation and spacing do not defeat a match."""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _mailing_address(detail: ColaDetail, applicant_block: str) -> str:
+    """Item 8a, blank when it only repeats the address already in item 8."""
+    mailing = _clean(detail.mailing_address)
+    key = _address_key(mailing)
+    block = _address_key(applicant_block)
+    if key and block and (key in block or block in key):
+        return ""
+    return mailing
+
+
+def _qualification_texts(detail: ColaDetail) -> list[str]:
+    """One string per qualification, from the parsed items or the raw blob."""
     if detail.qualification_items:
-        return "\n".join(
-            _joined(q.text, q.comment, sep=" — ") for q in detail.qualification_items
+        texts = (
+            _joined(q.text, q.comment, sep=" \u2014 ") for q in detail.qualification_items
         )
-    return _clean(detail.qualifications)
+    else:
+        texts = (line for line in _clean(detail.qualifications).splitlines())
+    return [t for t in (t.strip() for t in texts) if t]
+
+
+def _qualifications(detail: ColaDetail) -> str:
+    return "\n".join(_qualification_texts(detail))
+
+
+def _qualification_rows(texts: list[str], width: float) -> list[tuple[str, str]]:
+    """(marker, text) rows for the addendum; the marker is blank on wrapped lines."""
+    marker_w = stringWidth("00. ", MONO_BOLD, ADDENDUM_SIZE)
+    rows: list[tuple[str, str]] = []
+    for i, text in enumerate(texts, start=1):
+        for j, line in enumerate(_wrap(text, MONO_BOLD, ADDENDUM_SIZE, width - marker_w)):
+            rows.append((f"{i}." if j == 0 else "", line))
+        rows.append(("", ""))
+    return rows[:-1] if rows else rows
+
+
+def _permit_rows(permits: list[PermitRef], width: float) -> list[tuple[str, str]]:
+    """(marker, text) rows listing every permit with its name and premises."""
+    marker_w = stringWidth("00. ", MONO_BOLD, ADDENDUM_SIZE)
+    rows: list[tuple[str, str]] = []
+    for i, permit in enumerate(permits, start=1):
+        head = _clean(permit.permit_id) or "\u2014"
+        if permit.primary:
+            head += "   (PRIMARY)"
+        rows.append((f"{i}.", head))
+        parts = (
+            _clean(permit.name),
+            _clean(permit.address),
+            _joined(permit.city, _joined(permit.state, permit.postal_code, sep=" ")),
+            _clean(permit.country),
+        )
+        for part in (p for p in parts if p):
+            for line in _wrap(part, MONO_BOLD, ADDENDUM_SIZE, width - marker_w):
+                rows.append(("", line))
+        rows.append(("", ""))
+    return rows[:-1] if rows else rows
+
+
+def _paginate_rows(rows: list[tuple[str, str]], h: float) -> list[list[tuple[str, str]]]:
+    per_page = max(1, int((h - 21) // ADDENDUM_LEAD))
+    return [rows[i : i + per_page] for i in range(0, len(rows), per_page)]
+
+
+def _addendum_ref(kind: str, start: int, count: int) -> str:
+    where = f"page {start}" if count == 1 else f"pages {start}-{start + count - 1}"
+    return f"See {kind} addendum, {where}."
 
 
 def _application_flags(detail: ColaDetail) -> dict[str, bool]:
@@ -422,7 +509,12 @@ def _draw_footer(c: canvas.Canvas, detail: ColaDetail, page: int, total: int) ->
     c.setFillGray(0)
 
 
-def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
+def _draw_application(
+    c: canvas.Canvas,
+    detail: ColaDetail,
+    permit_value: str = "",
+    qualifications: str = "",
+) -> None:
     """Page 1: the form itself, everything above the affix strip."""
     c.setFont(BODY, 6.5)
     c.drawRightString(RIGHT, 996, "OMB No. 1513-0020")
@@ -473,7 +565,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         left_w,
         26,
         "2. PLANT REGISTRY/BASIC PERMIT/BREWER'S NO. (Required)",
-        _clean(detail.permit_id) or _clean(detail.permit),
+        permit_value,
     )
 
     _field(c, LEFT, 836, left_w, 30, "3. SOURCE OF PRODUCT (Required)")
@@ -494,6 +586,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     _field(c, LEFT, 744, left_w, 26, "7. FANCIFUL NAME (If any)", _clean(detail.fanciful))
 
     right_w = RIGHT - SPLIT
+    applicant = _applicant_block(detail)
     _field(
         c,
         SPLIT,
@@ -503,7 +596,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         "8. NAME AND ADDRESS OF APPLICANT AS SHOWN ON PLANT REGISTRY, BASIC PERMIT, "
         "OR BREWER'S NOTICE. INCLUDE APPROVED DBA OR TRADENAME IF USED ON THE LABEL "
         "(Required)",
-        _applicant_block(detail),
+        applicant,
         value_size=8.5,
     )
     _field(
@@ -513,7 +606,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         right_w,
         86,
         "8a. MAILING ADDRESS, IF DIFFERENT",
-        _clean(detail.mailing_address),
+        _mailing_address(detail, applicant),
         value_size=8.5,
     )
 
@@ -648,7 +741,16 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     )
 
     _band(c, LEFT, 412, RIGHT - LEFT, 13, "FOR TTB USE ONLY")
-    _field(c, LEFT, 336, 458, 74, "QUALIFICATIONS", _qualifications(detail), value_size=7.5)
+    _field(
+        c,
+        LEFT,
+        336,
+        QUAL_BOX_W,
+        QUAL_BOX_H,
+        "QUALIFICATIONS",
+        qualifications,
+        value_size=QUAL_BOX_SIZE,
+    )
     _field(
         c,
         LEFT + 458,
@@ -699,6 +801,33 @@ def _draw_affix_page(
     )
 
 
+def _draw_addendum_page(
+    c: canvas.Canvas,
+    rows: list[tuple[str, str]],
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    title: str,
+) -> None:
+    c.setLineWidth(0.8)
+    c.rect(x, y, w, h)
+    c.setFont(BOLD, 7)
+    c.drawString(x + 4, y + h - 9, title)
+
+    marker_x = x + 6
+    text_x = marker_x + stringWidth("00. ", MONO_BOLD, ADDENDUM_SIZE)
+    cursor = y + h - 17 - ADDENDUM_SIZE
+    _value_style(c, MONO_BOLD, ADDENDUM_SIZE)
+    for marker, text in rows:
+        if marker:
+            c.drawString(marker_x, cursor, marker)
+        if text:
+            c.drawString(text_x, cursor, text)
+        cursor -= ADDENDUM_LEAD
+    _reset_style(c)
+
+
 def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
     """Render the form for ``detail``, flowing ``images`` through the affix area."""
     buf = io.BytesIO()
@@ -714,9 +843,37 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
     first_capacity = _grid_rows(AFFIX_H - 17) * AFFIX_COLS
     page_capacity = _grid_rows(CONT_H - 17) * AFFIX_COLS
     pages = _layout_images(images, first_capacity, page_capacity)
-    total = len(pages)
 
-    _draw_application(c, detail)
+    row_width = CONT_W - 12
+    # A single permit reads fine in item 2; a list of them does not, so it moves
+    # to an addendum rather than being squeezed into the box or truncated.
+    permit_pages: list[list[tuple[str, str]]] = []
+    if len(detail.permits) > 1:
+        permit_pages = _paginate_rows(_permit_rows(detail.permits, row_width), CONT_H)
+
+    # Qualifications either fit the Part III box or all move to an addendum, so
+    # a reader never has to stitch the list back together across two places.
+    qual_text = _qualifications(detail)
+    box_lines = _wrap(qual_text, MONO_BOLD, QUAL_BOX_SIZE, QUAL_BOX_W - 6)
+    box_capacity = _field_value_lines(
+        QUAL_BOX_H, QUAL_BOX_W, "QUALIFICATIONS", QUAL_BOX_SIZE
+    )
+    qual_pages: list[list[tuple[str, str]]] = []
+    if len(box_lines) > box_capacity:
+        rows = _qualification_rows(_qualification_texts(detail), row_width)
+        qual_pages = _paginate_rows(rows, CONT_H)
+
+    permit_start = len(pages) + 1
+    qual_start = permit_start + len(permit_pages)
+    total = qual_start + len(qual_pages) - 1
+
+    permit_value = _clean(detail.permit_id) or _clean(detail.permit)
+    if permit_pages:
+        permit_value = _addendum_ref("permit", permit_start, len(permit_pages))
+    if qual_pages:
+        qual_text = _addendum_ref("qualifications", qual_start, len(qual_pages))
+
+    _draw_application(c, detail, permit_value, qual_text)
     _draw_affix_page(c, pages[0], AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H, AFFIX_TITLE)
     _draw_footer(c, detail, 1, total)
 
@@ -734,6 +891,19 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
             f"{AFFIX_TITLE} \u2014 continued",
         )
         _draw_footer(c, detail, number, total)
+
+    addenda = [
+        (title if i == 0 else f"{title} \u2014 continued", rows)
+        for title, section in ((PERMIT_TITLE, permit_pages), (QUAL_TITLE, qual_pages))
+        for i, rows in enumerate(section)
+    ]
+    for offset, (title, rows) in enumerate(addenda):
+        c.showPage()
+        height = min(CONT_H, len(rows) * ADDENDUM_LEAD + 21)
+        _draw_addendum_page(
+            c, rows, CONT_X, CONT_Y + CONT_H - height, CONT_W, height, title
+        )
+        _draw_footer(c, detail, permit_start + offset, total)
 
     c.showPage()
     c.save()

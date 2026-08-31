@@ -198,3 +198,75 @@ def test_long_free_text_does_not_overflow_into_an_exception():
     detail.qualification_items = []
     detail.mailing_address = "Very long address line " * 40
     assert render_f510031(detail, []).startswith(b"%PDF-")
+
+
+def test_overflowing_qualifications_move_to_an_addendum_page():
+    detail = full_detail()
+    detail.qualification_items = [
+        Qualification(id=i, text=f"Qualification number {i} applies to this label.", comment="")
+        for i in range(1, 21)
+    ]
+    pdf = render_f510031(detail, [])
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) == 2
+    assert "See qualifications addendum" in reader.pages[0].extract_text()
+    addendum = reader.pages[1].extract_text()
+    assert "Qualification number 1 applies" in addendum
+    assert "Qualification number 20 applies" in addendum
+
+
+def test_short_qualifications_stay_on_the_first_page():
+    pdf = render_f510031(full_detail(), [])
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) == 1
+    assert "Label must be used as approved" in reader.pages[0].extract_text()
+
+
+def test_multiple_permits_move_to_an_addendum_page():
+    detail = full_detail()
+    detail.permits = [
+        PermitRef(
+            permit_id=f"BWN-CA-{1000 + i}",
+            primary=i == 0,
+            name=f"Example Winery {i} LLC",
+            address=f"{100 + i} Vineyard Road",
+            city="Napa",
+            state="CA",
+            postal_code="94558",
+        )
+        for i in range(4)
+    ]
+    reader = PdfReader(io.BytesIO(render_f510031(detail, [])))
+    assert len(reader.pages) == 2
+    assert "See permit addendum, page 2." in reader.pages[0].extract_text()
+    addendum = reader.pages[1].extract_text()
+    assert "BWN-CA-1000   (PRIMARY)" in addendum
+    assert "BWN-CA-1003" in addendum
+
+
+def test_single_permit_keeps_its_number_in_item_2():
+    text = PdfReader(io.BytesIO(render_f510031(full_detail(), []))).pages[0].extract_text()
+    assert "BWN-CA-1234" in text
+    assert "permit addendum" not in text
+
+
+def test_mailing_address_is_dropped_when_it_repeats_item_8():
+    detail = full_detail()
+    detail.permits = [
+        PermitRef(
+            permit_id="DSP-PA-20085",
+            primary=True,
+            name="Appalachian Spirits, LLC",
+            address="6462 CARLISLE PIKE",
+            city="Mechanicsburg",
+            state="PA",
+            postal_code="17050",
+        )
+    ]
+    detail.mailing_address = "6462 CARLISLE PIKE , Mechanicsburg, PA 17050"
+    text = PdfReader(io.BytesIO(render_f510031(detail, []))).pages[0].extract_text()
+    assert text.count("6462 CARLISLE PIKE") == 1
+
+    detail.mailing_address = "PO Box 12, Harrisburg, PA 17101"
+    text = PdfReader(io.BytesIO(render_f510031(detail, []))).pages[0].extract_text()
+    assert "PO Box 12, Harrisburg, PA 17101" in text
