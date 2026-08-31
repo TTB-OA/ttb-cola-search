@@ -46,7 +46,7 @@ export const TOUR_STEPS = [
     placement: 'bottom',
     title: 'Start with one search box',
     body:
-      'Brand, product name, applicant, permit, submitter, class/type, origin, and TTB ID are all searched at once — watch us try one. Results default to approved labels from the last three calendar years.',
+      'Brand, product name, applicant, permit, submitter, class/type, origin, and TTB ID are all searched at once — watch us try one.',
   },
   {
     id: 'quick-filters',

@@ -7,16 +7,12 @@ import { CatTag } from '../components/Badges.jsx';
 import { useTour } from '../components/Tour.jsx';
 import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { fmtDate, fmtDateLong } from '../lib/format.js';
+import { fmtDate } from '../lib/format.js';
 import { setPendingImageSearch } from '../lib/imageSearchStore.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 import { usePermitSuggest } from '../hooks/usePermitSuggest.js';
-
-function defaultDateFrom() {
-  return `${new Date().getFullYear() - 2}-01-01`;
-}
 
 const EMPTY = {
   text: '',
@@ -39,7 +35,7 @@ const EMPTY = {
   source: '',
   origin: '',
   status: 'Approved',
-  dateFrom: defaultDateFrom(),
+  dateFrom: '',
   dateTo: '',
   mode: 'text',
   image: null,
@@ -84,14 +80,14 @@ function draftToParams(draft) {
 }
 
 const MODES = [
-  { id: 'text', icon: 'search', label: 'Text search' },
-  { id: 'image', icon: 'image', label: 'Search by image', tour: 'image-tab' },
-  { id: 'describe', icon: 'sparkle', label: 'Describe a label', tour: 'describe-tab' },
+  { id: 'text', icon: 'search', label: 'Text search', short: 'Text' },
+  { id: 'image', icon: 'image', label: 'Search by image', short: 'Image', tour: 'image-tab' },
+  { id: 'describe', icon: 'sparkle', label: 'Describe a label', short: 'Describe', tour: 'describe-tab' },
 ];
 
-function ModeTabs({ mode, setMode }) {
+function ModeTabs({ mode, setMode, compact }) {
   return (
-    <div className="seg" role="tablist" style={{ marginBottom: 22 }}>
+    <div className={'seg' + (compact ? ' compact' : '')} role="tablist" style={{ marginBottom: 22 }}>
       {MODES.map((m) => (
         <button
           key={m.id}
@@ -99,7 +95,7 @@ function ModeTabs({ mode, setMode }) {
           onClick={() => setMode(m.id)}
           data-tour={m.tour}
         >
-          <Icon name={m.icon} /> {m.label}
+          <Icon name={m.icon} /> {compact ? m.short : m.label}
         </button>
       ))}
     </div>
@@ -568,7 +564,7 @@ export default function SearchPage() {
             </p>
 
             <div className="panel search-card">
-              <ModeTabs mode={draft.mode} setMode={(m) => set('mode', m)} />
+              <ModeTabs mode={draft.mode} setMode={(m) => set('mode', m)} compact={isMobile} />
 
               {draft.mode === 'text' ? (
                 <>
@@ -592,13 +588,13 @@ export default function SearchPage() {
                       text recognized on the label artwork. Records matching a field are listed first.
                     </div>
                     <div className="hint" style={{ marginTop: 6 }}>
-                      Defaults to COLAs approved after {fmtDateLong(defaultDateFrom())} (last three calendar years). Expand in Advanced search.
+                      Covers the full approval history. Narrow by approval date in Advanced search.
                     </div>
                   </div>
 
-                  <div className="row between" style={{ marginTop: 16 }}>
+                  <div className="row between quick-row" style={{ marginTop: 16 }}>
                     <div className="chips" data-tour="quick-filters">
-                      <span className="muted" style={{ fontSize: 13, fontWeight: 600, alignSelf: 'center' }}>
+                      <span className="muted quick-lbl" style={{ fontSize: 13, fontWeight: 600, alignSelf: 'center' }}>
                         Quick filter:
                       </span>
                       {categories.map((c) => (

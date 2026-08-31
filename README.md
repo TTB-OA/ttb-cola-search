@@ -178,7 +178,7 @@ All routes are mounted under `/api`.
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `business`, `permit`, `permitName`, `permitState`, `permitCity`,
 `submitter`, `varietal`, `qualification`, `labelText`, `commodity`, `source`,
-`origin`, `status`, `dateFrom`, `dateTo`, `allDates`, `sort`, `page`, `pageSize`,
+`origin`, `status`, `dateFrom`, `dateTo`, `sort`, `page`, `pageSize`,
 and `facets`.
 ### Search behaviour
 
@@ -209,8 +209,7 @@ A few semantics are worth knowing before writing queries against it:
 - `sort=relevance` with a `q` term puts record-field matches ahead of rows that
   match only on label OCR, then orders each group newest-first. Without `q` it is
   identical to `approvalDate`.
-- With no `dateFrom` or `dateTo`, searches are limited to the last three
-  calendar years. Pass `allDates=true` to search the full history instead.
+- With no `dateFrom` or `dateTo`, searches cover the full approval history.
 - `total` is capped at 10,000. When the cap is hit, `totalIsCapped` is `true` and
   `total` should be read as a floor. `page` is capped at 500 — narrow the filters
   rather than paging deeper.
