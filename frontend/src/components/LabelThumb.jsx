@@ -32,15 +32,26 @@ function Placeholder({ rec, style }) {
 export default function LabelThumb({ rec, style, src }) {
   const url = src || rec.thumbUrl;
   const [failed, setFailed] = useState(false);
+  const [wide, setWide] = useState(false);
 
   if (!url || failed) return <Placeholder rec={rec} style={style} />;
 
+  // Frames that would otherwise crop (mobile list/card thumbs) only do so for
+  // markedly portrait artwork; anything near the frame ratio is fitted whole.
   return (
-    <div className="label-thumb label-photo" style={style} aria-label={(rec.brand || 'Label') + ' label'}>
+    <div
+      className={'label-thumb label-photo' + (wide ? ' fits' : '')}
+      style={style}
+      aria-label={(rec.brand || 'Label') + ' label'}
+    >
       <img
         src={url}
         alt={(rec.brand || 'Label') + ' label image'}
         loading="lazy"
+        onLoad={(e) => {
+          const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+          if (w && h) setWide(w / h >= 0.75);
+        }}
         onError={() => setFailed(true)}
       />
     </div>

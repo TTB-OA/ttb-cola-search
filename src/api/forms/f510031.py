@@ -153,6 +153,27 @@ def _reset_style(c: canvas.Canvas) -> None:
 # ---------------------------------------------------------------------------
 # Drawing primitives
 # ---------------------------------------------------------------------------
+def _draw_box_caption(
+    c: canvas.Canvas, x: float, y: float, w: float, h: float, caption: str
+) -> float:
+    """Border plus wrapped caption for a form item; returns the y to draw values at."""
+    c.setLineWidth(0.6)
+    c.rect(x, y, w, h)
+    inner = w - 6
+    c.setFont(BODY, CAPTION_SIZE)
+    cursor = y + h - CAPTION_SIZE - 2
+    for line in _wrap(caption, BODY, CAPTION_SIZE, inner):
+        c.drawString(x + 3, cursor, line)
+        cursor -= CAPTION_SIZE + 0.8
+    return cursor - 2
+
+
+def _value_area_height(h: float, caption: str, inner: float) -> float:
+    """Usable value height for a `_draw_box_caption` box of height `h`."""
+    lines = len(_wrap(caption, BODY, CAPTION_SIZE, inner))
+    return h - CAPTION_SIZE - 6 - lines * (CAPTION_SIZE + 0.8)
+
+
 def _field(
     c: canvas.Canvas,
     x: float,
@@ -164,27 +185,53 @@ def _field(
     *,
     value_size: float = VALUE_SIZE,
     value_font: str = MONO_BOLD,
+    autosize: bool = False,
+    min_value_size: float = 5.0,
 ) -> None:
-    """A bordered form item: small caption at the top, wrapped value beneath."""
-    c.setLineWidth(0.6)
-    c.rect(x, y, w, h)
+    """A bordered form item: small caption at the top, wrapped value beneath.
 
-    inner = w - 6
-    c.setFont(BODY, CAPTION_SIZE)
-    cursor = y + h - CAPTION_SIZE - 2
-    for line in _wrap(caption, BODY, CAPTION_SIZE, inner):
-        c.drawString(x + 3, cursor, line)
-        cursor -= CAPTION_SIZE + 0.8
-
+    With `autosize`, the value font shrinks (down to `min_value_size`) so long
+    content wraps to fit the box's remaining space instead of being cut off.
+    """
+    cursor = _draw_box_caption(c, x, y, w, h, caption)
     if not value:
         return
-    cursor -= 2
-    _value_style(c, value_font, value_size)
-    for line in _wrap(value, value_font, value_size, inner):
+    inner = w - 6
+    size = value_size
+    lines = _wrap(value, value_font, size, inner)
+    if autosize:
+        avail_h = cursor - (y + 2)
+        while size > min_value_size and len(lines) * (size + 1.5) > avail_h:
+            size -= 0.5
+            lines = _wrap(value, value_font, size, inner)
+    _value_style(c, value_font, size)
+    for line in lines:
         if cursor < y + 2:
             break
         c.drawString(x + 4, cursor, line)
-        cursor -= value_size + 1.5
+        cursor -= size + 1.5
+    _reset_style(c)
+
+
+def _draw_paragraphs(
+    c: canvas.Canvas,
+    x: float,
+    cursor: float,
+    width: float,
+    items: list[str],
+    *,
+    font: str = MONO_BOLD,
+    size: float = VALUE_SIZE,
+    gap: float = 3.0,
+) -> None:
+    """Draw pre-fitted paragraphs, each on its own wrapped lines, top to bottom."""
+    _value_style(c, font, size)
+    for idx, item in enumerate(items):
+        if idx:
+            cursor -= gap
+        for line in _wrap(item, font, size, width):
+            c.drawString(x, cursor, line)
+            cursor -= size + 1.5
     _reset_style(c)
 
 
@@ -391,6 +438,21 @@ def _draw_affix_grid(
 # ---------------------------------------------------------------------------
 # Value derivation
 # ---------------------------------------------------------------------------
+def _permit_numbers(detail: ColaDetail) -> str:
+    """All distinct permit numbers, primary permit(s) first, for item 2."""
+    ordered = sorted(detail.permits, key=lambda p: not p.primary)
+    seen: list[str] = []
+    for permit in ordered:
+        permit_id = _clean(permit.permit_id)
+        if permit_id and permit_id not in seen:
+            seen.append(permit_id)
+    if not seen:
+        fallback = _clean(detail.permit_id) or _clean(detail.permit)
+        if fallback:
+            seen.append(fallback)
+    return ", ".join(seen)
+
+
 def _applicant_block(detail: ColaDetail) -> str:
     primary = next((p for p in detail.permits if p.primary), None)
     if primary is None and detail.permits:
@@ -761,6 +823,7 @@ def _draw_application(
         _date(detail.expiration_date),
         value_size=8.0,
     )
+    return qual_overflow
 
 
 def _draw_affix_page(
@@ -829,7 +892,8 @@ def _draw_addendum_page(
 
 
 def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
-    """Render the form for ``detail``, flowing ``images`` through the affix area."""
+    """Render the form for ``detail``, flowing ``images`` and overflow qualifications
+    through their respective continuation pages."""
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
     c.setTitle(f"TTB F 5100.31 - {_clean(detail.ttb_id)}")
@@ -877,7 +941,8 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
     _draw_affix_page(c, pages[0], AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H, AFFIX_TITLE)
     _draw_footer(c, detail, 1, total)
 
-    for number, page_images in enumerate(pages[1:], start=2):
+    page_number = 2
+    for page_images in image_pages[1:]:
         c.showPage()
         height = _affix_height(len(page_images), CONT_H)
         _draw_affix_page(

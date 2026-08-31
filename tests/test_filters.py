@@ -10,7 +10,7 @@ from datetime import date
 
 import pytest
 
-from src.api.routers.colas import SORTS, _build_filters, _default_date_from, _order_by
+from src.api.routers.colas import SORTS, _build_filters, _order_by
 
 FILTER_VALUES = {
     "q": "cabernet",
@@ -190,8 +190,3 @@ def test_order_by_placeholders_match_its_parameters(sort):
 def test_every_sort_has_a_cola_id_tiebreaker():
     for order_by in SORTS.values():
         assert order_by.split(",")[-1].strip().startswith("cola_id ")
-
-
-def test_default_date_from_uses_last_three_calendar_years():
-    assert _default_date_from(date(2026, 8, 5)) == date(2024, 1, 1)
-    assert _default_date_from(date(2027, 1, 1)) == date(2025, 1, 1)

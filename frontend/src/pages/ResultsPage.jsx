@@ -382,7 +382,6 @@ export default function ResultsPage() {
     FILTER_KEYS.forEach((k) => {
       if (criteria[k]) p[k] = criteria[k];
     });
-    if (criteria.allDates) p.allDates = true;
     if (criteria.sort) p.sort = criteria.sort;
     return p;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -447,9 +446,6 @@ export default function ResultsPage() {
     patchParams((p) => {
       delete p[k];
       delete p.page;
-      // With no bound left the API re-applies its default three-year window, so
-      // removing the last date chip has to say "search everything" explicitly.
-      if ((k === 'dateFrom' || k === 'dateTo') && !p.dateFrom && !p.dateTo) p.allDates = '1';
     });
   }
 

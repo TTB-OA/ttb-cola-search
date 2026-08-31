@@ -96,11 +96,6 @@ def _id_term(value: str) -> str:
     return value.strip().upper()
 
 
-def _default_date_from(today: date | None = None) -> date:
-    d = today or date.today()
-    return date(d.year - 2, 1, 1)
-
-
 def _build_filters(
     q: str | None,
     ttb_id: str | None,
@@ -417,24 +412,12 @@ async def list_colas(
         Query(
             alias="dateFrom",
             description=(
-                "Approval/completed date lower bound (`YYYY-MM-DD`). When both "
-                "`dateFrom` and `dateTo` are omitted, searches default to Jan 1 of "
-                "the year two years before the current year (last three calendar years), "
-                "unless `allDates` is set."
+                "Approval/completed date lower bound (`YYYY-MM-DD`). Omit both "
+                "`dateFrom` and `dateTo` to search the full history."
             ),
         ),
     ] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
-    all_dates: Annotated[
-        bool,
-        Query(
-            alias="allDates",
-            description=(
-                "Search the full history instead of the default three-calendar-year "
-                "window. Ignored when `dateFrom` or `dateTo` is supplied."
-            ),
-        ),
-    ] = False,
     sort: str = Query(
         default="relevance",
         title="Result ordering",
@@ -474,10 +457,6 @@ async def list_colas(
         ),
     ),
 ) -> SearchResponse:
-    effective_date_from = date_from
-    if date_from is None and date_to is None and not all_dates:
-        effective_date_from = _default_date_from()
-
     where, params = _build_filters(
         q,
         ttb_id,
@@ -487,7 +466,7 @@ async def list_colas(
         source,
         origin,
         status,
-        effective_date_from,
+        date_from,
         date_to,
         applicant=applicant,
         business=business,
