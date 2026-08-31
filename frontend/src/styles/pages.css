@@ -448,7 +448,13 @@ section > .d-notice { margin-bottom: 0; }
      above it. The bar itself is drawn by the pseudo-element. */
   .map-sheet-grab { display: block; position: sticky; top: 0; z-index: 3; width: auto; height: auto; margin: 0 -18px; padding: 6px 0 2px; border-radius: 0; background: var(--white); }
   .map-sheet-grab::before { content: ''; display: block; width: 40px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--base-lighter); }
+  /* On the area sheet the strip is a real handle: it drags the panel taller or
+     shorter. touch-action keeps the drag from scrolling the list underneath. */
+  .map-panel .map-sheet-grab { padding: 11px 0 7px; cursor: row-resize; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .map-panel .map-sheet-grab::before { width: 48px; height: 5px; border-radius: 3px; background: var(--base-light); }
+  .map-panel .map-sheet-grab:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
   .map-sheet-head, .map-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; position: sticky; top: 12px; z-index: 2; margin: 0 -18px; padding: 4px 18px 10px; background: var(--white); }
+  .map-panel .map-panel-head { top: 23px; }
   .map-backdrop { display: block; position: fixed; inset: 0; z-index: 35; border: 0; padding: 0; background: rgba(0, 0, 0, .35); }
 
   .map-controls { flex-direction: column; align-items: stretch; gap: 12px; }

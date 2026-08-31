@@ -587,9 +587,6 @@ export default function SearchPage() {
                       Search across brand, product, applicant, permit, submitter, class/type, origin, and TTB ID, plus
                       text recognized on the label artwork. Records matching a field are listed first.
                     </div>
-                    <div className="hint" style={{ marginTop: 6 }}>
-                      Covers the full approval history. Narrow by approval date in Advanced search.
-                    </div>
                   </div>
 
                   <div className="row between quick-row" style={{ marginTop: 16 }}>

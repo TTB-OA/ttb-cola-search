@@ -186,8 +186,99 @@ function groupByPermit(items) {
   return groups;
 }
 
-function AreaPanel({ state, onClose }) {
+// On a phone the sheet and the map compete for the same screen, and which one
+// matters changes minute to minute, so its height is dragged rather than fixed.
+// Fractions of the viewport, smallest first.
+const SHEET_SNAPS = [0.28, 0.5, 0.85];
+const SHEET_MIN = 0.14;
+const SHEET_MAX = 0.9;
+
+const vh = (fraction) => Math.round(window.innerHeight * fraction);
+const clampSheet = (px) => Math.min(Math.max(px, vh(SHEET_MIN)), vh(SHEET_MAX));
+const snapSheet = (px) =>
+  SHEET_SNAPS.map(vh).reduce((best, p) => (Math.abs(p - px) < Math.abs(best - px) ? p : best));
+
+function useSheetResize(enabled) {
+  const panelRef = useRef(null);
+  const drag = useRef(null);
+  const [height, setHeight] = useState(null);
+
+  useEffect(() => {
+    setHeight(enabled ? vh(SHEET_SNAPS[1]) : null);
+  }, [enabled]);
+
+  // The browser toolbar collapsing counts as a resize, so a height set against
+  // the old viewport has to be pulled back into range.
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const onResize = () => setHeight((h) => (h == null ? h : clampSheet(h)));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [enabled]);
+
+  const onPointerDown = (e) => {
+    if (!enabled || !panelRef.current) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { y: e.clientY, from: panelRef.current.getBoundingClientRect().height, moved: false };
+  };
+
+  const onPointerMove = (e) => {
+    if (!drag.current) return;
+    const delta = drag.current.y - e.clientY;
+    if (Math.abs(delta) > 4) drag.current.moved = true;
+    setHeight(clampSheet(drag.current.from + delta));
+  };
+
+  const onPointerUp = () => {
+    if (!drag.current) return;
+    const { moved } = drag.current;
+    drag.current = null;
+    // A tap is not a drag: cycle through the snap points so the handle still
+    // does something obvious for anyone who does not think to drag it.
+    setHeight((h) => {
+      if (moved) return snapSheet(h);
+      const stops = SHEET_SNAPS.map(vh);
+      const next = stops.find((p) => p > h + 8);
+      return next ?? stops[0];
+    });
+  };
+
+  const onKeyDown = (e) => {
+    const step = vh(0.08);
+    if (e.key === 'ArrowUp') setHeight((h) => clampSheet(h + step));
+    else if (e.key === 'ArrowDown') setHeight((h) => clampSheet(h - step));
+    else if (e.key === 'Home') setHeight(vh(SHEET_MAX));
+    else if (e.key === 'End') setHeight(vh(SHEET_MIN));
+    else return;
+    e.preventDefault();
+  };
+
+  const pct = height ? Math.round((height / window.innerHeight) * 100) : 50;
+
+  return {
+    panelRef,
+    style: height ? { height: `${height}px`, maxHeight: 'none' } : undefined,
+    handleProps: {
+      role: 'separator',
+      'aria-orientation': 'horizontal',
+      'aria-label': 'Resize selected area panel',
+      'aria-valuemin': Math.round(SHEET_MIN * 100),
+      'aria-valuemax': Math.round(SHEET_MAX * 100),
+      'aria-valuenow': pct,
+      'aria-valuetext': `${pct}% of the screen`,
+      tabIndex: enabled ? 0 : -1,
+      onPointerDown,
+      onPointerMove,
+      onPointerUp,
+      onPointerCancel: onPointerUp,
+      onKeyDown,
+    },
+  };
+}
+
+function AreaPanel({ state, onClose, isMobile }) {
   const { data, loading, error } = state;
+  const { panelRef, style, handleProps } = useSheetResize(isMobile);
 
   useEffect(() => {
     const onKey = (e) => {
@@ -198,8 +289,8 @@ function AreaPanel({ state, onClose }) {
   }, [onClose]);
 
   return (
-    <aside className="map-panel panel" aria-label="Selected area">
-      <div className="map-sheet-grab" aria-hidden="true" />
+    <aside className="map-panel panel" aria-label="Selected area" ref={panelRef} style={style}>
+      <div className="map-sheet-grab" {...handleProps} />
       {/* Sticky so the way out stays reachable however far the list is scrolled. */}
       <div className="map-panel-head">
         <div className="section-title">Selected area</div>
@@ -514,7 +605,7 @@ export default function MapPage() {
           </div>
         ) : null}
 
-        {area ? <AreaPanel state={areaState} onClose={clearArea} /> : null}
+        {area ? <AreaPanel state={areaState} onClose={clearArea} isMobile={isMobile} /> : null}
       </div>
 
       <p className="wrap muted an-note map-note">
