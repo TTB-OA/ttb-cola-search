@@ -189,7 +189,7 @@ function heatPaint(bins, instance) {
 // rather than the label thumbnail the map page pins carry.
 function locatorElement(point) {
   const el = document.createElement('div');
-  el.className = 'map-dot' + (point.role === 'product_origin' ? ' is-origin' : '');
+  el.className = 'map-dot' + (point.locationClass ? ` ${point.locationClass}` : '');
   el.textContent = point.index != null ? String(point.index) : '';
   if (point.label) {
     el.title = point.label;

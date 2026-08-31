@@ -5,7 +5,7 @@ import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
 import Highlight from '../components/Highlight.jsx';
 import { toPct } from '../components/ScoreMeter.jsx';
-import { api } from '../lib/api.js';
+import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
 import { fmtDate, fmtPhone, orderFaces } from '../lib/format.js';
 import { useAsync } from '../hooks/useAsync.js';
@@ -39,12 +39,15 @@ function dedupeLocations(points) {
 function LocationPanel({ locations, status, origin }) {
   const points = useMemo(() => dedupeLocations(locations || []), [locations]);
   const nameOf = (p) => (p.role === 'product_origin' ? origin || p.sourceKey : p.permitName || p.sourceKey);
+  const locationClass = (p) =>
+    p.role === 'primary_premise' ? 'is-primary' : p.role === 'product_origin' ? 'is-origin' : 'is-associated';
   const pins = useMemo(
     () =>
       points.map((p, i) => ({
         ...p,
         id: `loc-${i}`,
         index: i + 1,
+        locationClass: locationClass(p),
         label: `${i + 1}. ${ROLE_LABELS[p.role] || p.role}${nameOf(p) ? ` — ${nameOf(p)}` : ''}`,
       })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,17 +99,13 @@ function LocationPanel({ locations, status, origin }) {
       </div>
       <div className="d-permits" style={{ marginTop: 10 }}>
         {pins.map((p) => (
-          <div className="d-permit" key={p.id}>
+          <div className={'d-permit ' + p.locationClass} key={p.id}>
             <div style={{ fontWeight: 600 }}>
-              <span className={'d-pin-no' + (p.role === 'product_origin' ? ' is-origin' : '')}>{p.index}</span>
+              <span className={'d-pin-no ' + p.locationClass}>{p.index}</span>
               {ROLE_LABELS[p.role] || p.role}
             </div>
             <div className="muted" style={{ fontSize: 13 }}>
               {nameOf(p) || '—'}
-            </div>
-            <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
-              {p.lat.toFixed(4)}, {p.lng.toFixed(4)}
-              {p.quality ? ` · ${p.quality}` : ''}
             </div>
           </div>
         ))}
@@ -467,25 +466,37 @@ export default function DetailPage() {
     [items, q]
   );
 
-  // Group extracted text by image face, reading order within each group. Groups
-  // follow the gallery so the text panel and the images agree on which face leads.
+  // Group extracted text by image file, reading order within each group. Groups
+  // follow the gallery so the text panel and the images agree on which image leads.
   const itemGroups = useMemo(() => {
-    const byFace = new Map();
+    const byFile = new Map();
     items.forEach((it) => {
-      const f = it.face || 'other';
-      if (!byFace.has(f)) byFace.set(f, []);
-      byFace.get(f).push(it);
+      const file = it.file || `face:${it.face || 'other'}`;
+      if (!byFile.has(file)) byFile.set(file, []);
+      byFile.get(file).push(it);
     });
     const pos = (it, k) => (it.box && typeof it.box[k] === 'number' ? it.box[k] : Infinity);
+    const files = new Set(byFile.keys());
+    const galleryFiles = views.map((v) => v.img.fileName).filter((file) => files.delete(file));
+    const fallbackFiles = [...files];
+    const fallbackFaces = orderFaces([...new Set(fallbackFiles.map((file) => byFile.get(file)[0].face || 'other'))]);
     const ordered = [
-      ...faces.filter((f) => byFace.has(f)),
-      ...orderFaces([...byFace.keys()].filter((f) => !faces.includes(f))),
+      ...galleryFiles,
+      ...fallbackFiles.sort(
+        (a, b) =>
+          fallbackFaces.indexOf(byFile.get(a)[0].face || 'other') - fallbackFaces.indexOf(byFile.get(b)[0].face || 'other')
+      ),
     ];
-    return ordered.map((face) => ({
-      face,
-      items: [...byFace.get(face)].sort((a, b) => pos(a, 'y') - pos(b, 'y') || pos(a, 'x') - pos(b, 'x')),
-    }));
-  }, [items, faces]);
+    return ordered.map((file) => {
+      const groupItems = byFile.get(file);
+      const image = images.find((img) => img.fileName === file);
+      return {
+        file: image ? image.fileName : groupItems[0].file,
+        type: image?.imgType || groupItems[0].face || 'other',
+        items: [...groupItems].sort((a, b) => pos(a, 'y') - pos(b, 'y') || pos(a, 'x') - pos(b, 'x')),
+      };
+    });
+  }, [items, images, views]);
 
   useEffect(() => {
     const first = matchedItems.length ? matchedItems[0] : null;
@@ -719,6 +730,16 @@ export default function DetailPage() {
                         <div className="muted" style={{ fontSize: 13 }}>
                           {permitAddress(p) || '—'}
                         </div>
+                        {p.permitId && (
+                          <a
+                            className="linkbtn"
+                            href={`/results${toQuery({ permit: p.permitId })}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View permit results <Icon name="external" size={14} />
+                          </a>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -795,11 +816,12 @@ export default function DetailPage() {
                   </p>
                   <div className="ocr-groups">
                     {itemGroups.map((group) => (
-                      <div className="ocr-group" key={group.face}>
-                        <div className="ocr-group-head">
-                          <span className="ocr-face-tag">{group.face}</span>
-                          <span className="ocr-group-count">{group.items.length}</span>
-                        </div>
+                      <div className="ocr-group" key={group.file || group.type}>
+                        <h4 className="ocr-group-head">
+                          <span>{group.type}</span>
+                          {group.file && <span className="ocr-file-name mono">{group.file}</span>}
+                          <span className="ocr-group-count">{group.items.length} text items</span>
+                        </h4>
                         <div className="ocr-flow">
                           {group.items.map((it, i) => {
                             const isMatch = q && (it.text || '').toLowerCase().includes(q);

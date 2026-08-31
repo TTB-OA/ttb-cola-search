@@ -164,6 +164,9 @@
 .d-qual-list li + li { margin-top: 10px; }
 .d-permits { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .d-permit { background: var(--gray-2); border-radius: var(--radius); padding: 14px 16px; border-left: 3px solid var(--accent-light); }
+.d-permit.is-primary { border-left-color: var(--accent); background: var(--accent-lighter); }
+.d-permit.is-origin { border-left-color: var(--gold-dark); background: #fef5e7; }
+.d-permit.is-associated { border-left-color: var(--mint); background: #e7f5f8; }
 
 /* Says what the pipeline has not processed, so a blank area is never mistaken
    for an absence of data. */
@@ -184,14 +187,13 @@ section > .d-notice { margin-bottom: 0; }
 .lv-main { overflow: hidden; position: relative; }
 .ocr-matchnote { display: flex; align-items: flex-start; gap: 7px; background: #fef5e7; border-left: 3px solid var(--gold-dark); color: #6b4a00; font-size: 12.5px; font-weight: 600; padding: 8px 10px; border-radius: var(--radius); margin: 8px 0 4px; }
 .ocr-matchnote .ico { flex: 0 0 auto; margin-top: 2px; }
-.ocr-face-tag { display: inline-flex; justify-content: center; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--base-dark); background: var(--base-lightest); border-radius: 999px; padding: 2px 8px; }
-
-/* Extracted text flows as wrapping chips, grouped by image face. */
+/* Extracted text flows as wrapping chips, grouped by image. */
 .ocr-hint { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--base-dark); }
 .ocr-hint .ico { flex: 0 0 auto; color: var(--accent); }
 .ocr-groups { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-.ocr-group-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
-.ocr-group-count { font-size: 10px; font-weight: 700; color: var(--base); }
+.ocr-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0 0 7px; color: var(--accent-darker); font-size: 13px; font-weight: 800; }
+.ocr-file-name { color: var(--base-dark); font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+.ocr-group-count { color: var(--base-dark); font-size: 11px; font-weight: 700; }
 .ocr-group + .ocr-group { border-top: 1px solid var(--base-lightest); padding-top: 10px; }
 .ocr-flow { display: flex; flex-wrap: wrap; gap: 4px; }
 .ocr-chip {
@@ -397,9 +399,13 @@ section > .d-notice { margin-bottom: 0; }
 
 /* Numbered locator dots, keyed to the address cards under the mini-map. */
 .map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--white); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
-.map-dot.is-origin { background: var(--base-dark); }
+.map-dot.is-primary { background: var(--accent); }
+.map-dot.is-origin { background: var(--gold-dark); color: var(--ink); }
+.map-dot.is-associated { background: var(--mint); }
 .d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
-.d-pin-no.is-origin { background: var(--base-dark); }
+.d-pin-no.is-primary { background: var(--accent); }
+.d-pin-no.is-origin { background: var(--gold-dark); color: var(--ink); }
+.d-pin-no.is-associated { background: var(--mint); }
 
 /* The mini-map on a COLA record: a locator, not an explorer. */
 .d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
