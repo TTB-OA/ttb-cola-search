@@ -167,6 +167,8 @@
 .d-permit.is-primary { border-left-color: var(--accent); background: var(--accent-lighter); }
 .d-permit.is-origin { border-left-color: var(--gold-dark); background: #fef5e7; }
 .d-permit.is-associated { border-left-color: var(--mint); background: #e7f5f8; }
+.d-permit.is-locatable { cursor: default; transition: box-shadow .12s ease, transform .12s ease; }
+.d-permit.is-locatable.is-hovered { box-shadow: var(--shadow-2); transform: translateY(-1px); }
 
 /* Says what the pipeline has not processed, so a blank area is never mistaken
    for an absence of data. */
@@ -403,6 +405,9 @@ section > .d-notice { margin-bottom: 0; }
 .map-dot.is-primary { background: var(--accent); }
 .map-dot.is-origin { background: var(--gold-dark); color: var(--ink); }
 .map-dot.is-associated { background: var(--mint); }
+/* No transform here: maplibre positions the marker with an inline transform. */
+.map-dot { transition: box-shadow .12s ease; }
+.map-dot.is-raised { box-shadow: 0 0 0 4px rgba(26, 68, 128, .45), var(--shadow-3); }
 .d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
 .d-pin-no.is-primary { background: var(--accent); }
 .d-pin-no.is-origin { background: var(--gold-dark); color: var(--ink); }

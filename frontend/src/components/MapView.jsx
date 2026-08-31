@@ -229,6 +229,7 @@ export default function MapView({
   area,
   view,
   interactive = true,
+  highlightId = null,
   onViewportChange,
   onSelectArea,
   onSelectPoint,
@@ -345,7 +346,7 @@ export default function MapView({
 
     return () => {
       cancelled = true;
-      markers.current.forEach((m) => m.remove());
+      markers.current.forEach((m) => m.marker.remove());
       markers.current = [];
       map.current?.remove();
       map.current = null;
@@ -379,7 +380,7 @@ export default function MapView({
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready) return;
-    markers.current.forEach((m) => m.remove());
+    markers.current.forEach((m) => m.marker.remove());
     markers.current = [];
     if (mode !== 'image' && mode !== 'locator') return;
     (points || []).forEach((p) => {
@@ -390,9 +391,19 @@ export default function MapView({
       const marker = new maplibregl.Marker({ element })
         .setLngLat([p.lng, p.lat])
         .addTo(instance);
-      markers.current.push(marker);
+      markers.current.push({ id: p.id, marker, element });
     });
   }, [points, mode, ready]);
+
+  // Overlapping markers stack in DOM order, so a highlighted one is pulled out
+  // of that order with a z-index rather than by reordering the markers.
+  useEffect(() => {
+    markers.current.forEach(({ id, element }) => {
+      const on = highlightId != null && id === highlightId;
+      element.classList.toggle('is-raised', on);
+      element.style.zIndex = on ? '5' : '';
+    });
+  }, [highlightId, points, mode, ready]);
 
   // Programmatic recentring, for links that open the map at a known place.
   useEffect(() => {

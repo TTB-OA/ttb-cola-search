@@ -38,6 +38,7 @@ function dedupeLocations(points) {
 // interactive: this answers "where is this", and the map page answers the rest.
 function LocationPanel({ locations, status, origin }) {
   const points = useMemo(() => dedupeLocations(locations || []), [locations]);
+  const [hoveredId, setHoveredId] = useState(null);
   const nameOf = (p) => (p.role === 'product_origin' ? origin || p.sourceKey : p.permitName || p.sourceKey);
   const locationClass = (p) =>
     p.role === 'primary_premise' ? 'is-primary' : p.role === 'product_origin' ? 'is-origin' : 'is-associated';
@@ -94,12 +95,20 @@ function LocationPanel({ locations, status, origin }) {
       <h3 className="d-section">Location</h3>
       <div className="d-minimap">
         <Suspense fallback={<div className="skel" style={{ height: '100%' }} />}>
-          <MapView mode="locator" points={pins} view={view} interactive={false} />
+          <MapView mode="locator" points={pins} view={view} interactive={false} highlightId={hoveredId} />
         </Suspense>
       </div>
       <div className="d-permits" style={{ marginTop: 10 }}>
         {pins.map((p) => (
-          <div className={'d-permit ' + p.locationClass} key={p.id}>
+          <div
+            className={'d-permit is-locatable ' + p.locationClass + (hoveredId === p.id ? ' is-hovered' : '')}
+            key={p.id}
+            tabIndex={0}
+            onMouseEnter={() => setHoveredId(p.id)}
+            onMouseLeave={() => setHoveredId((cur) => (cur === p.id ? null : cur))}
+            onFocus={() => setHoveredId(p.id)}
+            onBlur={() => setHoveredId((cur) => (cur === p.id ? null : cur))}
+          >
             <div style={{ fontWeight: 600 }}>
               <span className={'d-pin-no ' + p.locationClass}>{p.index}</span>
               {ROLE_LABELS[p.role] || p.role}
