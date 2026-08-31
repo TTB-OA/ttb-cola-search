@@ -14,6 +14,8 @@ import { api } from '../lib/api.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const SOURCE = 'protomaps';
+// Desaturated basemap so the heat ramp is the only colour on the map.
+const BASEMAP_THEME = 'white';
 const HEAT_SOURCE = 'cola-heat';
 const HEAT_LAYER = 'cola-heat-layer';
 const AREA_SOURCE = 'cola-area';
@@ -61,7 +63,7 @@ function basemapStyle() {
         attribution: ATTRIBUTION,
       },
     },
-    layers: layers(SOURCE, 'light', { lang: 'en' }),
+    layers: layers(SOURCE, BASEMAP_THEME, { lang: 'en' }),
   };
 }
 
