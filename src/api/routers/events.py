@@ -45,6 +45,9 @@ ALLOWED_EVENTS = frozenset(
         "map_role_changed",
         "map_marker_clicked",
         "map_area_opened",
+        # Basemap tiles are fetched by MapLibre, not by our code, so a failed
+        # tile is invisible to the server unless the client says so.
+        "map_tile_error",
         "client_api_error",
     }
 )

@@ -11,6 +11,7 @@ import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import layers from 'protomaps-themes-base';
 import { api } from '../lib/api.js';
+import { track } from '../lib/analytics.js';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const SOURCE = 'protomaps';
@@ -51,6 +52,36 @@ const BLANK_STYLE = {
   sources: {},
   layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#eef1f5' } }],
 };
+
+// A tile that fails to load leaves a hole MapLibre never reports and, on a white
+// basemap, nothing distinguishes it from empty land. Failures are batched and
+// reported so the rate is visible in telemetry instead of by eye.
+const TILE_ERROR_FLUSH_MS = 4000;
+let tileErrors = null;
+let tileErrorTimer = null;
+
+function reportTileError(event) {
+  const err = event?.error;
+  // Aborts are routine: MapLibre cancels in-flight tiles whenever the viewport
+  // moves on, and counting them would bury the real failures.
+  if (!err || err.name === 'AbortError') return;
+  const status = err.status != null ? String(err.status) : err.name || 'unknown';
+  if (tileErrors === null) tileErrors = new Map();
+  tileErrors.set(status, (tileErrors.get(status) || 0) + 1);
+
+  if (import.meta.env.DEV) {
+    console.warn('[map] tile error', status, event?.sourceId, err.url || err.message);
+  }
+  if (tileErrorTimer) return;
+  tileErrorTimer = setTimeout(() => {
+    tileErrorTimer = null;
+    const batch = tileErrors;
+    tileErrors = null;
+    for (const [code, count] of batch) {
+      track('map_tile_error', { status: code, count });
+    }
+  }, TILE_ERROR_FLUSH_MS);
+}
 
 function basemapStyle() {
   return {
@@ -268,6 +299,8 @@ export default function MapView({
         maxZoom: 16,
       });
       map.current = instance;
+
+      instance.on('error', reportTileError);
 
       if (interactive) {
         instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');

@@ -37,8 +37,8 @@ export default function Header() {
           </button>
         </nav>
         <nav className="header-nav-mobile" aria-label="Primary">
-          <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
-            <Icon name="search" size={14} /> Search
+          <NavLink to="/map" className={({ isActive }) => `map-nav-link${isActive ? ' active' : ''}`}>
+            <Icon name="map" size={14} /> Map <span className="new-badge">New!</span>
           </NavLink>
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name="grid" size={14} /> Coverage

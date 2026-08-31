@@ -558,6 +558,9 @@ async def basemap(request: Request):
             status_code=416, headers={"Content-Range": f"bytes */{exc.size}"}
         )
     except Exception as exc:
+        logger.warning(
+            "basemap read failed for range %r", request.headers.get("range"), exc_info=True
+        )
         raise HTTPException(status_code=502, detail="Basemap backend unavailable") from exc
 
     headers = {
