@@ -15,6 +15,12 @@ import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const PAGE_SIZE = 24;
 
+// Image and describe results are unpaged, so anything past this is unreachable;
+// ask for the API maximum rather than a text page's worth. Matching a label at
+// rank ~40 out of the whole registry is a normal outcome for a loose artwork
+// description, and at 24 those hits were simply cut off.
+const VECTOR_LIMIT = 48;
+
 // URL params that are search filters (as opposed to view/paging state).
 const FILTER_KEYS = [
   'q',
@@ -388,13 +394,13 @@ export default function ResultsPage() {
   });
 
   const imageState = useAsync(
-    (signal) => api.searchByImage({ file: pending.file, commodity: criteria.commodity, limit: PAGE_SIZE }, signal),
+    (signal) => api.searchByImage({ file: pending.file, commodity: criteria.commodity, limit: VECTOR_LIMIT }, signal),
     [searchParams.toString()],
     { skip: !isImg || !pending || !pending.file }
   );
 
   const describeState = useAsync(
-    (signal) => api.searchByDescription({ q: criteria.q, commodity: criteria.commodity, limit: PAGE_SIZE }, signal),
+    (signal) => api.searchByDescription({ q: criteria.q, commodity: criteria.commodity, limit: VECTOR_LIMIT }, signal),
     [searchParams.toString()],
     { skip: !isDescribe, cacheKey: `describe:${searchParams.toString()}` }
   );
