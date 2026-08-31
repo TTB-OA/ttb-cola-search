@@ -119,6 +119,32 @@ function LocationPanel({ locations, status, origin }) {
   );
 }
 
+function permitAddress(p) {
+  return (
+    [p.address, p.city, [p.state, p.postalCode].filter(Boolean).join(' '), p.country]
+      .filter(Boolean)
+      .join(', ') || ''
+  );
+}
+
+// Punctuation and spacing differ between the free-text mailing address and the
+// permit's structured parts, so comparison happens on letters and digits only.
+function addressKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function addressOnPermit(mailing, permits) {
+  const key = addressKey(mailing);
+  if (!key) return false;
+  return (permits || []).some((p) => {
+    const other = addressKey(permitAddress(p));
+    return other && (other.includes(key) || key.includes(other));
+  });
+}
+
 function isBlank(value) {
   return value == null || value === false || (typeof value === 'string' && !value.trim());
 }
@@ -645,7 +671,11 @@ export default function DetailPage() {
                 title="Application & permit"
                 fields={[
                   { label: 'Applicant / business', value: rec.applicant },
-                  { label: 'Mailing address', value: rec.mailingAddress },
+                  // Dropped when the permit list below already shows the same address.
+                  {
+                    label: 'Mailing address',
+                    value: addressOnPermit(rec.mailingAddress, rec.permits) ? null : rec.mailingAddress,
+                  },
                   { label: 'Application type', value: rec.applicationType },
                   // Redundant with the permit list below, which carries the same
                   // number plus the name and address.
@@ -687,9 +717,7 @@ export default function DetailPage() {
                         </div>
                         <div style={{ fontWeight: 600 }}>{p.name}</div>
                         <div className="muted" style={{ fontSize: 13 }}>
-                          {[p.address, p.city, [p.state, p.postalCode].filter(Boolean).join(' '), p.country]
-                            .filter(Boolean)
-                            .join(', ') || '—'}
+                          {permitAddress(p) || '—'}
                         </div>
                       </div>
                     ))}
