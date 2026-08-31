@@ -222,10 +222,11 @@ def _area_rows(query):
 
 
 def test_an_area_summary_labels_its_codes(client, monkeypatch):
-    stub(monkeypatch, _area_rows, one={"n": 5})
+    stub(monkeypatch, _area_rows, one={"n": 5, "permit_count": 2})
     body = client.get(AREA, params=VIEWPORT).json()
 
     assert body["total"] == 5
+    assert body["permitCount"] == 2
     assert body["commodity"][0] == {"value": "Wine", "count": 5}
     assert body["source"][0]["value"] == "Domestic"
     assert body["items"][0]["id"] == "26J087"

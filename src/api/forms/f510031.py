@@ -823,7 +823,6 @@ def _draw_application(
         _date(detail.expiration_date),
         value_size=8.0,
     )
-    return qual_overflow
 
 
 def _draw_affix_page(
@@ -942,7 +941,7 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
     _draw_footer(c, detail, 1, total)
 
     page_number = 2
-    for page_images in image_pages[1:]:
+    for page_images in pages[1:]:
         c.showPage()
         height = _affix_height(len(page_images), CONT_H)
         _draw_affix_page(
@@ -955,7 +954,8 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
             height,
             f"{AFFIX_TITLE} \u2014 continued",
         )
-        _draw_footer(c, detail, number, total)
+        _draw_footer(c, detail, page_number, total)
+        page_number += 1
 
     addenda = [
         (title if i == 0 else f"{title} \u2014 continued", rows)

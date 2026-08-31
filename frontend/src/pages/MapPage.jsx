@@ -183,6 +183,12 @@ function groupByPermit(items) {
     }
     group.items.push(r);
   }
+  for (const group of groups) {
+    const brands = new Set(group.items.map((item) => item.brand?.trim()).filter(Boolean));
+    group.sharedBrand = brands.size === 1 && group.items.every((item) => item.brand?.trim())
+      ? [...brands][0]
+      : null;
+  }
   return groups;
 }
 
@@ -310,7 +316,7 @@ function AreaPanel({ state, onClose, isMobile }) {
         <>
           <div className="map-total">
             <strong>{data.totalIsCapped ? `${num(data.total)}+` : num(data.total)}</strong>
-            <span className="muted"> approvals here</span>
+            <span className="muted"> approvals here, {num(data.permitCount)} permits</span>
           </div>
 
           <Breakdown title="Commodity" buckets={data.commodity} total={data.total} />
@@ -321,15 +327,33 @@ function AreaPanel({ state, onClose, isMobile }) {
             {groupByPermit(data.items).map((g) => (
               <div className="map-permit" key={g.key}>
                 <div className="map-permit-head">
-                  {g.code ? <span className="mono map-permit-code">{g.code}</span> : null}
+                  {g.code ? (
+                    <Link
+                      className="mono map-permit-code"
+                      to={`/results?permit=${encodeURIComponent(g.code)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {g.code}
+                    </Link>
+                  ) : null}
                   <span className="map-permit-name">{g.name || (g.code ? '' : 'Permit not recorded')}</span>
                   <span className="map-permit-count mono">{num(g.items.length)}</span>
                 </div>
+                {g.sharedBrand ? <div className="map-permit-brand" title={g.sharedBrand}>{g.sharedBrand}</div> : null}
                 {g.items.map((r) => (
-                  <Link className="map-item" key={r.id} to={`/cola/${encodeURIComponent(r.id)}`}>
+                  <Link
+                    className="map-item"
+                    key={r.id}
+                    to={`/cola/${encodeURIComponent(r.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
                     <div className="map-item-main">
                       {/* Ellipsised to keep the row on one line, so the full name needs a tooltip. */}
-                      <div className="map-item-brand" title={r.brand || r.ttbId}>{r.brand || r.ttbId}</div>
+                      <div className="map-item-brand" title={g.sharedBrand ? (r.fanciful || r.ttbId) : (r.brand || r.ttbId)}>
+                        {g.sharedBrand ? (r.fanciful || r.ttbId) : (r.brand || r.ttbId)}
+                      </div>
                       {r.approvalDate ? <div className="map-item-meta muted">{fmtDate(r.approvalDate)}</div> : null}
                     </div>
                     {r.status && r.status !== 'Approved' ? <StatusBadge status={r.status} /> : null}

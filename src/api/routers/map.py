@@ -471,7 +471,10 @@ async def map_area(
       FROM m JOIN {SEARCH_TABLE} s ON s.cola_id = m.cola_id
      ORDER BY s.completed_date DESC NULLS LAST, s.cola_id DESC
     """
-    count_sql = f"SELECT count(*) AS n FROM (SELECT 1 FROM {MAP_TABLE} {where} LIMIT %s) t"
+    count_sql = f"""--sql
+    SELECT count(*) AS n, count(DISTINCT permit_id) AS permit_count
+        FROM (SELECT permit_id FROM {MAP_TABLE} {where} LIMIT %s) t
+    """
 
     try:
         summary_rows, item_rows, total_row = await asyncio.gather(
@@ -525,6 +528,7 @@ async def map_area(
     return MapAreaResponse(
         total=cap if capped else raw_total,
         total_is_capped=capped,
+        permit_count=int(total_row.get("permit_count") or 0) if total_row else 0,
         commodity=buckets("commodity", commodity_label),
         source=source_groups(),
         class_type=buckets("classType"),
