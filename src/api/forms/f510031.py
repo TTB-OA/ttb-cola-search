@@ -130,6 +130,27 @@ def _reset_style(c: canvas.Canvas) -> None:
 # ---------------------------------------------------------------------------
 # Drawing primitives
 # ---------------------------------------------------------------------------
+def _draw_box_caption(
+    c: canvas.Canvas, x: float, y: float, w: float, h: float, caption: str
+) -> float:
+    """Border plus wrapped caption for a form item; returns the y to draw values at."""
+    c.setLineWidth(0.6)
+    c.rect(x, y, w, h)
+    inner = w - 6
+    c.setFont(BODY, CAPTION_SIZE)
+    cursor = y + h - CAPTION_SIZE - 2
+    for line in _wrap(caption, BODY, CAPTION_SIZE, inner):
+        c.drawString(x + 3, cursor, line)
+        cursor -= CAPTION_SIZE + 0.8
+    return cursor - 2
+
+
+def _value_area_height(h: float, caption: str, inner: float) -> float:
+    """Usable value height for a `_draw_box_caption` box of height `h`."""
+    lines = len(_wrap(caption, BODY, CAPTION_SIZE, inner))
+    return h - CAPTION_SIZE - 6 - lines * (CAPTION_SIZE + 0.8)
+
+
 def _field(
     c: canvas.Canvas,
     x: float,
@@ -141,28 +162,92 @@ def _field(
     *,
     value_size: float = VALUE_SIZE,
     value_font: str = MONO_BOLD,
+    autosize: bool = False,
+    min_value_size: float = 5.0,
 ) -> None:
-    """A bordered form item: small caption at the top, wrapped value beneath."""
-    c.setLineWidth(0.6)
-    c.rect(x, y, w, h)
+    """A bordered form item: small caption at the top, wrapped value beneath.
 
-    inner = w - 6
-    c.setFont(BODY, CAPTION_SIZE)
-    cursor = y + h - CAPTION_SIZE - 2
-    for line in _wrap(caption, BODY, CAPTION_SIZE, inner):
-        c.drawString(x + 3, cursor, line)
-        cursor -= CAPTION_SIZE + 0.8
-
+    With `autosize`, the value font shrinks (down to `min_value_size`) so long
+    content wraps to fit the box's remaining space instead of being cut off.
+    """
+    cursor = _draw_box_caption(c, x, y, w, h, caption)
     if not value:
         return
-    cursor -= 2
-    _value_style(c, value_font, value_size)
-    for line in _wrap(value, value_font, value_size, inner):
+    inner = w - 6
+    size = value_size
+    lines = _wrap(value, value_font, size, inner)
+    if autosize:
+        avail_h = cursor - (y + 2)
+        while size > min_value_size and len(lines) * (size + 1.5) > avail_h:
+            size -= 0.5
+            lines = _wrap(value, value_font, size, inner)
+    _value_style(c, value_font, size)
+    for line in lines:
         if cursor < y + 2:
             break
         c.drawString(x + 4, cursor, line)
-        cursor -= value_size + 1.5
+        cursor -= size + 1.5
     _reset_style(c)
+
+
+def _draw_paragraphs(
+    c: canvas.Canvas,
+    x: float,
+    cursor: float,
+    width: float,
+    items: list[str],
+    *,
+    font: str = MONO_BOLD,
+    size: float = VALUE_SIZE,
+    gap: float = 3.0,
+) -> None:
+    """Draw pre-fitted paragraphs, each on its own wrapped lines, top to bottom."""
+    _value_style(c, font, size)
+    for idx, item in enumerate(items):
+        if idx:
+            cursor -= gap
+        for line in _wrap(item, font, size, width):
+            c.drawString(x, cursor, line)
+            cursor -= size + 1.5
+    _reset_style(c)
+
+
+def _split_items_for_box(
+    items: list[str],
+    font: str,
+    size: float,
+    avail_h: float,
+    width: float,
+    gap: float = 3.0,
+) -> tuple[list[str], list[str]]:
+    """Which of `items` fit within `avail_h`, without breaking one mid-sentence."""
+    used = 0.0
+    for i, item in enumerate(items):
+        needed = len(_wrap(item, font, size, width)) * (size + 1.5) + (gap if i else 0)
+        if used + needed > avail_h:
+            return items[:i], items[i:]
+        used += needed
+    return items, []
+
+
+def _paginate_items(
+    items: list[str],
+    font: str,
+    size: float,
+    avail_h: float,
+    width: float,
+    gap: float = 3.0,
+) -> list[list[str]]:
+    """Split `items` across as many boxes of `avail_h` as needed."""
+    pages: list[list[str]] = []
+    rest = items
+    while rest:
+        page, rest = _split_items_for_box(rest, font, size, avail_h, width, gap)
+        if not page:
+            # A single item too long for an empty box still needs to go somewhere.
+            page, rest = rest[:1], rest[1:]
+        pages.append(page)
+    return pages
 
 
 def _band(c: canvas.Canvas, x: float, y: float, w: float, h: float, text: str) -> None:
@@ -355,6 +440,21 @@ def _draw_affix_grid(
 # ---------------------------------------------------------------------------
 # Value derivation
 # ---------------------------------------------------------------------------
+def _permit_numbers(detail: ColaDetail) -> str:
+    """All distinct permit numbers, primary permit(s) first, for item 2."""
+    ordered = sorted(detail.permits, key=lambda p: not p.primary)
+    seen: list[str] = []
+    for permit in ordered:
+        permit_id = _clean(permit.permit_id)
+        if permit_id and permit_id not in seen:
+            seen.append(permit_id)
+    if not seen:
+        fallback = _clean(detail.permit_id) or _clean(detail.permit)
+        if fallback:
+            seen.append(fallback)
+    return ", ".join(seen)
+
+
 def _applicant_block(detail: ColaDetail) -> str:
     primary = next((p for p in detail.permits if p.primary), None)
     if primary is None and detail.permits:
@@ -376,12 +476,16 @@ def _applicant_block(detail: ColaDetail) -> str:
     )
 
 
-def _qualifications(detail: ColaDetail) -> str:
+def _qualification_items(detail: ColaDetail) -> list[str]:
+    """Each qualification as its own paragraph, so overflow can split between them."""
     if detail.qualification_items:
-        return "\n".join(
-            _joined(q.text, q.comment, sep=" — ") for q in detail.qualification_items
-        )
-    return _clean(detail.qualifications)
+        return [
+            joined
+            for q in detail.qualification_items
+            if (joined := _joined(q.text, q.comment, sep=" — "))
+        ]
+    text = _clean(detail.qualifications)
+    return [text] if text else []
 
 
 def _application_flags(detail: ColaDetail) -> dict[str, bool]:
@@ -408,8 +512,12 @@ def _draw_footer(c: canvas.Canvas, detail: ColaDetail, page: int, total: int) ->
     c.setFillGray(0)
 
 
-def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
-    """Page 1: the form itself, everything above the affix strip."""
+def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> list[str]:
+    """Page 1: the form itself, everything above the affix strip.
+
+    Returns any qualifications that did not fit in the QUALIFICATIONS box, to
+    be placed on a continuation page.
+    """
     c.setFont(BODY, 6.5)
     c.drawRightString(RIGHT, 996, "OMB No. 1513-0020")
 
@@ -459,7 +567,8 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         left_w,
         26,
         "2. PLANT REGISTRY/BASIC PERMIT/BREWER'S NO. (Required)",
-        _clean(detail.permit_id) or _clean(detail.permit),
+        _permit_numbers(detail),
+        autosize=True,
     )
 
     _field(c, LEFT, 836, left_w, 30, "3. SOURCE OF PRODUCT (Required)")
@@ -634,7 +743,16 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
     )
 
     _band(c, LEFT, 412, RIGHT - LEFT, 13, "FOR TTB USE ONLY")
-    _field(c, LEFT, 336, 458, 74, "QUALIFICATIONS", _qualifications(detail), value_size=7.5)
+    qual_x, qual_w, qual_h = LEFT, 458, 74
+    qual_size = 7.5
+    qual_inner = qual_w - 6
+    qual_items = _qualification_items(detail)
+    qual_avail_h = _value_area_height(qual_h, "QUALIFICATIONS", qual_inner)
+    page_items, qual_overflow = _split_items_for_box(
+        qual_items, MONO_BOLD, qual_size, qual_avail_h, qual_inner
+    )
+    qual_cursor = _draw_box_caption(c, qual_x, 336, qual_w, qual_h, "QUALIFICATIONS")
+    _draw_paragraphs(c, qual_x + 4, qual_cursor, qual_inner, page_items, size=qual_size)
     _field(
         c,
         LEFT + 458,
@@ -645,6 +763,7 @@ def _draw_application(c: canvas.Canvas, detail: ColaDetail) -> None:
         _date(detail.expiration_date),
         value_size=8.0,
     )
+    return qual_overflow
 
 
 def _draw_affix_page(
@@ -686,7 +805,8 @@ def _draw_affix_page(
 
 
 def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
-    """Render the form for ``detail``, flowing ``images`` through the affix area."""
+    """Render the form for ``detail``, flowing ``images`` and overflow qualifications
+    through their respective continuation pages."""
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
     c.setTitle(f"TTB F 5100.31 - {_clean(detail.ttb_id)}")
@@ -699,14 +819,23 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
 
     first_capacity = _grid_rows(AFFIX_H - 17) * AFFIX_COLS
     page_capacity = _grid_rows(CONT_H - 17) * AFFIX_COLS
-    pages = _layout_images(images, first_capacity, page_capacity)
-    total = len(pages)
+    image_pages = _layout_images(images, first_capacity, page_capacity)
 
-    _draw_application(c, detail)
-    _draw_affix_page(c, pages[0], AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H, AFFIX_TITLE)
+    qual_overflow = _draw_application(c, detail)
+    qual_cont_size = 8.0
+    qual_cont_inner = CONT_W - 8
+    # Top offset mirrors the title bar drawn below; bottom keeps a small margin.
+    qual_cont_avail_h = CONT_H - 22 - 4
+    qual_pages = _paginate_items(
+        qual_overflow, MONO_BOLD, qual_cont_size, qual_cont_avail_h, qual_cont_inner
+    )
+    total = len(image_pages) + len(qual_pages)
+
+    _draw_affix_page(c, image_pages[0], AFFIX_X, AFFIX_Y, AFFIX_W, AFFIX_H, AFFIX_TITLE)
     _draw_footer(c, detail, 1, total)
 
-    for number, page_images in enumerate(pages[1:], start=2):
+    page_number = 2
+    for page_images in image_pages[1:]:
         c.showPage()
         height = _affix_height(len(page_images), CONT_H)
         _draw_affix_page(
@@ -719,7 +848,20 @@ def render_f510031(detail: ColaDetail, images: list[LabelImage]) -> bytes:
             height,
             f"{AFFIX_TITLE} \u2014 continued",
         )
-        _draw_footer(c, detail, number, total)
+        _draw_footer(c, detail, page_number, total)
+        page_number += 1
+
+    for items in qual_pages:
+        c.showPage()
+        c.setLineWidth(0.8)
+        c.rect(CONT_X, CONT_Y, CONT_W, CONT_H)
+        c.setFont(BOLD, 7)
+        c.drawString(CONT_X + 4, CONT_Y + CONT_H - 9, "QUALIFICATIONS \u2014 continued")
+        _draw_paragraphs(
+            c, CONT_X + 4, CONT_Y + CONT_H - 22, qual_cont_inner, items, size=qual_cont_size
+        )
+        _draw_footer(c, detail, page_number, total)
+        page_number += 1
 
     c.showPage()
     c.save()
