@@ -282,6 +282,7 @@ export default function MapView({
 
   useEffect(() => {
     let cancelled = false;
+    let observer = null;
     registerProtocol();
 
     basemapAvailable().then((ok) => {
@@ -351,6 +352,20 @@ export default function MapView({
         timer = setTimeout(() => report(instance), 250);
       });
 
+      // MapLibre only watches the window, but this container is resized by
+      // layout alone — the area panel takes 360px off it, and on mobile it is a
+      // flex child. Left unobserved the canvas keeps its old size, so getBounds
+      // reports a smaller viewport than is on screen and the uncovered band is
+      // queried for no data at all.
+      if (typeof ResizeObserver !== 'undefined') {
+        observer = new ResizeObserver(() => {
+          instance.resize();
+          clearTimeout(timer);
+          timer = setTimeout(() => report(instance), 250);
+        });
+        observer.observe(holder.current);
+      }
+
       instance.on('click', (e) => {
         if (!handlers.current.onSelectArea) return;
         // Box a click into a small area rather than a point: the underlying data
@@ -381,6 +396,7 @@ export default function MapView({
 
     return () => {
       cancelled = true;
+      observer?.disconnect();
       markers.current.forEach((m) => m.marker.remove());
       markers.current = [];
       map.current?.remove();
