@@ -440,19 +440,15 @@ export default function MapView({
       return;
     }
     setReady(false);
-    instance.setStyle(basemapStyle(theme));
-    // addSource throws while the incoming style is still parsing, and styledata
-    // fires more than once during a swap, so the first usable one wins.
-    const apply = () => {
+    // diff:false forces a full style load, which always ends in a styledata.
+    // The default diff path can apply its changes without one, and a swap that
+    // never gets the event leaves `ready` false and blocks every later swap.
+    instance.setStyle(basemapStyle(theme), { diff: false });
+    instance.once('styledata', () => {
       if (map.current !== instance) return;
-      if (!instance.isStyleLoaded()) {
-        instance.once('styledata', apply);
-        return;
-      }
       addOverlays(instance, theme);
       setReady(true);
-    };
-    instance.once('styledata', apply);
+    });
   }, [theme, ready]);
 
   // Heat bins
