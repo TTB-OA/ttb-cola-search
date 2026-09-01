@@ -32,6 +32,13 @@
 
   --white:          #ffffff;
 
+  /* Fixed polarity: these do not flip with the colour mode. --on-accent rides
+     on an accent fill, --on-warm on gold, --paper is the mat behind label
+     artwork, which is photographed on white in either mode. */
+  --on-accent:      #ffffff;
+  --on-warm:        #1b1b1b;
+  --paper:          #ffffff;
+
   /* themable accent (Tweaks) */
   --accent:         var(--blue);
   --accent-dark:    var(--blue-dark);
@@ -50,6 +57,49 @@
   --shadow-3:   0 8px 28px rgba(27,27,27,.16);
 
   --maxw: 1320px;
+}
+
+/* ============================================================
+   Dark mode
+   The tokens above are used semantically throughout — --white is the raised
+   surface, --gray-2 the page, --base-lighter a border, --ink the text — so the
+   mode is mostly a palette swap. The rules further down handle the places that
+   hard-coded a colour or assumed a light polarity. The "dark" ramp steps
+   invert: a hover state has to get lighter, not darker.
+   ============================================================ */
+[data-theme="dark"] {
+  --blue:           #6ea8fe;
+  --blue-dark:      #8fbcff;
+  --blue-darker:    #b6d4ff;
+  --blue-light:     #23405f;
+  --blue-lighter:   #18293c;
+  --cyan:           #4fd3ea;
+
+  --ink:            #e7ebf0;
+  --base-darker:    #c6cdd8;
+  --base-dark:      #98a2b1;
+  --base:           #7f8a99;
+  --base-light:     #4c5666;
+  --base-lighter:   #2b323d;
+  --base-lightest:  #222833;
+  --gray-1:         #161a21;
+  --gray-2:         #11151b;
+
+  --white:          #1a1f27;
+
+  --red:            #ff8078;
+  --red-dark:       #ff9d96;
+  --green:          #56d364;
+  --green-dark:     #7ee787;
+  --gold:           #d7a13a;
+  --gold-dark:      #e0b040;
+  --mint:           #45c6dc;
+
+  --on-accent:      #0b1220;
+
+  --shadow-1: 0 1px 2px rgba(0,0,0,.55);
+  --shadow-2: 0 2px 8px rgba(0,0,0,.60);
+  --shadow-3: 0 8px 28px rgba(0,0,0,.66);
 }
 
 * { box-sizing: border-box; }
@@ -146,7 +196,7 @@ h1,h2,h3,h4,h5 { margin: 0; font-weight: 700; line-height: 1.2; }
 .header-nav a.active { color: var(--accent); background: var(--accent-lighter); }
 .header-nav .map-nav-link { display: inline-flex; align-items: center; gap: 6px; }
 .new-badge {
-  padding: 2px 5px; border-radius: 3px; background: var(--accent); color: var(--white);
+  padding: 2px 5px; border-radius: 3px; background: var(--accent); color: var(--on-accent);
   font-size: 10px; font-weight: 800; line-height: 1; letter-spacing: 0;
 }
 .nav-tour {
@@ -155,6 +205,14 @@ h1,h2,h3,h4,h5 { margin: 0; font-weight: 700; line-height: 1.2; }
   border-radius: var(--radius); white-space: nowrap;
 }
 .nav-tour:hover { background: var(--accent-lighter); }
+
+.nav-theme {
+  display: inline-grid; place-items: center; width: 36px; height: 36px; margin-left: 4px;
+  flex: 0 0 auto; background: none; border: 1px solid var(--base-lighter); border-radius: 50%;
+  color: var(--base-darker); cursor: pointer;
+}
+.nav-theme:hover { background: var(--gray-2); color: var(--accent); border-color: var(--base-light); }
+.nav-theme:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Condensed nav shown only on narrow viewports, below the brand. */
 .header-nav-mobile { display: none; }
@@ -173,7 +231,7 @@ h1,h2,h3,h4,h5 { margin: 0; font-weight: 700; line-height: 1.2; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-weight: 700; font-size: 16px; line-height: 1;
   padding: 13px 22px; border-radius: var(--radius); border: 0; cursor: pointer;
-  background: var(--accent); color: #fff; transition: background .12s ease;
+  background: var(--accent); color: var(--on-accent); transition: background .12s ease;
   text-decoration: none;
 }
 .btn:hover { background: var(--accent-dark); }
@@ -344,7 +402,7 @@ textarea.input { height: auto; }
 .label-thumb { container-type: inline-size; }
 
 /* Real label photo variant (falls back to procedural placeholder on error) */
-.label-thumb.label-photo { background: var(--white); padding: 6px; }
+.label-thumb.label-photo { background: var(--paper); padding: 6px; }
 .label-thumb.label-photo img {
   width: 100%; height: 100%; object-fit: contain; display: block;
 }
@@ -377,5 +435,42 @@ textarea.input { height: auto; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Dark mode — rules the palette swap alone cannot reach
+   ============================================================ */
+
+/* Gold stays gold in both modes, so anything sitting on it stays dark. */
+[data-theme="dark"] .prototype-banner { color: var(--on-warm); }
+
+/* The caret is baked into a data URI, so it needs its own fill. */
+[data-theme="dark"] .select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%2398a2b1' d='M6 8 0 0h12z'/%3E%3C/svg%3E");
+}
+
+[data-theme="dark"] .chip button:hover { background: rgba(255,255,255,.12); }
+
+[data-theme="dark"] .badge.approved { background: #16311d; }
+[data-theme="dark"] .badge.pending  { background: #34290d; color: var(--gold-dark); }
+[data-theme="dark"] .badge.revoked  { background: #391715; }
+
+[data-theme="dark"] .tag.wine    { background:#39202f; color:#eeb0cb; }
+[data-theme="dark"] .tag.beer    { background:#322a13; color:#e4c777; }
+[data-theme="dark"] .tag.spirits { background:#17293a; color:#92c5e9; }
+[data-theme="dark"] .tag.cider   { background:#1d2e16; color:#a6d489; }
+
+/* The footer was already the darkest surface in light mode; --blue-darker
+   inverts to a pale blue, so the shade is pinned here instead. */
+[data-theme="dark"] .site-footer {
+  background: #0c1017; color: var(--base-darker); border-top: 1px solid var(--base-lighter);
+}
+[data-theme="dark"] .site-footer a { color: var(--base-darker); }
+[data-theme="dark"] .site-footer .foot-note { color: var(--base); }
+[data-theme="dark"] .site-footer .seal { background: var(--base-lighter); color: var(--ink); }
+
+[data-theme="dark"] .skel {
+  background: linear-gradient(90deg,#1e242d 25%,#2b323d 50%,#1e242d 75%);
+  background-size: 200% 100%;
+}
 
 ::selection { background: var(--accent-light); }

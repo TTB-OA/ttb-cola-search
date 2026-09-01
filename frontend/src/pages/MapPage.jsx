@@ -522,7 +522,7 @@ export default function MapPage() {
     <div className="map-page">
       <div className="map-toolbar">
         <div className="wrap">
-          <div className="map-toolbar-top">
+          <div className="map-toolbar-top" data-tour="map-controls">
             <Segmented options={MODES} value={mode} onChange={setMode} label="Map mode" short={isMobile} />
             <Segmented options={ROLES} value={role} onChange={setRole} label="Location plotted" short={isMobile} />
             <button

@@ -20,7 +20,7 @@
   font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
 }
 .qchip:hover { border-color: var(--accent); color: var(--accent); }
-.qchip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.qchip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .adv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 20px; }
 .adv-grid .field:nth-child(1), .adv-grid .field:nth-child(2), .adv-grid .field:nth-child(3) { grid-column: span 2; }
@@ -184,7 +184,7 @@ section > .d-notice { margin-bottom: 0; }
 /* ---------- bounding-box highlight + OCR list ---------- */
 .bbox { position: absolute; border: 2px solid var(--gold-dark); background: rgba(255,190,46,.18); border-radius: 2px; box-shadow: 0 0 0 2000px rgba(27,27,27,.18); pointer-events: none; animation: bboxIn .25s ease; }
 @keyframes bboxIn { from { opacity: 0; transform: scale(1.06); } }
-.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: #1b1b1b; font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
+.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: var(--on-warm); font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
 .lv-stage { overflow: visible; }
 .lv-main { overflow: hidden; position: relative; }
 .ocr-matchnote { display: flex; align-items: flex-start; gap: 7px; background: #fef5e7; border-left: 3px solid var(--gold-dark); color: #6b4a00; font-size: 12.5px; font-weight: 600; padding: 8px 10px; border-radius: var(--radius); margin: 8px 0 4px; }
@@ -340,7 +340,7 @@ section > .d-notice { margin-bottom: 0; }
 .map-toolbar-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .map-filters { margin-top: 12px; }
 .map-filters-toggle, .map-sheet-head, .map-sheet-grab, .map-backdrop { display: none; }
-.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; }
+.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; }
 .map-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .map-filter { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
 .map-filter-wide { min-width: 220px; }
@@ -394,23 +394,23 @@ section > .d-notice { margin-bottom: 0; }
 .map-item .tag { font-size: 9.5px; padding: 2px 5px; letter-spacing: .02em; }
 
 /* Markers are plain DOM, so they carry the label thumbnail directly. */
-.map-pin { width: 34px; height: 42px; padding: 0; cursor: pointer; background: var(--white); border: 2px solid var(--white); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; display: block; transition: transform .12s; }
+.map-pin { width: 34px; height: 42px; padding: 0; cursor: pointer; background: var(--paper); border: 2px solid var(--paper); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; display: block; transition: transform .12s; }
 .map-pin:hover { transform: scale(1.18); z-index: 2; }
 .map-pin img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .map-pin.is-blank { background: var(--accent-lighter); border-color: var(--accent-light); }
 .map-pin.is-blank img { display: none; }
 
 /* Numbered locator dots, keyed to the address cards under the mini-map. */
-.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--white); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
+.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--on-accent); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
 .map-dot.is-primary { background: var(--accent); }
-.map-dot.is-origin { background: var(--gold-dark); color: var(--ink); }
+.map-dot.is-origin { background: var(--gold-dark); color: var(--on-warm); }
 .map-dot.is-associated { background: var(--mint); }
 /* No transform here: maplibre positions the marker with an inline transform. */
 .map-dot { transition: box-shadow .12s ease; }
 .map-dot.is-raised { box-shadow: 0 0 0 4px rgba(26, 68, 128, .45), var(--shadow-3); }
-.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; vertical-align: 1px; }
 .d-pin-no.is-primary { background: var(--accent); }
-.d-pin-no.is-origin { background: var(--gold-dark); color: var(--ink); }
+.d-pin-no.is-origin { background: var(--gold-dark); color: var(--on-warm); }
 .d-pin-no.is-associated { background: var(--mint); }
 
 /* The mini-map on a COLA record: a locator, not an explorer. */
@@ -502,6 +502,37 @@ section > .d-notice { margin-bottom: 0; }
   .l-thumb .label-thumb.label-photo.fits img { object-fit: contain; }
   .l-side { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 14px; text-align: left; }
 }
+
+/* ============================================================
+   Dark mode — rules the palette swap alone cannot reach
+   ============================================================ */
+[data-theme="dark"] .hero {
+  background:
+    radial-gradient(120% 90% at 85% -10%, var(--accent-lighter) 0%, transparent 55%),
+    linear-gradient(180deg, var(--gray-1) 0%, var(--gray-2) 100%);
+}
+
+/* Warm and cool wash panels, restated as tints of the dark surface. */
+[data-theme="dark"] .d-permit.is-origin { background: #2d2409; }
+[data-theme="dark"] .d-permit.is-associated { background: #102a31; }
+[data-theme="dark"] .d-notice.warn { background: #2d2409; color: #f0cf8a; }
+[data-theme="dark"] .d-notice.warn b { color: #f0cf8a; }
+[data-theme="dark"] .ocr-matchnote { background: #2d2409; color: #f0cf8a; }
+[data-theme="dark"] .ocr-chip.on { background: #2d2409; }
+
+/* The scrim around a bounding box dims the page it sits on, not a white one. */
+[data-theme="dark"] .bbox { box-shadow: 0 0 0 2000px rgba(0,0,0,.45); }
+
+/* MapLibre ships its own light chrome, which no token of ours reaches. */
+[data-theme="dark"] .maplibregl-ctrl-group {
+  background: var(--white);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.4);
+}
+[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: var(--base-lighter); }
+[data-theme="dark"] .maplibregl-ctrl-group button:hover { background: var(--base-lightest); }
+[data-theme="dark"] .maplibregl-ctrl-icon { filter: invert(1) brightness(1.35); }
+[data-theme="dark"] .maplibregl-ctrl-attrib { background: rgba(17,21,27,.85); color: var(--base-dark); }
+[data-theme="dark"] .maplibregl-ctrl-attrib a { color: var(--base-darker); }
 
 /* print */
 @media print {

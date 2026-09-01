@@ -12,18 +12,21 @@ import { Protocol } from 'pmtiles';
 import layers from 'protomaps-themes-base';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
+import { useTheme } from '../lib/theme.jsx';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const SOURCE = 'protomaps';
-// Desaturated basemap so the heat ramp is the only colour on the map.
-const BASEMAP_THEME = 'white';
+// Desaturated basemaps so the heat ramp is the only colour on the map.
+const BASEMAP_THEME = { light: 'white', dark: 'black' };
 const HEAT_SOURCE = 'cola-heat';
 const HEAT_LAYER = 'cola-heat-layer';
 const AREA_SOURCE = 'cola-area';
 const AREA_FILL = 'cola-area-fill';
 const AREA_LINE = 'cola-area-line';
-// --blue-dark; MapLibre paint cannot read a CSS custom property.
-const AREA_COLOR = '#1a4480';
+// --blue-dark, and a tint of it that survives a black basemap; MapLibre paint
+// cannot read a CSS custom property.
+const AREA_COLOR = { light: '#1a4480', dark: '#8ab4f8' };
+const BLANK_BG = { light: '#eef1f5', dark: '#11151b' };
 const ATTRIBUTION = '<a href="https://openstreetmap.org">OpenStreetMap</a> via <a href="https://protomaps.com">Protomaps</a>';
 
 // maplibre resolves pmtiles:// URLs through a global protocol handler, so this
@@ -47,13 +50,15 @@ function basemapAvailable() {
   return basemapProbe;
 }
 
-const BLANK_STYLE = {
-  version: 8,
-  sources: {},
-  layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#eef1f5' } }],
-};
+function blankStyle(theme) {
+  return {
+    version: 8,
+    sources: {},
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': BLANK_BG[theme] } }],
+  };
+}
 
-// A tile that fails to load leaves a hole MapLibre never reports and, on a white
+// A tile that fails to load leaves a hole MapLibre never reports and, on a flat
 // basemap, nothing distinguishes it from empty land. Failures are batched and
 // reported so the rate is visible in telemetry instead of by eye.
 const TILE_ERROR_FLUSH_MS = 4000;
@@ -83,7 +88,7 @@ function reportTileError(event) {
   }, TILE_ERROR_FLUSH_MS);
 }
 
-function basemapStyle() {
+function basemapStyle(theme) {
   return {
     version: 8,
     glyphs: `${api.basemapUrl().replace(/\/basemap$/, '')}/glyphs/{fontstack}/{range}.pbf`,
@@ -94,7 +99,7 @@ function basemapStyle() {
         attribution: ATTRIBUTION,
       },
     },
-    layers: layers(SOURCE, BASEMAP_THEME, { lang: 'en' }),
+    layers: layers(SOURCE, BASEMAP_THEME[theme], { lang: 'en' }),
   };
 }
 
@@ -255,6 +260,30 @@ function markerElement(point, onSelect) {
   return el;
 }
 
+// Everything drawn on top of the basemap. Swapping the basemap style discards
+// the lot, so adding them is a step of its own rather than part of the first
+// load. The empty data here is filled in by the effects that watch the props.
+function addOverlays(instance, theme) {
+  instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
+  instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
+
+  instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
+  // Added after the heat layer so the box reads on top of the density it
+  // is selecting; the fill is barely there so it does not tint the counts.
+  instance.addLayer({
+    id: AREA_FILL,
+    type: 'fill',
+    source: AREA_SOURCE,
+    paint: { 'fill-color': AREA_COLOR[theme], 'fill-opacity': 0.08 },
+  });
+  instance.addLayer({
+    id: AREA_LINE,
+    type: 'line',
+    source: AREA_SOURCE,
+    paint: { 'line-color': AREA_COLOR[theme], 'line-width': 2, 'line-dasharray': [3, 2] },
+  });
+}
+
 export default function MapView({
   mode = 'heat',
   bins,
@@ -273,6 +302,14 @@ export default function MapView({
   const markers = useRef([]);
   const handlers = useRef({});
   const [ready, setReady] = useState(false);
+  const { theme } = useTheme();
+  // The init effect must not rebuild the map when the colour mode changes, so
+  // it reads the mode off a ref; `styled` records which one the live style was
+  // built from.
+  const themeRef = useRef(theme);
+  const styled = useRef(theme);
+  const hasBasemap = useRef(false);
+  themeRef.current = theme;
 
   // Callbacks change on every render of the page; keeping them in a ref means
   // the map is built once instead of being torn down and rebuilt.
@@ -287,9 +324,12 @@ export default function MapView({
 
     basemapAvailable().then((ok) => {
       if (cancelled || !holder.current) return;
+      const mode = themeRef.current;
+      hasBasemap.current = ok;
+      styled.current = mode;
       const instance = new maplibregl.Map({
         container: holder.current,
-        style: ok ? basemapStyle() : BLANK_STYLE,
+        style: ok ? basemapStyle(mode) : blankStyle(mode),
         center: initial.center,
         zoom: initial.zoom,
         interactive,
@@ -322,24 +362,7 @@ export default function MapView({
       };
 
       instance.on('load', () => {
-        instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
-        instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
-
-        instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
-        // Added after the heat layer so the box reads on top of the density it
-        // is selecting; the fill is barely there so it does not tint the counts.
-        instance.addLayer({
-          id: AREA_FILL,
-          type: 'fill',
-          source: AREA_SOURCE,
-          paint: { 'fill-color': AREA_COLOR, 'fill-opacity': 0.08 },
-        });
-        instance.addLayer({
-          id: AREA_LINE,
-          type: 'line',
-          source: AREA_SOURCE,
-          paint: { 'line-color': AREA_COLOR, 'line-width': 2, 'line-dasharray': [3, 2] },
-        });
+        addOverlays(instance, themeRef.current);
 
         setReady(true);
         report(instance);
@@ -404,6 +427,33 @@ export default function MapView({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interactive]);
+
+  // Colour mode. Swapping the basemap style rebuilds every layer, so the
+  // overlays are added again and the data effects below are replayed by
+  // dropping and re-raising `ready` rather than being duplicated here.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready || styled.current === theme) return;
+    styled.current = theme;
+    if (!hasBasemap.current) {
+      instance.setPaintProperty('background', 'background-color', BLANK_BG[theme]);
+      return;
+    }
+    setReady(false);
+    instance.setStyle(basemapStyle(theme));
+    // addSource throws while the incoming style is still parsing, and styledata
+    // fires more than once during a swap, so the first usable one wins.
+    const apply = () => {
+      if (map.current !== instance) return;
+      if (!instance.isStyleLoaded()) {
+        instance.once('styledata', apply);
+        return;
+      }
+      addOverlays(instance, theme);
+      setReady(true);
+    };
+    instance.once('styledata', apply);
+  }, [theme, ready]);
 
   // Heat bins
   useEffect(() => {

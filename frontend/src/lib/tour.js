@@ -146,27 +146,51 @@ export const TOUR_STEPS = [
     route: '/map',
     target: '[data-tour="map-stage"]',
     placement: 'top',
-    requireTarget: true,
     title: 'See where approvals come from',
     body:
-      'The map plots permit addresses and stated product origins. Switch between a density view and the label images themselves, filter it like a search, and click anywhere to break down that area and open the records behind it.',
+      'The map plots the permit addresses behind each approval and the origins stated on the label, so a search can start from a place instead of a name.',
+  },
+  {
+    id: 'map-controls',
+    route: '/map',
+    target: '[data-tour="map-controls"]',
+    placement: 'bottom',
+    title: 'Density, artwork, and filters',
+    body:
+      'Switch between a density view and the label images themselves, choose whether points come from the permit address or the product origin, and filter by commodity, source, origin, varietal, and approval date.',
+  },
+  {
+    id: 'map-area',
+    route: '/map',
+    target: '[data-tour="map-stage"]',
+    placement: 'top',
+    title: 'Drill into any area',
+    body:
+      'Click a cluster or anywhere on the map to break that area down — top brands, commodities, and origins — and open the individual approvals behind it.',
   },
   {
     id: 'coverage',
-    route: '/',
-    target: '[data-tour="coverage-link"]',
+    route: '/coverage',
+    target: '[data-tour="coverage-tiles"]',
     placement: 'bottom',
-    requireTarget: true,
     title: 'One more thing: data coverage',
     body:
-      'We are still backfilling historical COLA records and label images. Coverage shows what has loaded so far — by year — so you know how complete a search is.',
+      'We are still backfilling historical COLA records, label images, label text, and map locations. Coverage shows how far each stage has gotten, so you know how complete a search is.',
+  },
+  {
+    id: 'coverage-years',
+    route: '/coverage',
+    target: '[data-tour="coverage-years"]',
+    placement: 'top',
+    title: 'Broken out by approval year',
+    body:
+      'Each year is compared against the number of approvals TTB reported for it, so you can see exactly which years are complete and which are still loading.',
   },
   {
     id: 'replay',
     route: '/', // returns the user to the search page as the tour ends
     target: '[data-tour="tour-button"]',
     placement: 'bottom',
-    requireTarget: true,
     title: "You're all set",
     body: 'You are back on the search page — start your own search, and replay this tour anytime from the Tour link in the header.',
   },
