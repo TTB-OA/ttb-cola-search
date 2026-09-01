@@ -222,6 +222,14 @@ def test_a_single_complete_record_is_both_ends_of_the_range(client, monkeypatch)
     assert rng["latest"]["id"] == "7"
 
 
+def test_the_range_is_confined_to_approvals(client, monkeypatch):
+    """Rejected and withdrawn filings carry a completed_date but are not approvals."""
+    calls = stub(monkeypatch, [_row(2025)], complete=[_summary("7", "7", "7")])
+    client.get(PATH)
+    range_query = next(q for q in calls if "bounds" in q)
+    assert "c.status = 'Approved'" in range_query
+
+
 def test_no_complete_records_yields_an_empty_range_rather_than_an_error(client, monkeypatch):
     stub(monkeypatch, [_row(2025)], complete=[])
     rng = client.get(PATH).json()["completeRange"]
