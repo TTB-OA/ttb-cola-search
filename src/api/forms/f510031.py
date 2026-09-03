@@ -124,6 +124,15 @@ def _joined(*parts: object, sep: str = ", ") -> str:
     return sep.join(p for p in (_clean(v) for v in parts) if p)
 
 
+def _coded(code: object, value: object) -> str:
+    """A registry code with its description, either half of which may be absent."""
+    code_text = _clean(code)
+    value_text = _clean(value)
+    if code_text and value_text:
+        return f"{code_text} - {value_text}"
+    return code_text or value_text
+
+
 def _phone(value: object) -> str:
     """Format a North American number; anything else is passed through as-is."""
     text = _clean(value)
@@ -594,13 +603,19 @@ def _draw_application(
                 (
                     f"TTB ID   {_clean(detail.ttb_id)}",
                     _joined("STATUS", detail.status, sep="   "),
-                    _joined("CLASS/TYPE", detail.class_type or detail.class_sub, sep="   "),
-                    _joined("ORIGIN", detail.origin, sep="   "),
+                    _joined(
+                        "CLASS/TYPE",
+                        _coded(detail.class_type_code, detail.class_type or detail.class_sub),
+                        sep="   ",
+                    ),
+                    _joined("ORIGIN", _coded(detail.origin_code, detail.origin), sep="   "),
                 ),
             )
         ),
         value_size=7.0,
         value_font=MONO,
+        autosize=True,
+        min_value_size=5.5,
     )
 
     c.setLineWidth(0.6)
