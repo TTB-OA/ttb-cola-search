@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from ..db import fetch_all
-from ..mappers import COMMODITY_LABEL, SEARCH_TABLE
+from ..mappers import APPLICATION_TYPES, COMMODITY_LABEL, SEARCH_TABLE
 from ..models import ReferenceData
 
 router = APIRouter(tags=["reference"])
@@ -127,6 +127,8 @@ async def _load_reference() -> ReferenceData:
         domestic_origins=domestic,
         imported_origins=imported,
         permit_states=sorted(r["value"] for r in grouped.get("permitState", [])),
+        # Fixed by the form, so listed in item 14's own order rather than sorted.
+        application_types=list(APPLICATION_TYPES),
         **lookups,
     )
 

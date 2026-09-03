@@ -185,6 +185,7 @@ class ReferenceData(ApiModel):
     class_types: list[str] = []
     received_types: list[str] = []
     varietals: list[str] = []
+    application_types: list[str] = []
 
 
 class PermitSuggestion(ApiModel):

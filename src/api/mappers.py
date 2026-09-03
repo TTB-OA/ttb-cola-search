@@ -126,6 +126,18 @@ COMMODITY_CODE = {v: k for k, v in COMMODITY_LABEL.items()}
 SOURCE_LABEL = {"domestic": "Domestic", "import": "Imported", "unknown": "Imported"}
 SOURCE_CODE = {"Domestic": "domestic", "Imported": "import"}
 
+# Items 14a-d of TTB F 5100.31. The form is a multi-select, so application_type
+# holds the checked items joined by APPLICATION_TYPE_SEP; a filter matches one
+# component rather than the whole string. There is no reference table for these
+# — the four options are fixed by the form, so the vocabulary is held here.
+APPLICATION_TYPE_SEP = " | "
+APPLICATION_TYPES = (
+    "CERTIFICATE OF LABEL APPROVAL",
+    "CERTIFICATE OF EXEMPTION FROM LABEL APPROVAL",
+    "DISTINCTIVE LIQUOR BOTTLE APPROVAL",
+    "RESUBMISSION AFTER REJECTION",
+)
+
 
 def commodity_label(code: str | None) -> str:
     return COMMODITY_LABEL.get((code or "").lower(), "Other")
