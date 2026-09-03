@@ -284,6 +284,27 @@ function addOverlays(instance, theme) {
   });
 }
 
+// Fitting a viewport needs the container to have been laid out: at zero size
+// fitBounds resolves against padding alone and lands somewhere arbitrary, and
+// MapLibre reports no error for it. Returns false so the caller can retry once
+// the size is known.
+function applyView(instance, view) {
+  const el = instance.getContainer();
+  const width = el.clientWidth;
+  const height = el.clientHeight;
+  if (!width || !height) return false;
+  if (view.bounds) {
+    const [w, s, e, n] = view.bounds;
+    // Padding has to leave room on both sides of the smaller axis; the mini-map
+    // is 220px tall and narrower still on a phone.
+    const padding = Math.min(44, Math.floor(Math.min(width, height) / 4));
+    instance.fitBounds([[w, s], [e, n]], { padding, duration: 0, maxZoom: 9 });
+    return true;
+  }
+  instance.jumpTo({ center: view.center, zoom: view.zoom });
+  return true;
+}
+
 export default function MapView({
   mode = 'heat',
   bins,
@@ -301,6 +322,8 @@ export default function MapView({
   const map = useRef(null);
   const markers = useRef([]);
   const handlers = useRef({});
+  // A viewport that could not be applied because the container had no size yet.
+  const pendingView = useRef(null);
   const [ready, setReady] = useState(false);
   const { theme } = useTheme();
   // The init effect must not rebuild the map when the colour mode changes, so
@@ -383,6 +406,9 @@ export default function MapView({
       if (typeof ResizeObserver !== 'undefined') {
         observer = new ResizeObserver(() => {
           instance.resize();
+          if (pendingView.current && applyView(instance, pendingView.current)) {
+            pendingView.current = null;
+          }
           clearTimeout(timer);
           timer = setTimeout(() => report(instance), 250);
         });
@@ -505,12 +531,7 @@ export default function MapView({
   // Programmatic recentring, for links that open the map at a known place.
   useEffect(() => {
     if (!map.current || !ready || !view) return;
-    if (view.bounds) {
-      const [w, s, e, n] = view.bounds;
-      map.current.fitBounds([[w, s], [e, n]], { padding: 44, duration: 0, maxZoom: 9 });
-      return;
-    }
-    map.current.jumpTo({ center: view.center, zoom: view.zoom });
+    pendingView.current = applyView(map.current, view) ? null : view;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.center?.[0], view?.center?.[1], view?.zoom, view?.bounds?.join(','), ready]);
 

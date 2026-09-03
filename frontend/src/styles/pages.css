@@ -437,8 +437,10 @@ section > .d-notice { margin-bottom: 0; }
   .map-stage { display: flex; flex-direction: column; flex: 1 1 auto; height: auto; min-height: 320px; }
   /* MapLibre's own stylesheet wins over .map-canvas and makes the container
      relative, so a percentage height has nothing definite to resolve against.
-     Stretching it as a flex item sizes it without one. */
-  .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
+     Stretching it as a flex item sizes it without one. Scoped to the map stage:
+     the detail page mini-map is not a flex parent, so `height: auto` there
+     collapses the canvas to nothing. */
+  .map-stage .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
   .map-stage.has-panel .map-canvas { right: 0; }
   .map-toolbar { padding: 8px 0; }
   .map-toolbar-top { gap: 8px; }
