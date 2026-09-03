@@ -601,14 +601,14 @@ def _draw_application(
             filter(
                 None,
                 (
-                    f"TTB ID   {_clean(detail.ttb_id)}",
-                    _joined("STATUS", detail.status, sep="   "),
+                    f"TTB ID:   {_clean(detail.ttb_id)}",
+                    _joined("STATUS:", detail.status, sep="   "),
                     _joined(
-                        "CLASS/TYPE",
+                        "CLASS/TYPE:",
                         _coded(detail.class_type_code, detail.class_type or detail.class_sub),
                         sep="   ",
                     ),
-                    _joined("ORIGIN", _coded(detail.origin_code, detail.origin), sep="   "),
+                    _joined("ORIGIN:", _coded(detail.origin_code, detail.origin), sep="   "),
                 ),
             )
         ),
