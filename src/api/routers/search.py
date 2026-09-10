@@ -13,7 +13,7 @@ from psycopg.sql import SQL, Literal
 
 from ..config import get_settings
 from ..db import fetch_one, transaction_cursor
-from ..embedding import get_embedder
+from ..embedding import EmbeddingRateLimited, get_embedder
 from ..mappers import (
     COMMODITY_CODE,
     SEARCH_TABLE,
@@ -193,6 +193,19 @@ def _enforce_embedding_limit(request: Request, noun: str) -> None:
         )
 
 
+def _provider_busy(exc: EmbeddingRateLimited) -> HTTPException:
+    """The provider's quota, not ours: a 503 would read as "feature unavailable"."""
+    retry_after = max(1, math.ceil(exc.retry_after or 15))
+    return HTTPException(
+        status_code=429,
+        detail=(
+            "Label matching is busy right now. Please try again in "
+            f"{retry_after} seconds."
+        ),
+        headers={"Retry-After": str(retry_after)},
+    )
+
+
 def _check_dim(vector: list[float]) -> None:
     dim = get_settings().embedding_dim
     if len(vector) != dim:
@@ -227,6 +240,9 @@ async def search_by_image(
     try:
         embedder = get_embedder()
         vector = await embedder.embed_image(data, file.content_type or "image/jpeg")
+    except EmbeddingRateLimited as exc:
+        logger.warning("Image embedding rate limited by the provider")
+        raise _provider_busy(exc) from None
     except Exception:
         logger.exception("Image embedding failed")
         raise HTTPException(status_code=503, detail="Embedding unavailable") from None
@@ -272,6 +288,9 @@ async def search_by_description(
             # retrieval; the stored image vectors were embedded raw, and prefixing the
             # query moves it out of the cross-modal regime.
             vector = await embedder.embed_text(text)
+        except EmbeddingRateLimited as exc:
+            logger.warning("Text embedding rate limited by the provider")
+            raise _provider_busy(exc) from None
         except Exception:
             logger.exception("Text embedding failed")
             raise HTTPException(status_code=503, detail="Embedding unavailable") from None

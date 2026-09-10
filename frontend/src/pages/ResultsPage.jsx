@@ -641,7 +641,9 @@ export default function ResultsPage() {
           {state.error ? (
             <div className="empty panel">
               <Icon name="info" size={34} className="muted" />
-              <h3 style={{ marginTop: 12 }}>Something went wrong</h3>
+              <h3 style={{ marginTop: 12 }}>
+                {state.error.status === 429 ? 'Too many searches right now' : 'Something went wrong'}
+              </h3>
               <p className="muted">{state.error.message || 'The search could not be completed.'}</p>
               <button className="btn secondary sm" onClick={() => navigate('/')}>
                 Back to search

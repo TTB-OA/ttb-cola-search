@@ -12,9 +12,9 @@ export const DEMO_QUERIES = [
   'napa valley',
   'bourbon whiskey',
   'cabernet sauvignon',
-  'brewing company',
+  'lemonade',
   'india pale ale',
-  'chardonnay',
+  'hops',
   'single malt',
 ];
 

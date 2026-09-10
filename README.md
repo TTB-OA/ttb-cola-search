@@ -455,8 +455,13 @@ narrow the search or check the index coverage for that column.
 **HTTP 429 from image search** — the per-client rate limit. Honour the
 `Retry-After` header, or raise `IMAGE_SEARCH_RATE_LIMIT`.
 
-**Image search returns 503** — the embedding provider is unavailable or
-`GEMINI_API_KEY` is unset. The underlying error is logged rather than returned.
+**HTTP 429 from image or description search naming a wait** — the embedding
+provider's own quota, not ours. The SDK already retried; honour `Retry-After`
+and, if it persists, raise the provider-side quota for `GEMINI_API_KEY`.
+
+**Image or description search returns 503** — the embedding provider is
+unavailable or `GEMINI_API_KEY` is unset. The underlying error is logged rather
+than returned.
 
 ---
 
