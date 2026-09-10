@@ -83,6 +83,12 @@ const PATHS = {
       <line x1="10" y1="14" x2="21" y2="3" />
     </>
   ),
+  mail: (
+    <>
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <polyline points="2 6 12 13 22 6" />
+    </>
+  ),
   download: (
     <>
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
