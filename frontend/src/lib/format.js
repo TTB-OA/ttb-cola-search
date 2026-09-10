@@ -37,6 +37,16 @@ export function fmtDateTime(iso) {
   });
 }
 
+// Format a North American number; anything else is passed through as-is.
+export function fmtPhone(value) {
+  const text = String(value ?? '').trim();
+  let digits = text.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  if (digits.length === 10) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length === 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return text;
+}
+
 // Map a commodity/category label to the CSS tag class used by styles.css.
 export function tagClass(category) {
   switch ((category || '').toLowerCase()) {

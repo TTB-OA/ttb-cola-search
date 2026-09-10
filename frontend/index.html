@@ -10,6 +10,22 @@
       href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Merriweather:ital,wght@0,400;0,700;1,400&family=Roboto+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <script>
+      // Runs before the bundle so a reload in dark mode never flashes white.
+      // The provider in src/lib/theme.jsx reads this back rather than deciding twice.
+      (function () {
+        try {
+          var t = localStorage.getItem('cola.theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          }
+          document.documentElement.dataset.theme = t;
+          document.documentElement.style.colorScheme = t;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

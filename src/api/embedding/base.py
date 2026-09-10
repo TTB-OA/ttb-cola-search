@@ -4,6 +4,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
+class EmbeddingRateLimited(Exception):
+    """The provider refused the call because its quota is exhausted.
+
+    Distinct from a provider outage: the caller should back off and retry rather
+    than be told the feature is unavailable.
+    """
+
+    def __init__(self, retry_after: float | None = None) -> None:
+        super().__init__("Embedding provider rate limit reached")
+        self.retry_after = retry_after
+
+
 class Embedder(ABC):
     """Turns images and text into fixed-length vectors.
 

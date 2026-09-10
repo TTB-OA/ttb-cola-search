@@ -185,6 +185,7 @@ class ReferenceData(ApiModel):
     class_types: list[str] = []
     received_types: list[str] = []
     varietals: list[str] = []
+    application_types: list[str] = []
 
 
 class PermitSuggestion(ApiModel):
@@ -315,6 +316,7 @@ class FacetGroup(ApiModel):
 class MapAreaResponse(ApiModel):
     total: int = 0
     total_is_capped: bool = False
+    permit_count: int = 0
     commodity: list[FacetBucket] = []
     # Origin is nested under source: states read under Domestic, countries
     # under Imported. Flat, the two lists could not be read against each other.

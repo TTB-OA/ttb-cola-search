@@ -11,6 +11,8 @@ from psycopg.errors import UndefinedTable
 
 from ..db import fetch_all, fetch_one
 from ..mappers import (
+    APPLICATION_TYPE_SEP,
+    APPLICATION_TYPES,
     COMMODITY_CODE,
     DETAIL_COLUMNS,
     MAP_TABLE,
@@ -119,6 +121,7 @@ def _build_filters(
     label_text: str | None = None,
     class_type: str | None = None,
     received_by: str | None = None,
+    application_type: str | None = None,
 ) -> tuple[str, list[Any]]:
     conditions: list[str] = []
     params: list[Any] = []
@@ -198,6 +201,14 @@ def _build_filters(
             "(upper(received_description) = upper(%s) OR received_code = upper(%s))"
         )
         params.extend([term, term])
+    if application_type:
+        # The column is the form's multi-select joined into one string, so the
+        # match is on a split component: a distinctive-bottle application is
+        # "CERTIFICATE OF LABEL APPROVAL | DISTINCTIVE LIQUOR BOTTLE APPROVAL".
+        # Written as array containment so it can use the GIN index on the same
+        # expression; a LIKE '%...%' could not.
+        conditions.append("string_to_array(application_type, %s) @> ARRAY[upper(%s)]")
+        params.extend([APPLICATION_TYPE_SEP, application_type.strip()])
     if source:
         conditions.append("ct_source = %s")
         params.append(SOURCE_CODE.get(source, source))
@@ -404,6 +415,18 @@ async def list_colas(
         ),
         examples=["Electronic submission (COLAs Online)", "ES"],
     ),
+    application_type: str | None = Query(
+        default=None,
+        alias="applicationType",
+        description=(
+            "Which box the applicant checked in item 14, TYPE OF APPLICATION. The "
+            "item is a multi-select, so a record matches if the given type is any "
+            "one of the types on the application. Transcribed from the certificate "
+            "rather than supplied by the TTB API, so records that have not been "
+            "through the form-scrape pass carry no value and never match."
+        ),
+        examples=list(APPLICATION_TYPES),
+    ),
     source: str | None = None,
     origin: str | None = None,
     status: str | None = None,
@@ -480,6 +503,7 @@ async def list_colas(
         label_text=label_text,
         class_type=class_type,
         received_by=received_by,
+        application_type=application_type,
     )
     order_by, order_params = _order_by(sort, q)
     offset = (page - 1) * page_size

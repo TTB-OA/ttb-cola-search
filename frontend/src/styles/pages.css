@@ -20,7 +20,7 @@
   font-weight: 600; font-size: 13px; padding: 6px 14px; border-radius: 999px; cursor: pointer;
 }
 .qchip:hover { border-color: var(--accent); color: var(--accent); }
-.qchip.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.qchip.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .adv-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 20px; }
 .adv-grid .field:nth-child(1), .adv-grid .field:nth-child(2), .adv-grid .field:nth-child(3) { grid-column: span 2; }
@@ -164,6 +164,11 @@
 .d-qual-list li + li { margin-top: 10px; }
 .d-permits { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .d-permit { background: var(--gray-2); border-radius: var(--radius); padding: 14px 16px; border-left: 3px solid var(--accent-light); }
+.d-permit.is-primary { border-left-color: var(--accent); background: var(--accent-lighter); }
+.d-permit.is-origin { border-left-color: var(--gold-dark); background: #fef5e7; }
+.d-permit.is-associated { border-left-color: var(--mint); background: #e7f5f8; }
+.d-permit.is-locatable { cursor: default; transition: box-shadow .12s ease, transform .12s ease; }
+.d-permit.is-locatable.is-hovered { box-shadow: var(--shadow-2); transform: translateY(-1px); }
 
 /* Says what the pipeline has not processed, so a blank area is never mistaken
    for an absence of data. */
@@ -179,19 +184,18 @@ section > .d-notice { margin-bottom: 0; }
 /* ---------- bounding-box highlight + OCR list ---------- */
 .bbox { position: absolute; border: 2px solid var(--gold-dark); background: rgba(255,190,46,.18); border-radius: 2px; box-shadow: 0 0 0 2000px rgba(27,27,27,.18); pointer-events: none; animation: bboxIn .25s ease; }
 @keyframes bboxIn { from { opacity: 0; transform: scale(1.06); } }
-.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: #1b1b1b; font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
+.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: var(--on-warm); font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
 .lv-stage { overflow: visible; }
 .lv-main { overflow: hidden; position: relative; }
 .ocr-matchnote { display: flex; align-items: flex-start; gap: 7px; background: #fef5e7; border-left: 3px solid var(--gold-dark); color: #6b4a00; font-size: 12.5px; font-weight: 600; padding: 8px 10px; border-radius: var(--radius); margin: 8px 0 4px; }
 .ocr-matchnote .ico { flex: 0 0 auto; margin-top: 2px; }
-.ocr-face-tag { display: inline-flex; justify-content: center; font-size: 9px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--base-dark); background: var(--base-lightest); border-radius: 999px; padding: 2px 8px; }
-
-/* Extracted text flows as wrapping chips, grouped by image face. */
+/* Extracted text flows as wrapping chips, grouped by image. */
 .ocr-hint { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; color: var(--base-dark); }
 .ocr-hint .ico { flex: 0 0 auto; color: var(--accent); }
 .ocr-groups { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-.ocr-group-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
-.ocr-group-count { font-size: 10px; font-weight: 700; color: var(--base); }
+.ocr-group-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin: 0 0 7px; color: var(--accent-darker); font-size: 13px; font-weight: 800; }
+.ocr-file-name { color: var(--base-dark); font-size: 11px; font-weight: 500; overflow-wrap: anywhere; }
+.ocr-group-count { color: var(--base-dark); font-size: 11px; font-weight: 700; }
 .ocr-group + .ocr-group { border-top: 1px solid var(--base-lightest); padding-top: 10px; }
 .ocr-flow { display: flex; flex-wrap: wrap; gap: 4px; }
 .ocr-chip {
@@ -336,7 +340,7 @@ section > .d-notice { margin-bottom: 0; }
 .map-toolbar-top { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; }
 .map-filters { margin-top: 12px; }
 .map-filters-toggle, .map-sheet-head, .map-sheet-grab, .map-backdrop { display: none; }
-.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; }
+.map-filter-count { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; }
 .map-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
 .map-filter { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
 .map-filter-wide { min-width: 220px; }
@@ -378,28 +382,36 @@ section > .d-notice { margin-bottom: 0; }
 .map-permit-code { font-size: 12px; font-weight: 700; }
 .map-permit-name { flex: 1; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-permit-count { font-size: 12px; color: var(--base-dark); }
+.map-permit-brand { padding: 5px 8px 1px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .map-items { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
 .map-item { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-bottom: 1px solid var(--base-lightest); text-decoration: none; color: inherit; }
 .map-item:hover { background: var(--gray-2); }
 /* One line per record: the panel is tall and narrow, and vertical room is the scarce axis. */
 .map-item-main { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
-.map-item-brand { flex: 1; min-width: 0; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-item-brand { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .map-item-meta { flex: none; font-size: 11px; white-space: nowrap; }
 .map-item .tag { font-size: 9.5px; padding: 2px 5px; letter-spacing: .02em; }
 
 /* Markers are plain DOM, so they carry the label thumbnail directly. */
-.map-pin { width: 34px; height: 42px; padding: 0; cursor: pointer; background: var(--white); border: 2px solid var(--white); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; display: block; transition: transform .12s; }
+.map-pin { width: 34px; height: 42px; padding: 0; cursor: pointer; background: var(--paper); border: 2px solid var(--paper); border-radius: var(--radius); box-shadow: var(--shadow-2); overflow: hidden; display: block; transition: transform .12s; }
 .map-pin:hover { transform: scale(1.18); z-index: 2; }
 .map-pin img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .map-pin.is-blank { background: var(--accent-lighter); border-color: var(--accent-light); }
 .map-pin.is-blank img { display: none; }
 
 /* Numbered locator dots, keyed to the address cards under the mini-map. */
-.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--white); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
-.map-dot.is-origin { background: var(--base-dark); }
-.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--white); font-size: 11px; font-weight: 700; vertical-align: 1px; }
-.d-pin-no.is-origin { background: var(--base-dark); }
+.map-dot { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--on-accent); border: 2px solid var(--white); box-shadow: var(--shadow-2); font-size: 11px; font-weight: 700; }
+.map-dot.is-primary { background: var(--accent); }
+.map-dot.is-origin { background: var(--gold-dark); color: var(--on-warm); }
+.map-dot.is-associated { background: var(--mint); }
+/* No transform here: maplibre positions the marker with an inline transform. */
+.map-dot { transition: box-shadow .12s ease; }
+.map-dot.is-raised { box-shadow: 0 0 0 4px rgba(26, 68, 128, .45), var(--shadow-3); }
+.d-pin-no { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 6px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 700; vertical-align: 1px; }
+.d-pin-no.is-primary { background: var(--accent); }
+.d-pin-no.is-origin { background: var(--gold-dark); color: var(--on-warm); }
+.d-pin-no.is-associated { background: var(--mint); }
 
 /* The mini-map on a COLA record: a locator, not an explorer. */
 .d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
@@ -425,8 +437,10 @@ section > .d-notice { margin-bottom: 0; }
   .map-stage { display: flex; flex-direction: column; flex: 1 1 auto; height: auto; min-height: 320px; }
   /* MapLibre's own stylesheet wins over .map-canvas and makes the container
      relative, so a percentage height has nothing definite to resolve against.
-     Stretching it as a flex item sizes it without one. */
-  .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
+     Stretching it as a flex item sizes it without one. Scoped to the map stage:
+     the detail page mini-map is not a flex parent, so `height: auto` there
+     collapses the canvas to nothing. */
+  .map-stage .map-canvas { flex: 1 1 auto; height: auto; width: auto; }
   .map-stage.has-panel .map-canvas { right: 0; }
   .map-toolbar { padding: 8px 0; }
   .map-toolbar-top { gap: 8px; }
@@ -490,6 +504,37 @@ section > .d-notice { margin-bottom: 0; }
   .l-thumb .label-thumb.label-photo.fits img { object-fit: contain; }
   .l-side { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 14px; text-align: left; }
 }
+
+/* ============================================================
+   Dark mode — rules the palette swap alone cannot reach
+   ============================================================ */
+[data-theme="dark"] .hero {
+  background:
+    radial-gradient(120% 90% at 85% -10%, var(--accent-lighter) 0%, transparent 55%),
+    linear-gradient(180deg, var(--gray-1) 0%, var(--gray-2) 100%);
+}
+
+/* Warm and cool wash panels, restated as tints of the dark surface. */
+[data-theme="dark"] .d-permit.is-origin { background: #2d2409; }
+[data-theme="dark"] .d-permit.is-associated { background: #102a31; }
+[data-theme="dark"] .d-notice.warn { background: #2d2409; color: #f0cf8a; }
+[data-theme="dark"] .d-notice.warn b { color: #f0cf8a; }
+[data-theme="dark"] .ocr-matchnote { background: #2d2409; color: #f0cf8a; }
+[data-theme="dark"] .ocr-chip.on { background: #2d2409; }
+
+/* The scrim around a bounding box dims the page it sits on, not a white one. */
+[data-theme="dark"] .bbox { box-shadow: 0 0 0 2000px rgba(0,0,0,.45); }
+
+/* MapLibre ships its own light chrome, which no token of ours reaches. */
+[data-theme="dark"] .maplibregl-ctrl-group {
+  background: var(--white);
+  box-shadow: 0 0 0 2px rgba(0,0,0,.4);
+}
+[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: var(--base-lighter); }
+[data-theme="dark"] .maplibregl-ctrl-group button:hover { background: var(--base-lightest); }
+[data-theme="dark"] .maplibregl-ctrl-icon { filter: invert(1) brightness(1.35); }
+[data-theme="dark"] .maplibregl-ctrl-attrib { background: rgba(17,21,27,.85); color: var(--base-dark); }
+[data-theme="dark"] .maplibregl-ctrl-attrib a { color: var(--base-darker); }
 
 /* print */
 @media print {

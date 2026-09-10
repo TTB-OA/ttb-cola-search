@@ -356,7 +356,10 @@ export function TourProvider({ children }) {
       })).filter((s) => {
         if (s.route === null) return false; // dynamic route with no sample record
         if (s.skipMobile && isMobile) return false;
-        if (s.requireTarget && !findTarget(s)) return false;
+        // Targets can only be checked for steps on the page we are standing on;
+        // anything routed elsewhere has not rendered yet and must be kept.
+        const onThisPage = (s.route || '/').split('?')[0] === '/';
+        if (s.requireTarget && onThisPage && !findTarget(s)) return false;
         return true;
       });
       setIndex(0);

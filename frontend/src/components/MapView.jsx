@@ -11,16 +11,22 @@ import maplibregl from 'maplibre-gl';
 import { Protocol } from 'pmtiles';
 import layers from 'protomaps-themes-base';
 import { api } from '../lib/api.js';
+import { track } from '../lib/analytics.js';
+import { useTheme } from '../lib/theme.jsx';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 const SOURCE = 'protomaps';
+// Desaturated basemaps so the heat ramp is the only colour on the map.
+const BASEMAP_THEME = { light: 'white', dark: 'black' };
 const HEAT_SOURCE = 'cola-heat';
 const HEAT_LAYER = 'cola-heat-layer';
 const AREA_SOURCE = 'cola-area';
 const AREA_FILL = 'cola-area-fill';
 const AREA_LINE = 'cola-area-line';
-// --blue-dark; MapLibre paint cannot read a CSS custom property.
-const AREA_COLOR = '#1a4480';
+// --blue-dark, and a tint of it that survives a black basemap; MapLibre paint
+// cannot read a CSS custom property.
+const AREA_COLOR = { light: '#1a4480', dark: '#8ab4f8' };
+const BLANK_BG = { light: '#eef1f5', dark: '#11151b' };
 const ATTRIBUTION = '<a href="https://openstreetmap.org">OpenStreetMap</a> via <a href="https://protomaps.com">Protomaps</a>';
 
 // maplibre resolves pmtiles:// URLs through a global protocol handler, so this
@@ -44,13 +50,45 @@ function basemapAvailable() {
   return basemapProbe;
 }
 
-const BLANK_STYLE = {
-  version: 8,
-  sources: {},
-  layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#eef1f5' } }],
-};
+function blankStyle(theme) {
+  return {
+    version: 8,
+    sources: {},
+    layers: [{ id: 'background', type: 'background', paint: { 'background-color': BLANK_BG[theme] } }],
+  };
+}
 
-function basemapStyle() {
+// A tile that fails to load leaves a hole MapLibre never reports and, on a flat
+// basemap, nothing distinguishes it from empty land. Failures are batched and
+// reported so the rate is visible in telemetry instead of by eye.
+const TILE_ERROR_FLUSH_MS = 4000;
+let tileErrors = null;
+let tileErrorTimer = null;
+
+function reportTileError(event) {
+  const err = event?.error;
+  // Aborts are routine: MapLibre cancels in-flight tiles whenever the viewport
+  // moves on, and counting them would bury the real failures.
+  if (!err || err.name === 'AbortError') return;
+  const status = err.status != null ? String(err.status) : err.name || 'unknown';
+  if (tileErrors === null) tileErrors = new Map();
+  tileErrors.set(status, (tileErrors.get(status) || 0) + 1);
+
+  if (import.meta.env.DEV) {
+    console.warn('[map] tile error', status, event?.sourceId, err.url || err.message);
+  }
+  if (tileErrorTimer) return;
+  tileErrorTimer = setTimeout(() => {
+    tileErrorTimer = null;
+    const batch = tileErrors;
+    tileErrors = null;
+    for (const [code, count] of batch) {
+      track('map_tile_error', { status: code, count });
+    }
+  }, TILE_ERROR_FLUSH_MS);
+}
+
+function basemapStyle(theme) {
   return {
     version: 8,
     glyphs: `${api.basemapUrl().replace(/\/basemap$/, '')}/glyphs/{fontstack}/{range}.pbf`,
@@ -61,7 +99,7 @@ function basemapStyle() {
         attribution: ATTRIBUTION,
       },
     },
-    layers: layers(SOURCE, 'light', { lang: 'en' }),
+    layers: layers(SOURCE, BASEMAP_THEME[theme], { lang: 'en' }),
   };
 }
 
@@ -189,7 +227,7 @@ function heatPaint(bins, instance) {
 // rather than the label thumbnail the map page pins carry.
 function locatorElement(point) {
   const el = document.createElement('div');
-  el.className = 'map-dot' + (point.role === 'product_origin' ? ' is-origin' : '');
+  el.className = 'map-dot' + (point.locationClass ? ` ${point.locationClass}` : '');
   el.textContent = point.index != null ? String(point.index) : '';
   if (point.label) {
     el.title = point.label;
@@ -222,6 +260,51 @@ function markerElement(point, onSelect) {
   return el;
 }
 
+// Everything drawn on top of the basemap. Swapping the basemap style discards
+// the lot, so adding them is a step of its own rather than part of the first
+// load. The empty data here is filled in by the effects that watch the props.
+function addOverlays(instance, theme) {
+  instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
+  instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
+
+  instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
+  // Added after the heat layer so the box reads on top of the density it
+  // is selecting; the fill is barely there so it does not tint the counts.
+  instance.addLayer({
+    id: AREA_FILL,
+    type: 'fill',
+    source: AREA_SOURCE,
+    paint: { 'fill-color': AREA_COLOR[theme], 'fill-opacity': 0.08 },
+  });
+  instance.addLayer({
+    id: AREA_LINE,
+    type: 'line',
+    source: AREA_SOURCE,
+    paint: { 'line-color': AREA_COLOR[theme], 'line-width': 2, 'line-dasharray': [3, 2] },
+  });
+}
+
+// Fitting a viewport needs the container to have been laid out: at zero size
+// fitBounds resolves against padding alone and lands somewhere arbitrary, and
+// MapLibre reports no error for it. Returns false so the caller can retry once
+// the size is known.
+function applyView(instance, view) {
+  const el = instance.getContainer();
+  const width = el.clientWidth;
+  const height = el.clientHeight;
+  if (!width || !height) return false;
+  if (view.bounds) {
+    const [w, s, e, n] = view.bounds;
+    // Padding has to leave room on both sides of the smaller axis; the mini-map
+    // is 220px tall and narrower still on a phone.
+    const padding = Math.min(44, Math.floor(Math.min(width, height) / 4));
+    instance.fitBounds([[w, s], [e, n]], { padding, duration: 0, maxZoom: 9 });
+    return true;
+  }
+  instance.jumpTo({ center: view.center, zoom: view.zoom });
+  return true;
+}
+
 export default function MapView({
   mode = 'heat',
   bins,
@@ -229,6 +312,7 @@ export default function MapView({
   area,
   view,
   interactive = true,
+  highlightId = null,
   onViewportChange,
   onSelectArea,
   onSelectPoint,
@@ -238,7 +322,17 @@ export default function MapView({
   const map = useRef(null);
   const markers = useRef([]);
   const handlers = useRef({});
+  // A viewport that could not be applied because the container had no size yet.
+  const pendingView = useRef(null);
   const [ready, setReady] = useState(false);
+  const { theme } = useTheme();
+  // The init effect must not rebuild the map when the colour mode changes, so
+  // it reads the mode off a ref; `styled` records which one the live style was
+  // built from.
+  const themeRef = useRef(theme);
+  const styled = useRef(theme);
+  const hasBasemap = useRef(false);
+  themeRef.current = theme;
 
   // Callbacks change on every render of the page; keeping them in a ref means
   // the map is built once instead of being torn down and rebuilt.
@@ -248,13 +342,17 @@ export default function MapView({
 
   useEffect(() => {
     let cancelled = false;
+    let observer = null;
     registerProtocol();
 
     basemapAvailable().then((ok) => {
       if (cancelled || !holder.current) return;
+      const mode = themeRef.current;
+      hasBasemap.current = ok;
+      styled.current = mode;
       const instance = new maplibregl.Map({
         container: holder.current,
-        style: ok ? basemapStyle() : BLANK_STYLE,
+        style: ok ? basemapStyle(mode) : blankStyle(mode),
         center: initial.center,
         zoom: initial.zoom,
         interactive,
@@ -265,6 +363,8 @@ export default function MapView({
         maxZoom: 16,
       });
       map.current = instance;
+
+      instance.on('error', reportTileError);
 
       if (interactive) {
         instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -285,24 +385,7 @@ export default function MapView({
       };
 
       instance.on('load', () => {
-        instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
-        instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
-
-        instance.addSource(AREA_SOURCE, { type: 'geojson', data: areaGeoJson(null) });
-        // Added after the heat layer so the box reads on top of the density it
-        // is selecting; the fill is barely there so it does not tint the counts.
-        instance.addLayer({
-          id: AREA_FILL,
-          type: 'fill',
-          source: AREA_SOURCE,
-          paint: { 'fill-color': AREA_COLOR, 'fill-opacity': 0.08 },
-        });
-        instance.addLayer({
-          id: AREA_LINE,
-          type: 'line',
-          source: AREA_SOURCE,
-          paint: { 'line-color': AREA_COLOR, 'line-width': 2, 'line-dasharray': [3, 2] },
-        });
+        addOverlays(instance, themeRef.current);
 
         setReady(true);
         report(instance);
@@ -314,6 +397,23 @@ export default function MapView({
         clearTimeout(timer);
         timer = setTimeout(() => report(instance), 250);
       });
+
+      // MapLibre only watches the window, but this container is resized by
+      // layout alone — the area panel takes 360px off it, and on mobile it is a
+      // flex child. Left unobserved the canvas keeps its old size, so getBounds
+      // reports a smaller viewport than is on screen and the uncovered band is
+      // queried for no data at all.
+      if (typeof ResizeObserver !== 'undefined') {
+        observer = new ResizeObserver(() => {
+          instance.resize();
+          if (pendingView.current && applyView(instance, pendingView.current)) {
+            pendingView.current = null;
+          }
+          clearTimeout(timer);
+          timer = setTimeout(() => report(instance), 250);
+        });
+        observer.observe(holder.current);
+      }
 
       instance.on('click', (e) => {
         if (!handlers.current.onSelectArea) return;
@@ -345,13 +445,37 @@ export default function MapView({
 
     return () => {
       cancelled = true;
-      markers.current.forEach((m) => m.remove());
+      observer?.disconnect();
+      markers.current.forEach((m) => m.marker.remove());
       markers.current = [];
       map.current?.remove();
       map.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [interactive]);
+
+  // Colour mode. Swapping the basemap style rebuilds every layer, so the
+  // overlays are added again and the data effects below are replayed by
+  // dropping and re-raising `ready` rather than being duplicated here.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready || styled.current === theme) return;
+    styled.current = theme;
+    if (!hasBasemap.current) {
+      instance.setPaintProperty('background', 'background-color', BLANK_BG[theme]);
+      return;
+    }
+    setReady(false);
+    // diff:false forces a full style load, which always ends in a styledata.
+    // The default diff path can apply its changes without one, and a swap that
+    // never gets the event leaves `ready` false and blocks every later swap.
+    instance.setStyle(basemapStyle(theme), { diff: false });
+    instance.once('styledata', () => {
+      if (map.current !== instance) return;
+      addOverlays(instance, theme);
+      setReady(true);
+    });
+  }, [theme, ready]);
 
   // Heat bins
   useEffect(() => {
@@ -379,7 +503,7 @@ export default function MapView({
   useEffect(() => {
     const instance = map.current;
     if (!instance || !ready) return;
-    markers.current.forEach((m) => m.remove());
+    markers.current.forEach((m) => m.marker.remove());
     markers.current = [];
     if (mode !== 'image' && mode !== 'locator') return;
     (points || []).forEach((p) => {
@@ -390,19 +514,24 @@ export default function MapView({
       const marker = new maplibregl.Marker({ element })
         .setLngLat([p.lng, p.lat])
         .addTo(instance);
-      markers.current.push(marker);
+      markers.current.push({ id: p.id, marker, element });
     });
   }, [points, mode, ready]);
+
+  // Overlapping markers stack in DOM order, so a highlighted one is pulled out
+  // of that order with a z-index rather than by reordering the markers.
+  useEffect(() => {
+    markers.current.forEach(({ id, element }) => {
+      const on = highlightId != null && id === highlightId;
+      element.classList.toggle('is-raised', on);
+      element.style.zIndex = on ? '5' : '';
+    });
+  }, [highlightId, points, mode, ready]);
 
   // Programmatic recentring, for links that open the map at a known place.
   useEffect(() => {
     if (!map.current || !ready || !view) return;
-    if (view.bounds) {
-      const [w, s, e, n] = view.bounds;
-      map.current.fitBounds([[w, s], [e, n]], { padding: 44, duration: 0, maxZoom: 9 });
-      return;
-    }
-    map.current.jumpTo({ center: view.center, zoom: view.zoom });
+    pendingView.current = applyView(map.current, view) ? null : view;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view?.center?.[0], view?.center?.[1], view?.zoom, view?.bounds?.join(','), ready]);
 

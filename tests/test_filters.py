@@ -20,6 +20,7 @@ FILTER_VALUES = {
     "commodity": "Wine",
     "class_type": "TABLE RED WINE",
     "received_by": "Electronic submission (COLAs Online)",
+    "application_type": "DISTINCTIVE LIQUOR BOTTLE APPROVAL",
     "source": "Domestic",
     "origin": "California",
     "status": "APPROVED",
@@ -113,6 +114,21 @@ def test_received_by_matches_the_description_or_the_code():
     assert "upper(received_description) = upper(%s)" in where
     assert "received_code = upper(%s)" in where
     assert params == ["es", "es"]
+
+
+def test_application_type_matches_one_component_of_the_multi_select():
+    # "CERTIFICATE OF LABEL APPROVAL | DISTINCTIVE LIQUOR BOTTLE APPROVAL" has to
+    # match on either half, so the stored string is split before comparison.
+    where, params = build(application_type="  distinctive liquor bottle approval  ")
+    assert "string_to_array(application_type, %s) @> ARRAY[upper(%s)]" in where
+    assert params == [" | ", "distinctive liquor bottle approval"]
+
+
+def test_application_type_does_not_match_a_bare_substring():
+    # A LIKE would make "CERTIFICATE OF LABEL APPROVAL" match the exemption
+    # wording if TTB ever reworded it; containment cannot.
+    where, _ = build(application_type="CERTIFICATE OF LABEL APPROVAL")
+    assert "LIKE" not in where
 
 
 def test_label_text_probes_the_ocr_side_table():

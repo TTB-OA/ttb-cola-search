@@ -1,5 +1,6 @@
 import { Link, NavLink } from 'react-router-dom';
 import Icon from './Icon.jsx';
+import ThemeToggle from './ThemeToggle.jsx';
 import { useTour } from './Tour.jsx';
 
 export default function Header() {
@@ -35,10 +36,11 @@ export default function Header() {
           <button type="button" className="nav-tour" data-tour="tour-button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>
+          <ThemeToggle />
         </nav>
         <nav className="header-nav-mobile" aria-label="Primary">
-          <NavLink to="/" className={({ isActive }) => (isActive ? 'active' : '')} end>
-            <Icon name="search" size={14} /> Search
+          <NavLink to="/map" className={({ isActive }) => `map-nav-link${isActive ? ' active' : ''}`}>
+            <Icon name="map" size={14} /> Map <span className="new-badge">New!</span>
           </NavLink>
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name="grid" size={14} /> Coverage
@@ -52,6 +54,7 @@ export default function Header() {
           <button type="button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>
+          <ThemeToggle className="" showLabel />
         </nav>
       </div>
     </header>

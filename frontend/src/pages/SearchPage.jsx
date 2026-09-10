@@ -32,6 +32,7 @@ const EMPTY = {
   commodity: '',
   classType: '',
   receivedBy: '',
+  applicationType: '',
   source: '',
   origin: '',
   status: 'Approved',
@@ -61,6 +62,7 @@ const PASSTHROUGH_KEYS = [
   'commodity',
   'classType',
   'receivedBy',
+  'applicationType',
   'source',
   'origin',
   'status',
@@ -116,6 +118,7 @@ function AdvancedFields({ draft, set, refData }) {
   const permitStates = refData.permitStates || [];
   const classTypes = refData.classTypes || [];
   const receivedTypes = refData.receivedTypes || [];
+  const applicationTypes = refData.applicationTypes || [];
   const varietals = refData.varietals || [];
 
   const classTypeOptions = useMemo(() => matchOptions(classTypes, draft.classType), [classTypes, draft.classType]);
@@ -186,6 +189,22 @@ function AdvancedFields({ draft, set, refData }) {
           {receivedTypes.map((r) => (
             <option key={r} value={r}>
               {r}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="field adv-wide">
+        <label>Type of application</label>
+        <div className="hint">Item 14 on the form — a record matches if any of its types is the one chosen</div>
+        <select
+          className="select"
+          value={draft.applicationType}
+          onChange={(e) => set('applicationType', e.target.value)}
+        >
+          <option value="">Any type of application</option>
+          {applicationTypes.map((a) => (
+            <option key={a} value={a}>
+              {a}
             </option>
           ))}
         </select>

@@ -109,12 +109,16 @@ _COMPLETE_PREDICATE = """--sql
 """
 
 # The CTE is read three times, so the qualifying set is materialised once and
-# both ends of the range come out of a single pass over it.
+# both ends of the range come out of a single pass over it. Rejected and
+# withdrawn filings carry a completed_date too, so the range is confined to
+# approvals to match what the rest of the site presents.
 _COMPLETE_RANGE_SQL = f"""--sql
 WITH complete AS (
     SELECT c.cola_id, c.completed_date
       FROM colas c
-     WHERE c.completed_date IS NOT NULL AND {_COMPLETE_PREDICATE}
+     WHERE c.completed_date IS NOT NULL
+       AND c.status = 'Approved'
+       AND {_COMPLETE_PREDICATE}
 ), bounds AS (
     SELECT (SELECT cola_id FROM complete
              ORDER BY completed_date, cola_id LIMIT 1) AS earliest_id,

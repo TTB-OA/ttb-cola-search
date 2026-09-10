@@ -284,7 +284,7 @@ export default function CoveragePage() {
         </div>
       ) : (
         <>
-          <div className="an-tiles">
+          <div className="an-tiles" data-tour="coverage-tiles">
             <StatTile
               label="Records held"
               value={num(ingested)}
@@ -329,7 +329,7 @@ export default function CoveragePage() {
             </p>
           </section>
 
-          <section className="an-card panel">
+          <section className="an-card panel" data-tour="coverage-years">
             <h2>Coverage by approval year</h2>
             <CoverageTable years={years} totals={totals} />
             <p className="muted an-note">
