@@ -64,6 +64,91 @@ BIN_CAP = 20000
 # Records listed alongside an area summary, per page.
 AREA_PAGE_SIZE = 24
 
+# Both endpoints filter the same surface, so the vocabulary and the wording are
+# written once. The enums are advertised to OpenAPI rather than enforced by the
+# type, so an unknown value still comes back as a 400 with an explanation
+# instead of a 422 validation dump.
+RoleParam = Annotated[
+    str,
+    Query(
+        description=(
+            "Which location to map. `primary_premise` is the premise of the permit "
+            "the COLA was filed under, `permit_premise` the premise of every permit "
+            "on it, and `product_origin` the centroid of its origin state or "
+            "country. Origins are centroids, not addresses: they cluster every COLA "
+            "from a place onto one point by design."
+        ),
+        json_schema_extra={"enum": list(ROLES)},
+    ),
+]
+CommodityParam = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Coarse product category. The underlying codes (`wine`, `beer`, "
+            "`distilled_spirits`, `unknown`) are accepted too."
+        ),
+        json_schema_extra={"enum": list(COMMODITY_CODE)},
+    ),
+]
+SourceParam = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Whether the product is domestic or imported. The codes `domestic` and "
+            "`import` are accepted too."
+        ),
+        json_schema_extra={"enum": list(SOURCE_CODE)},
+    ),
+]
+OriginParam = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Origin as TTB records it — a state for domestic COLAs, a country for "
+            "imported ones. Exact match; `/reference` lists the values in use."
+        ),
+        examples=["California", "France"],
+    ),
+]
+ClassTypeParam = Annotated[
+    str | None,
+    Query(
+        alias="classType",
+        description=(
+            "Granular TTB class/type. Matched case-insensitively against the "
+            "description, or exactly against the class/type code. Use `commodity` "
+            "for the coarse grouping."
+        ),
+        examples=["TABLE RED WINE"],
+    ),
+]
+DateFromParam = Annotated[
+    date | None,
+    Query(
+        alias="dateFrom",
+        description="Approval/completed date lower bound (`YYYY-MM-DD`).",
+    ),
+]
+DateToParam = Annotated[
+    date | None,
+    Query(
+        alias="dateTo",
+        description="Approval/completed date upper bound (`YYYY-MM-DD`).",
+    ),
+]
+VarietalParam = Annotated[
+    str | None,
+    Query(
+        description=(
+            "Grape varietal, matched as a substring because a COLA's varietal value "
+            "is a joined list. Rejected with 400 where the map surface carries no "
+            "varietal column; `/map/points` reports that as `varietalAvailable`."
+        ),
+        examples=["Cabernet Sauvignon"],
+    ),
+]
+
 _limiter: SlidingWindowLimiter | None = None
 
 # Varietal reached cola_map_search after the rest of the map did, so the column
@@ -356,7 +441,16 @@ async def _image_points(
     return points
 
 
-@router.get("/map/points", response_model=MapPointsResponse)
+@router.get(
+    "/map/points",
+    response_model=MapPointsResponse,
+    summary="Points or heat bins for a map viewport",
+    responses={
+        400: {"description": "Unknown `mode` or `role`, or a varietal filter the surface cannot apply."},
+        429: {"description": "Too many map requests from one caller."},
+        503: {"description": "The map surface has not been built in this environment."},
+    },
+)
 async def map_points(
     request: Request,
     west: Annotated[float, Query(description="Viewport west longitude.")],
@@ -378,40 +472,30 @@ async def map_points(
         str,
         Query(
             description=(
-                "`heat` aggregates the viewport onto a grid and returns bins with "
-                "counts. `image` returns individual COLAs with a label thumbnail, "
-                "capped so the map stays readable."
+                "`heat` aggregates the viewport onto a grid and returns `bins` with "
+                "counts. `image` returns individual COLAs as `points` with a label "
+                "thumbnail, capped so the map stays readable."
             ),
+            json_schema_extra={"enum": list(MODES)},
         ),
     ] = "heat",
-    role: Annotated[
-        str,
-        Query(
-            description=(
-                "Which location to map. `primary_premise` is the permit the COLA "
-                "was filed under, `permit_premise` every permit on it, and "
-                "`product_origin` the centroid of its origin state or country. "
-                "Origins are centroids, not addresses: they cluster every COLA "
-                "from a place onto one point by design."
-            ),
-        ),
-    ] = "primary_premise",
-    commodity: str | None = None,
-    source: str | None = None,
-    origin: str | None = None,
-    class_type: Annotated[str | None, Query(alias="classType")] = None,
-    date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
-    date_to: Annotated[date | None, Query(alias="dateTo")] = None,
-    varietal: Annotated[
-        str | None,
-        Query(
-            description=(
-                "Grape varietal (partial match). Rejected with 400 where the map "
-                "surface carries no varietal column; check `varietalAvailable`."
-            )
-        ),
-    ] = None,
+    role: RoleParam = "primary_premise",
+    commodity: CommodityParam = None,
+    source: SourceParam = None,
+    origin: OriginParam = None,
+    class_type: ClassTypeParam = None,
+    date_from: DateFromParam = None,
+    date_to: DateToParam = None,
+    varietal: VarietalParam = None,
 ) -> MapPointsResponse:
+    """Everything in a rectangular viewport, aggregated or listed.
+
+    A viewport at low zoom can cover millions of rows, so `heat` mode is the
+    default: it grids them server-side and returns at most 20,000 bins, ordered
+    by count. `image` mode returns individual COLAs instead and is meant for
+    viewports already narrow enough to draw. Either way `total` is the number of
+    rows matched, and `totalIsCapped` says whether that number is a floor.
+    """
     _enforce_rate_limit(request)
     _validate(role, mode)
 
@@ -448,24 +532,46 @@ async def map_points(
     )
 
 
-@router.get("/map/area", response_model=MapAreaResponse)
+@router.get(
+    "/map/area",
+    response_model=MapAreaResponse,
+    summary="Summarise one selected area of the map",
+    responses={
+        400: {"description": "Unknown `role`, or a varietal filter the surface cannot apply."},
+        429: {"description": "Too many map requests from one caller."},
+        503: {"description": "The map surface has not been built in this environment."},
+    },
+)
 async def map_area(
     request: Request,
     west: Annotated[float, Query(description="Selection west longitude.")],
     south: Annotated[float, Query(description="Selection south latitude.")],
     east: Annotated[float, Query(description="Selection east longitude.")],
     north: Annotated[float, Query(description="Selection north latitude.")],
-    role: str = "primary_premise",
-    commodity: str | None = None,
-    source: str | None = None,
-    origin: str | None = None,
-    class_type: Annotated[str | None, Query(alias="classType")] = None,
-    date_from: Annotated[date | None, Query(alias="dateFrom")] = None,
-    date_to: Annotated[date | None, Query(alias="dateTo")] = None,
-    varietal: str | None = None,
-    page: Annotated[int, Query(ge=1, le=100)] = 1,
+    role: RoleParam = "primary_premise",
+    commodity: CommodityParam = None,
+    source: SourceParam = None,
+    origin: OriginParam = None,
+    class_type: ClassTypeParam = None,
+    date_from: DateFromParam = None,
+    date_to: DateToParam = None,
+    varietal: VarietalParam = None,
+    page: Annotated[
+        int,
+        Query(
+            ge=1,
+            le=100,
+            description=f"1-based page of the `items` list, {AREA_PAGE_SIZE} per page.",
+        ),
+    ] = 1,
 ) -> MapAreaResponse:
-    """Summarise one selected area of the map, and list the COLAs in it."""
+    """Counts and facet breakdowns for a selected rectangle, plus the COLAs in it.
+
+    Takes the same filters as `/map/points` so a selection summarises exactly
+    what is drawn. `total` is capped by a scan limit; when `totalIsCapped` is
+    true the counts and facets describe a bounded sample rather than the whole
+    selection.
+    """
     _enforce_rate_limit(request)
     _validate(role)
 

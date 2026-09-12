@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -272,37 +272,52 @@ class CoverageResponse(ApiModel):
 class MapHeatBin(ApiModel):
     """Points aggregated onto a server-side grid cell, at the cell centre."""
 
-    lat: float
-    lng: float
-    count: int
+    lat: float = Field(description="Latitude of the cell centre, not of any one record.")
+    lng: float = Field(description="Longitude of the cell centre, not of any one record.")
+    count: int = Field(description="Records falling in the cell.")
 
 
 class MapImagePoint(ApiModel):
     """One COLA pinned at a geocoded location, with its label thumbnail."""
 
-    id: str
+    id: str = Field(description="COLA id.")
     lat: float
     lng: float
     brand: str | None = None
-    category: str | None = None
-    origin: str | None = None
+    category: str | None = Field(
+        default=None, description="Commodity label: Wine, Malt Beverage, Distilled Spirits or Other."
+    )
+    origin: str | None = Field(default=None, description="Origin state or country.")
     approval_date: date | None = None
-    thumb_url: str | None = None
+    thumb_url: str | None = Field(
+        default=None, description="Label artwork thumbnail; null where the COLA has no image."
+    )
 
 
 class MapPointsResponse(ApiModel):
-    mode: str
-    role: str
-    bins: list[MapHeatBin] = []
-    points: list[MapImagePoint] = []
-    # Rows the viewport actually matched, up to the scan cap.
-    total: int = 0
-    # True when the scan cap was reached; `total` is then a floor and the
-    # rendered set is a sample rather than everything in view.
-    total_is_capped: bool = False
-    # Whether the map surface carries a varietal column. The filter is offered
-    # in the UI only where it can actually be applied.
-    varietal_available: bool = False
+    mode: str = Field(description="The mode the response was produced in: `heat` or `image`.")
+    role: str = Field(description="The location role the points were drawn from.")
+    bins: list[MapHeatBin] = Field(default=[], description="Heat mode only; empty in image mode.")
+    points: list[MapImagePoint] = Field(
+        default=[], description="Image mode only; empty in heat mode."
+    )
+    total: int = Field(
+        default=0, description="Rows the viewport actually matched, up to the scan cap."
+    )
+    total_is_capped: bool = Field(
+        default=False,
+        description=(
+            "True when the scan cap was reached; `total` is then a floor and the "
+            "rendered set is a sample rather than everything in view."
+        ),
+    )
+    varietal_available: bool = Field(
+        default=False,
+        description=(
+            "Whether the map surface carries a varietal column. The filter is "
+            "offered in the UI only where it can actually be applied."
+        ),
+    )
 
 
 class FacetGroup(ApiModel):
@@ -314,15 +329,24 @@ class FacetGroup(ApiModel):
 
 
 class MapAreaResponse(ApiModel):
-    total: int = 0
-    total_is_capped: bool = False
-    permit_count: int = 0
+    total: int = Field(default=0, description="COLA locations in the selection, up to the scan cap.")
+    total_is_capped: bool = Field(
+        default=False,
+        description="True when the scan cap was reached; `total` and the facets are then a sample.",
+    )
+    permit_count: int = Field(default=0, description="Distinct permits behind those locations.")
     commodity: list[FacetBucket] = []
-    # Origin is nested under source: states read under Domestic, countries
-    # under Imported. Flat, the two lists could not be read against each other.
-    source: list[FacetGroup] = []
+    source: list[FacetGroup] = Field(
+        default=[],
+        description=(
+            "Origin nested under source: states under Domestic, countries under "
+            "Imported. Flat, the two lists could not be read against each other."
+        ),
+    )
     class_type: list[FacetBucket] = []
-    items: list[ColaSummary] = []
+    items: list[ColaSummary] = Field(
+        default=[], description="One page of the COLAs in the selection, newest first."
+    )
 
 
 # ---------------------------------------------------------------------------
