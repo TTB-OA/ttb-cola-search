@@ -68,9 +68,14 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.api_title,
         lifespan=lifespan,
-        # Enable "Try it out" by default so users can execute endpoints
-        # without first clicking the button.
-        swagger_ui_parameters={"tryItOutEnabled": True},
+        swagger_ui_parameters={
+            # Enable "Try it out" by default so users can execute endpoints
+            # without first clicking the button.
+            "tryItOutEnabled": True,
+            # Hide the Schemas index at the foot of the page: every model is
+            # already shown inline on the operation that returns it.
+            "defaultModelsExpandDepth": -1,
+        },
     )
     instrument_app(app)
 

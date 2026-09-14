@@ -95,8 +95,82 @@ class EventBatch(BaseModel):
     events: Annotated[list[ClientEvent], Field(min_length=1, max_length=MAX_EVENTS_PER_BATCH)]
 
 
-@router.post("/events", status_code=204, response_class=Response)
+# The body is read off the raw request rather than declared as a parameter, so
+# the schema OpenAPI advertises has to be written out here. Without it the docs
+# page offers no editor and "Try it out" posts nothing, which 422s.
+_BODY_SCHEMA = {
+    "type": "object",
+    "required": ["events"],
+    "properties": {
+        "events": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": MAX_EVENTS_PER_BATCH,
+            "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": sorted(ALLOWED_EVENTS),
+                        "description": "Interaction name, from the allowlist above.",
+                    },
+                    "props": {
+                        "type": "object",
+                        "description": (
+                            f"Up to {MAX_PROPS} scalar properties. Strings are "
+                            f"truncated to {MAX_VALUE_LENGTH} characters and keys "
+                            "to 40."
+                        ),
+                        "additionalProperties": {
+                            "type": ["string", "number", "boolean", "null"]
+                        },
+                    },
+                },
+            },
+        }
+    },
+}
+
+_BODY_EXAMPLE = {
+    "events": [
+        {"name": "tour_started", "props": {"page": "search"}},
+        {"name": "result_clicked", "props": {"rank": 1, "view": "grid"}},
+    ]
+}
+
+
+@router.post(
+    "/events",
+    status_code=204,
+    response_class=Response,
+    summary="Record client-side interaction events",
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": _BODY_SCHEMA,
+                    "example": _BODY_EXAMPLE,
+                }
+            },
+        }
+    },
+    responses={
+        204: {"description": "Events accepted."},
+        413: {"description": "Body larger than 16 KB."},
+        422: {"description": "Body is not valid JSON, or an event is not on the allowlist."},
+        429: {"description": "More than 120 requests in 60 seconds from one caller."},
+    },
+)
 async def collect_events(request: Request) -> Response:
+    """Accept a batch of interactions the SPA cannot express through the URL.
+
+    Send `{"events": [{"name": ..., "props": {...}}]}`. `name` must be one of
+    the allowlisted values; anything else is rejected rather than logged, since
+    this endpoint is unauthenticated. A caller is identified only by a salted,
+    rotating session hash — do not put anything identifying in `props`.
+    """
     settings = get_settings()
 
     key = client_key(request, settings.trust_forwarded_for)
