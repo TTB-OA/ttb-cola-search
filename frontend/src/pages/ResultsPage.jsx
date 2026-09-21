@@ -48,6 +48,10 @@ const FILTER_KEYS = [
   'dateTo',
 ];
 
+// Free-text fields whose terms can plausibly appear on the label artwork, in
+// the order the detail page should prefer them when no broad `q` was given.
+const HIGHLIGHT_KEYS = ['q', 'labelText', 'brand', 'fanciful', 'varietal', 'applicant', 'business'];
+
 // Map a facet group name to the single-value URL/API param it controls.
 const FACET_PARAM = {
   commodity: 'commodity',
@@ -471,8 +475,11 @@ export default function ResultsPage() {
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
   const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
   // Carry the search term so the detail page can highlight matching label text.
+  // In describe mode `q` is an artwork prompt, not text to look for.
   const onOpen = (id, rank) => {
-    const term = isDescribe ? '' : (criteria.q || '').trim();
+    const keys = isDescribe ? HIGHLIGHT_KEYS.filter((k) => k !== 'q') : HIGHLIGHT_KEYS;
+    const key = keys.find((k) => (criteria[k] || '').trim());
+    const term = key ? criteria[key].trim() : '';
     track('result_clicked', {
       rank: typeof rank === 'number' ? (page - 1) * PAGE_SIZE + rank + 1 : -1,
       view,
