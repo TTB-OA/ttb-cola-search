@@ -334,12 +334,21 @@ async def ann_endpoint() -> None:
         "SET LOCAL work_mem TO '64MB'",
         "SET LOCAL enable_seqscan TO off",
     ]
+    # Same expression the app orders by, so the same index serves it.
+    from api.config import get_settings
+    settings = get_settings()
+    if settings.ann_halfvec:
+        dim = settings.embedding_dim
+        distance = f"i.image_feature_vector::halfvec({dim}) <=> %s::halfvec({dim})"
+    else:
+        distance = "i.image_feature_vector <=> %s::vector"
+    print(f"distance: {distance}")
     base = f"""--sql
         WITH knn AS (
-          SELECT i.cola_id, (i.image_feature_vector <=> %s::vector) AS dist
+          SELECT i.cola_id, ({distance}) AS dist
           FROM cola_images i
           WHERE {{where}}
-          ORDER BY i.image_feature_vector <=> %s::vector
+          ORDER BY {distance}
           LIMIT %s
         ), best AS (
           SELECT DISTINCT ON (cola_id) cola_id, dist FROM knn ORDER BY cola_id, dist

@@ -11,8 +11,10 @@ from src.api.routers import search
 @pytest.fixture(autouse=True)
 def clear_cache():
     search._query_vector_cache.clear()
+    search.reset_describe_cache()
     yield
     search._query_vector_cache.clear()
+    search.reset_describe_cache()
 
 
 def test_normalize_folds_case_and_collapses_whitespace():
@@ -46,6 +48,23 @@ def test_cache_evicts_least_recently_used_at_the_cap():
     assert search.cached_query_vector("q0") == "[0]"
     assert search.cached_query_vector("q1") is None
     assert search.cached_query_vector("overflow") == "[999]"
+
+
+def test_describe_results_are_cached_per_commodity_and_limit():
+    items = ["a", "b"]
+    search.store_describe((None, 48, "red label"), items)
+    assert search.cached_describe((None, 48, "red label")) == items
+    assert search.cached_describe(("wine", 48, "red label")) is None
+    assert search.cached_describe((None, 12, "red label")) is None
+
+
+def test_describe_results_expire(monkeypatch):
+    search.store_describe((None, 48, "red label"), ["a"])
+    ttl = search.get_settings().describe_cache_seconds
+    now = search.time.monotonic()
+    monkeypatch.setattr(search.time, "monotonic", lambda: now + ttl + 1)
+    assert search.cached_describe((None, 48, "red label")) is None
+    assert (None, 48, "red label") not in search._describe_cache
 
 
 def test_provider_rate_limit_is_a_429_with_retry_after():

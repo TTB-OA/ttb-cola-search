@@ -102,6 +102,7 @@ def test_required_relations_match_the_tables_queried():
     from api.mappers import (
         COVERAGE_TABLE,
         DETAIL_TABLE,
+        IMAGE_VECTOR_INDEX,
         PERMIT_TABLE,
         SEARCH_LABEL_INDEX,
         SEARCH_RECORD_INDEX,
@@ -115,4 +116,5 @@ def test_required_relations_match_the_tables_queried():
         PERMIT_TABLE,
         SEARCH_RECORD_INDEX,
         SEARCH_LABEL_INDEX,
+        IMAGE_VECTOR_INDEX,
     }

@@ -90,9 +90,21 @@ class Settings(BaseSettings):
     embedding_dim: int = 768
     gemini_api_key: str | None = None
     # Serve ANN queries from the halfvec(embedding_dim) expression index on
-    # cola_images instead of the full-precision one. Only turn on once that index
-    # is valid (pg_index.indisvalid); before that the cast form has no index.
-    ann_halfvec: bool = False
+    # cola_images (cola_images_image_vector_halfvec_hnsw_idx, valid in
+    # production since 2026-09-21; /health lists it as required). Half the size
+    # of the full-precision index, so twice as much of it stays cached. Set
+    # false only against a database without it: the cast form then has no index.
+    ann_halfvec: bool = True
+    # Ceiling for the ANN statement alone, above the global statement timeout.
+    # A cold HNSW scan on this disk runs 5-10 s and the page has no client-side
+    # timeout, so a late answer beats a 504 while the index is out of cache.
+    ann_statement_timeout_ms: int = 45000
+    # Describe results are cached per normalised query for this long. The
+    # embedding vector is already cached the same way; this saves the scan too,
+    # which is the expensive half. Backfill adds labels continuously, so keep it
+    # short enough that a repeated query sees them within the hour.
+    describe_cache_seconds: int = 900
+    describe_cache_size: int = 256
 
     # --- Telemetry / analytics ---------------------------------------------
     # Absent connection string == telemetry disabled, which is what local dev

@@ -27,7 +27,7 @@
       "value": true
     },
     "annHalfvec": {
-      "value": false
+      "value": true
     },
     "corsOrigins": {
       "value": "*"

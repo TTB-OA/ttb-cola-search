@@ -62,8 +62,8 @@ param embeddingDim int = 768
 @description('cola_search has GIN indexes on ts_filter(search_tsv, {a,b,c}) and ts_filter(search_tsv, {d}). Record-only and label-only keyword matches then come straight off those indexes.')
 param searchWeightIndexes bool = true
 
-@description('Serve label similarity from the halfvec HNSW index on cola_images. Only true once that index reports indisvalid.')
-param annHalfvec bool = false
+@description('Serve label similarity from the halfvec HNSW index on cola_images (cola_images_image_vector_halfvec_hnsw_idx). False only against a database without it.')
+param annHalfvec bool = true
 
 @description('API key for the embedding provider. Stored as a Container App secret. Pass an empty string if not used yet.')
 @secure()

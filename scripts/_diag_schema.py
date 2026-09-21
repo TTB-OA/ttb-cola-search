@@ -77,6 +77,30 @@ async def main() -> None:
             [q] * 6,
         )
         print(f"  {q!r:26} {r[0]}")
+    print("\n== vector indexes in this schema (validity / size / in-progress builds) ==")
+    for r in await fetch_all(
+        "SELECT c.relname, x.indisvalid, x.indisready, pg_size_pretty(pg_relation_size(c.oid)) AS size "
+        "FROM pg_index x JOIN pg_class c ON c.oid = x.indexrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = current_schema() AND c.relname LIKE 'cola_images_image_vector%%'"
+    ):
+        print(f"  {r}")
+    for r in await fetch_all(
+        "SELECT pid, state, now() - query_start AS running, left(query, 100) AS q "
+        "FROM pg_stat_activity WHERE query ILIKE '%%CREATE INDEX%%' AND pid <> pg_backend_pid()"
+    ):
+        print(f"  build: {r}")
+    for r in await fetch_all(
+        "SELECT pid, phase, blocks_done, blocks_total, tuples_done, tuples_total "
+        "FROM pg_stat_progress_create_index"
+    ):
+        print(f"  build progress: {r}")
+    for r in await fetch_all(
+        "SELECT pid, usename, state, now() - xact_start AS xact_age, left(coalesce(query, ''), 80) AS q "
+        "FROM pg_stat_activity WHERE backend_type = 'client backend' AND state <> 'idle' "
+        "AND pid <> pg_backend_pid() ORDER BY xact_start"
+    ):
+        print(f"  active: {r}")
     print("\n== ref_received_codes ==")
     for r in await fetch_all("SELECT * FROM ref_received_codes LIMIT 10"):
         print(f"  {r}")

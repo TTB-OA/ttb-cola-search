@@ -25,6 +25,8 @@ SEARCH_TABLE = "cola_search"
 # index-served when they exist, so /health probes for them like a table.
 SEARCH_RECORD_INDEX = "cola_search_tsv_record_idx"
 SEARCH_LABEL_INDEX = "cola_search_tsv_label_idx"
+# HNSW index on image_feature_vector::halfvec that every ANN query orders by.
+IMAGE_VECTOR_INDEX = "cola_images_image_vector_halfvec_hnsw_idx"
 # The jsonb rollups (permits, qualifications, images, analyses, OCR text) live
 # here, one row per COLA, so cola_search itself stays narrow enough for its
 # heap fetches to be cheap. Joined on the primary key where a page needs them.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import time
 from collections import OrderedDict
 from typing import Annotated, Any, cast
 
@@ -82,6 +83,35 @@ _ANN_WORK_MEM = "64MB"
 
 _QUERY_VECTOR_CACHE_SIZE = 256
 _query_vector_cache: OrderedDict[str, str] = OrderedDict()
+
+# (commodity, limit, normalised query) -> (expires_at, items)
+_describe_cache: OrderedDict[tuple[str | None, int, str], tuple[float, list[ColaSummary]]] = (
+    OrderedDict()
+)
+
+
+def cached_describe(key: tuple[str | None, int, str]) -> list[ColaSummary] | None:
+    hit = _describe_cache.get(key)
+    if hit is None:
+        return None
+    expires_at, items = hit
+    if expires_at < time.monotonic():
+        del _describe_cache[key]
+        return None
+    _describe_cache.move_to_end(key)
+    return items
+
+
+def store_describe(key: tuple[str | None, int, str], items: list[ColaSummary]) -> None:
+    settings = get_settings()
+    _describe_cache[key] = (time.monotonic() + settings.describe_cache_seconds, items)
+    _describe_cache.move_to_end(key)
+    while len(_describe_cache) > settings.describe_cache_size:
+        _describe_cache.popitem(last=False)
+
+
+def reset_describe_cache() -> None:
+    _describe_cache.clear()
 
 
 def normalize_query(text: str) -> str:
@@ -188,6 +218,10 @@ async def _nearest_by_vector(
             )
         )
         await cur.execute(SQL("SET LOCAL work_mem TO {}").format(Literal(_ANN_WORK_MEM)))
+        await cur.execute(
+            "SELECT set_config('statement_timeout', %s, true)",
+            [str(settings.ann_statement_timeout_ms)],
+        )
         # pgvector prices an HNSW scan off ef_search, so raising it with the candidate
         # count eventually makes a sequential scan look cheaper. It is not: that plan
         # detoasts every 768-d vector in the table and takes ~30s where the index
@@ -298,6 +332,10 @@ async def search_by_description(
 
     # Consulted after the limiter so a cache hit cannot be used to bypass it.
     key = normalize_query(text)
+    commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
+    cached = cached_describe((commodity_code, limit, key))
+    if cached is not None:
+        return SearchResponse(items=cached, total=len(cached), page=1, page_size=limit)
     vector_literal = cached_query_vector(key)
 
     if vector_literal is None:
@@ -318,7 +356,6 @@ async def search_by_description(
         vector_literal = to_pgvector(vector)
         store_query_vector(key, vector_literal)
 
-    commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
     items = await _nearest_by_vector(
         vector_literal,
         limit=limit,
@@ -326,6 +363,7 @@ async def search_by_description(
         exclude_cola_id=None,
         min_candidates=_ANN_MIN_CANDIDATES_TEXT,
     )
+    store_describe((commodity_code, limit, key), items)
     return SearchResponse(items=items, total=len(items), page=1, page_size=limit)
 
 

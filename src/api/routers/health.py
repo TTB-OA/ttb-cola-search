@@ -11,6 +11,7 @@ from ..embedding import available_providers
 from ..mappers import (
     COVERAGE_TABLE,
     DETAIL_TABLE,
+    IMAGE_VECTOR_INDEX,
     PERMIT_TABLE,
     SEARCH_LABEL_INDEX,
     SEARCH_RECORD_INDEX,
@@ -26,7 +27,8 @@ router = APIRouter(tags=["health"])
 # it still succeeds while every real query fails with UndefinedTable, so resolve
 # the names as well as the connection. Indexes are relations too: without the
 # two weight indexes keyword searches still run, but the ones the indexes were
-# built for time out.
+# built for time out; without the halfvec index every ANN query is a
+# sequential scan of 4.6M vectors.
 REQUIRED_RELATIONS: tuple[str, ...] = (
     SEARCH_TABLE,
     DETAIL_TABLE,
@@ -34,6 +36,7 @@ REQUIRED_RELATIONS: tuple[str, ...] = (
     PERMIT_TABLE,
     SEARCH_RECORD_INDEX,
     SEARCH_LABEL_INDEX,
+    IMAGE_VECTOR_INDEX,
 )
 
 # to_regclass() resolves through search_path exactly as a query would, and is a
