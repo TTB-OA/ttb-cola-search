@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -157,6 +158,18 @@ def test_top_colas_survive_a_database_failure(client, enabled, stub_panels):
     assert top == [{"colaId": "123", "views": 9, "brandName": None, "origin": None}]
 
 
+def test_quiet_buckets_are_filled_with_zeros():
+    """KQL omits empty bins; a chart must drop to zero rather than bridge them."""
+    rows = [
+        {"TimeGenerated": "2026-01-01T00:00:00Z", "searches": 10},
+        {"TimeGenerated": "2026-01-04T00:00:00Z", "searches": 4},
+    ]
+    series = insights_router._series(rows, ("searches",), timedelta(days=1))
+
+    assert [p.values["searches"] for p in series] == [10.0, 0.0, 0.0, 4.0]
+    assert [p.t.day for p in series] == [1, 2, 3, 4]
+
+
 def test_failed_panels_are_reported_not_zeroed(client, enabled, monkeypatch):
     async def partial(_settings, _range):
         return {"totals": [{"searches": 7}]}, ["latency", "top_colas"]
@@ -209,6 +222,7 @@ def test_rate_limited_after_a_burst(client, enabled, stub_panels, monkeypatch):
 # ---------------------------------------------------------------------------
 def test_every_range_has_a_bucket_and_lookback():
     assert set(insights.RANGES) == set(insights._BUCKETS)
+    assert set(insights.RANGES) == set(insights.BUCKET_WIDTHS)
     assert insights.DEFAULT_RANGE in insights.RANGES
 
 

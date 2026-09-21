@@ -12,7 +12,7 @@ on a production hostname.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -70,16 +70,47 @@ def _counts(rows: list[dict[str, Any]], key: str) -> list[NamedCount]:
     return out
 
 
-def _series(rows: list[dict[str, Any]], fields: tuple[str, ...]) -> list[TimePoint]:
+def _moment(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            return _moment(datetime.fromisoformat(value.replace("Z", "+00:00")))
+        except ValueError:
+            return None
+    return None
+
+
+def _series(
+    rows: list[dict[str, Any]], fields: tuple[str, ...], step: timedelta | None = None
+) -> list[TimePoint]:
+    """Shape bucket rows into a series, filling the buckets the query omitted.
+
+    ``summarize by bin()`` returns no row at all for a bucket with no events, so
+    a quiet stretch would otherwise draw as a straight line between the buckets
+    either side of it instead of dropping to zero.
+    """
     points = []
     for row in rows:
-        when = row.get("TimeGenerated")
+        when = _moment(row.get("TimeGenerated"))
         if when is None:
             continue
         points.append(
             TimePoint(t=when, values={f: _num(row.get(f)) for f in fields})
         )
-    return points
+    points.sort(key=lambda p: p.t)
+
+    if step is None or step <= timedelta(0):
+        return points
+
+    filled: list[TimePoint] = []
+    for point in points:
+        while filled and point.t - filled[-1].t >= step * 2:
+            filled.append(
+                TimePoint(t=filled[-1].t + step, values={f: 0.0 for f in fields})
+            )
+        filled.append(point)
+    return filled
 
 
 def _rate(rows: list[dict[str, Any]], numerator: str, denominator: str) -> float:
@@ -124,6 +155,7 @@ async def _enrich_colas(rows: list[dict[str, Any]]) -> list[TopCola]:
 
 async def _build(settings: Settings, range_key: str) -> DashboardData:
     panels, unavailable = await insights.run_panels(settings, range_key)
+    step = insights.BUCKET_WIDTHS[range_key]
 
     totals_rows = panels.get("totals") or [{}]
     head = totals_rows[0]
@@ -144,10 +176,12 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
 
     built = DashboardPanels(
         usage_over_time=_series(
-            panels.get("usage_over_time") or [], ("searches", "detailViews", "sessions")
+            panels.get("usage_over_time") or [],
+            ("searches", "detailViews", "sessions"),
+            step,
         ),
         zero_results_over_time=_series(
-            panels.get("zero_results_over_time") or [], ("searches", "zero")
+            panels.get("zero_results_over_time") or [], ("searches", "zero"), step
         ),
         filter_usage=_counts(panels.get("filter_usage") or [], "filter"),
         paging_depth=_counts(panels.get("paging_depth") or [], "page"),
@@ -165,15 +199,18 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
             )
             for r in latency_rows
         ],
-        reliability=_series(panels.get("reliability") or [], ("total", "failed")),
+        reliability=_series(panels.get("reliability") or [], ("total", "failed"), step),
         status_codes=_counts(panels.get("status_codes") or [], "code"),
         image_search_over_time=_series(
             panels.get("image_search_over_time") or [],
             ("performed", "abandoned", "stateLost"),
+            step,
         ),
         upload_sizes=_counts(panels.get("upload_sizes") or [], "bucket"),
         map_over_time=_series(
-            panels.get("map_over_time") or [], ("viewports", "areas", "markers", "sessions")
+            panels.get("map_over_time") or [],
+            ("viewports", "areas", "markers", "sessions"),
+            step,
         ),
         map_mode_usage=_counts(panels.get("map_mode_usage") or [], "reading"),
         map_filter_usage=_counts(panels.get("map_filter_usage") or [], "filter"),

@@ -622,6 +622,15 @@ export default function MapPage() {
             </p>
             <Link className="btn secondary sm" to="/coverage">View coverage</Link>
           </div>
+        ) : pointsState.error && !pointsState.loading ? (
+          <div className="map-overlay panel" role="alert">
+            <h3>{pointsState.error.status === 429 ? 'Too many map requests' : 'The map could not load this view'}</h3>
+            <p className="muted">
+              {pointsState.error.status === 429
+                ? 'Wait a moment and move the map again.'
+                : 'The viewport query did not finish. Zoom in or move the map to try again.'}
+            </p>
+          </div>
         ) : !pointsState.loading && viewport && total === 0 ? (
           <div className="map-overlay panel">
             <h3>Nothing in view</h3>

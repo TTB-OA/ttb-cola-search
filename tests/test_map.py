@@ -49,8 +49,16 @@ def stub(monkeypatch, rows=(), one=None) -> list[tuple[str, list]]:
 
 
 def bound(calls) -> list:
-    """Parameters bound by the map queries, ignoring the capability probe."""
-    return [p for query, params in calls if "information_schema" not in query for p in params]
+    """Parameters bound by the map queries, ignoring the capability probes."""
+    return [p for query, params in calls if not _is_probe(query) for p in params]
+
+
+def _is_probe(query: str) -> bool:
+    return "information_schema" in query or "to_regclass" in query
+
+
+def _heat_query(calls) -> str:
+    return next(q for q, _p in calls if "floor(" in q)
 
 
 def _bin(gx: int, gy: int, n: int, scanned: int = 3):
@@ -110,6 +118,44 @@ def test_the_heat_scan_is_not_capped_but_the_bins_are(client, monkeypatch):
     client.get(POINTS, params=VIEWPORT)
     assert map_router.get_settings().map_scan_cap + 1 not in bound(calls)
     assert map_router.BIN_CAP in bound(calls)
+
+
+def test_heat_mode_stays_off_the_geography_column_when_the_covering_index_exists(
+    client, monkeypatch
+):
+    """Referencing `location` forces a heap fetch per row; at national zoom that
+    is a sequential scan of the whole surface and a 504."""
+    calls = stub(monkeypatch, [], one={"ok": True})
+    client.get(POINTS, params=VIEWPORT)
+    query = _heat_query(calls)
+    assert "ST_MakeEnvelope" not in query
+    assert "longitude BETWEEN %s AND %s" in query
+    assert "location_role = %s" in query
+
+
+def test_heat_mode_keeps_the_gist_predicate_without_the_covering_index(
+    client, monkeypatch
+):
+    calls = stub(monkeypatch, [], one=None)
+    client.get(POINTS, params=VIEWPORT)
+    assert "ST_MakeEnvelope" in _heat_query(calls)
+
+
+def test_image_mode_keeps_the_gist_predicate_even_with_the_covering_index(
+    client, monkeypatch
+):
+    """Pins read heap columns anyway, so the index-only path buys nothing."""
+    calls = stub(monkeypatch, [], one={"ok": True})
+    client.get(POINTS, params={**VIEWPORT, "mode": "image"})
+    query = next(q for q, _p in calls if "best_image_file_name" in q)
+    assert "ST_MakeEnvelope" in query
+
+
+def test_the_index_probe_runs_once_rather_than_per_viewport(client, monkeypatch):
+    calls = stub(monkeypatch, [], one={"ok": True})
+    for _ in range(3):
+        client.get(POINTS, params=VIEWPORT)
+    assert sum("to_regclass" in q for q, _p in calls) == 1
 
 
 # --- image mode -------------------------------------------------------------

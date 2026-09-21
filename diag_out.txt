@@ -1,0 +1,78 @@
+﻿
+====================================================================================================
+/map/points heat ù proposed statement (lat/lng bounds only, window total)
+====================================================================================================
+
+--- default_z3 role=primary_premise  ---
+wall 1242 ms
+  Limit  (cost=786431.46..786481.46 rows=20000 width=56) (actual time=1214.768..1214.801 rows=392 loops=1)
+    Buffers: shared hit=577815 read=244
+    ->  Sort  (cost=786431.46..788515.74 rows=833711 width=56) (actual time=1214.767..1214.780 rows=392 loops=1)
+          Sort Key: (count(*)) DESC
+          Sort Method: quicksort  Memory: 52kB
+          Buffers: shared hit=577815 read=244
+          ->  WindowAgg  (cost=722703.74..722703.79 rows=833711 width=56) (actual time=1214.632..1214.674 rows=392 loops=1)
+                Buffers: shared hit=577812 read=244
+                ->  HashAggregate  (cost=677242.28..712282.41 rows=833711 width=24) (actual time=1214.308..1214.542 rows=392 loops=1)
+                      Group Key: floor((cola_map_search.longitude / '1.40625'::double precision)), floor((cola_map_search.latitude / '1.40625'::double precision))
+                      Planned Partitions: 16  Batches: 1  Memory Usage: 1585kB
+                      Buffers: shared hit=577812 read=244
+                      ->  Index Only Scan using cola_map_search_heat_idx on cola_map_search  (cost=0.56..588792.06 rows=1880669 width=16) (actual time=0.048..882.363 rows=2512416 loops=1)
+                            Index Cond: ((location_role = 'primary_premise'::text) AND (latitude >= '6.855032678204125'::double precision) AND (latitude <= '60.60497277804302'::double precision) AND (longitude >= '-179.99999999989967'::double precision) AND (longitude <= '-11.013884945545442'::double precision))
+                            Heap Fetches: 610763
+                            Buffers: shared hit=577812 read=244
+  Settings: effective_cache_size = '12GB', jit = 'off', random_page_cost = '2', search_path = '"pcr-prod", public', effective_io_concurrency = '200'
+  Planning:
+    Buffers: shared hit=306 read=23
+  Planning Time: 5.783 ms
+  Execution Time: 1215.683 ms
+
+--- default_z3 role=product_origin  ---
+wall 2040 ms
+  Limit  (cost=965950.40..966000.40 rows=20000 width=56) (actual time=2021.553..2021.562 rows=77 loops=1)
+    Buffers: shared hit=304715 read=38693 written=1
+    ->  Sort  (cost=965950.40..968239.65 rows=915702 width=56) (actual time=2021.551..2021.556 rows=77 loops=1)
+          Sort Key: (count(*)) DESC
+          Sort Method: quicksort  Memory: 30kB
+          Buffers: shared hit=304715 read=38693 written=1
+          ->  WindowAgg  (cost=895955.39..895955.45 rows=915702 width=56) (actual time=2021.489..2021.518 rows=77 loops=1)
+                Buffers: shared hit=304712 read=38693 written=1
+                ->  HashAggregate  (cost=835674.14..884509.18 rows=915702 width=24) (actual time=2021.243..2021.456 rows=77 loops=1)
+                      Group Key: floor((cola_map_search.longitude / '1.40625'::double precision)), floor((cola_map_search.latitude / '1.40625'::double precision))
+                      Planned Partitions: 16  Batches: 1  Memory Usage: 1561kB
+                      Buffers: shared hit=304712 read=38693 written=1
+                      ->  Index Only Scan using cola_map_search_heat_idx on cola_map_search  (cost=0.56..688685.02 rows=3125350 width=16) (actual time=0.506..1772.211 rows=1898622 loops=1)
+                            Index Cond: ((location_role = 'product_origin'::text) AND (latitude >= '6.855032678204125'::double precision) AND (latitude <= '60.60497277804302'::double precision) AND (longitude >= '-179.99999999989967'::double precision) AND (longitude <= '-11.013884945545442'::double precision))
+                            Heap Fetches: 588879
+                            Buffers: shared hit=304712 read=38693 written=1
+  Settings: effective_cache_size = '12GB', jit = 'off', random_page_cost = '2', search_path = '"pcr-prod", public', effective_io_concurrency = '200'
+  Planning:
+    Buffers: shared hit=329
+  Planning Time: 0.666 ms
+  Execution Time: 2022.337 ms
+
+--- default_z3 role=primary_premise {'commodity': 'wine', 'date_from': datetime.date(2020, 1, 1)} ---
+wall 883 ms
+  Limit  (cost=654177.69..654227.69 rows=20000 width=56) (actual time=865.119..865.151 rows=347 loops=1)
+    Buffers: shared hit=578056
+    ->  Sort  (cost=654177.69..655146.35 rows=387463 width=56) (actual time=865.118..865.131 rows=347 loops=1)
+          Sort Key: (count(*)) DESC
+          Sort Method: quicksort  Memory: 49kB
+          Buffers: shared hit=578056
+          ->  WindowAgg  (cost=624560.53..624560.57 rows=387463 width=56) (actual time=864.965..865.031 rows=347 loops=1)
+                Buffers: shared hit=578056
+                ->  HashAggregate  (cost=607204.97..619717.29 rows=387463 width=24) (actual time=864.560..864.836 rows=347 loops=1)
+                      Group Key: floor((cola_map_search.longitude / '1.40625'::double precision)), floor((cola_map_search.latitude / '1.40625'::double precision))
+                      Planned Partitions: 8  Batches: 1  Memory Usage: 1585kB
+                      Buffers: shared hit=578056
+                      ->  Index Only Scan using cola_map_search_heat_idx on cola_map_search  (cost=0.56..584266.09 rows=487737 width=16) (actual time=0.065..775.294 rows=664284 loops=1)
+                            Index Cond: ((location_role = 'primary_premise'::text) AND (latitude >= '6.855032678204125'::double precision) AND (latitude <= '60.60497277804302'::double precision) AND (longitude >= '-179.99999999989967'::double precision) AND (longitude <= '-11.013884945545442'::double precision))
+                            Filter: ((completed_date >= '2020-01-01'::date) AND (ct_commodity = 'wine'::text))
+                            Rows Removed by Filter: 1848132
+                            Heap Fetches: 610763
+                            Buffers: shared hit=578056
+  Settings: effective_cache_size = '12GB', jit = 'off', random_page_cost = '2', search_path = '"pcr-prod", public', effective_io_concurrency = '200'
+  Planning:
+    Buffers: shared hit=21 read=5
+  Planning Time: 0.262 ms
+  Execution Time: 865.833 ms

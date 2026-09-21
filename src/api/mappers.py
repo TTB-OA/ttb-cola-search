@@ -42,6 +42,11 @@ DIRTY_TABLE = "cola_search_dirty"
 # provenance tables by the same pipeline that maintains cola_search.
 MAP_TABLE = "cola_map_search"
 MAP_DIRTY_TABLE = "cola_map_dirty"
+# Covering btree (location_role, latitude, longitude) INCLUDE (filter columns)
+# that heat mode aggregates from as an index-only scan. Optional like the map
+# surface itself: without it heat queries fall back to the GiST path, which
+# cannot finish a national viewport inside the statement timeout.
+MAP_HEAT_INDEX = "cola_map_search_heat_idx"
 # Pipeline coverage by calendar year of completed_date, rebuilt whole by the
 # same job that maintains cola_search.
 COVERAGE_TABLE = "cola_coverage_year"

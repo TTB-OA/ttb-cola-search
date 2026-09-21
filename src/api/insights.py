@@ -31,8 +31,18 @@ RANGES: dict[str, timedelta] = {
 
 DEFAULT_RANGE = "30d"
 
-# Bucket width per range, so a chart never returns hundreds of points.
-_BUCKETS: dict[str, str] = {"7d": "6h", "14d": "12h", "30d": "1d", "90d": "1d"}
+# Bucket width per range, so a chart never returns hundreds of points. The
+# dashboard reuses these to fill the buckets KQL omits when nothing happened.
+BUCKET_WIDTHS: dict[str, timedelta] = {
+    "7d": timedelta(hours=6),
+    "14d": timedelta(hours=12),
+    "30d": timedelta(days=1),
+    "90d": timedelta(days=1),
+}
+
+_BUCKETS: dict[str, str] = {
+    key: f"{int(width.total_seconds())}s" for key, width in BUCKET_WIDTHS.items()
+}
 
 _SERVER_EVENTS = '"search_performed", "detail_viewed", "similar_requested", "image_search_performed"'
 

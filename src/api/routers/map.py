@@ -27,6 +27,7 @@ from ..config import get_settings
 from ..db import fetch_all, fetch_one
 from ..mappers import (
     COMMODITY_CODE,
+    MAP_HEAT_INDEX,
     MAP_TABLE,
     SEARCH_TABLE,
     SOURCE_CODE,
@@ -156,6 +157,15 @@ _limiter: SlidingWindowLimiter | None = None
 # either a 500 on a filter the UI offered or silently unfiltered results.
 _has_varietal: bool | None = None
 
+# Heat mode reads three narrow columns off a 6.5 GB heap. A national viewport
+# matches a quarter of the table, so the planner rightly refuses the GiST and
+# sequentially scans the whole heap: 17-22 s, past the statement timeout. The
+# covering btree (location_role, latitude, longitude) INCLUDE (filter columns)
+# lets the same aggregate run as an index-only scan that never touches the
+# heap, but only if the predicate stays off the geography column. Probed once
+# so an environment without the index keeps the GiST path.
+_has_heat_index: bool | None = None
+
 
 async def varietal_supported() -> bool:
     global _has_varietal
@@ -177,6 +187,20 @@ async def varietal_supported() -> bool:
     return _has_varietal
 
 
+async def heat_index_available() -> bool:
+    global _has_heat_index
+    if _has_heat_index is None:
+        try:
+            row = await fetch_one(
+                "SELECT to_regclass(%s) IS NOT NULL AS ok", [MAP_HEAT_INDEX]
+            )
+            _has_heat_index = bool(row and row["ok"])
+        except Exception:
+            logger.warning("could not probe for the map heat index", exc_info=True)
+            return False
+    return _has_heat_index
+
+
 def _map_limiter() -> SlidingWindowLimiter:
     global _limiter
     if _limiter is None:
@@ -188,9 +212,10 @@ def _map_limiter() -> SlidingWindowLimiter:
 
 
 def reset_limiter() -> None:
-    global _limiter, _has_varietal
+    global _limiter, _has_varietal, _has_heat_index
     _limiter = None
     _has_varietal = None
+    _has_heat_index = None
 
 
 def _enforce_rate_limit(request: Request) -> None:
@@ -241,12 +266,15 @@ _ENVELOPE = (
 
 
 def _bbox_condition(
-    west: float, south: float, east: float, north: float
+    west: float, south: float, east: float, north: float, geography: bool = True
 ) -> tuple[str, list[Any]]:
     """Viewport predicate against the GiST-indexed geography column.
 
     The geography test is a bounding-box filter that rides the index; the plain
     latitude/longitude bounds alongside it are what make the result exact.
+    With ``geography=False`` only the plain bounds are emitted, for the heat
+    aggregate's index-only scan over the covering btree, which the geography
+    column would pull back onto the heap.
 
     A viewport straddling the antimeridian arrives with west greater than east
     and has to be tested as two envelopes; one envelope spanning the difference
@@ -266,17 +294,22 @@ def _bbox_condition(
 
     west, east = _wrap_longitude(west), _wrap_longitude(east)
     if west > east:
+        lng = f"(longitude >= %s OR longitude <= %s) AND {lat}"
+        if not geography:
+            return lng, [west, east, south, north]
         return (
-            f"({_ENVELOPE} OR {_ENVELOPE}) "
-            f"AND (longitude >= %s OR longitude <= %s) AND {lat}",
+            f"({_ENVELOPE} OR {_ENVELOPE}) AND {lng}",
             [
                 west, south, 180.0, north, ENVELOPE_SEGMENT_DEG,
                 -180.0, south, east, north, ENVELOPE_SEGMENT_DEG,
                 west, east, south, north,
             ],
         )
+    lng = f"longitude BETWEEN %s AND %s AND {lat}"
+    if not geography:
+        return lng, [west, east, south, north]
     return (
-        f"{_ENVELOPE} AND longitude BETWEEN %s AND %s AND {lat}",
+        f"{_ENVELOPE} AND {lng}",
         [west, south, east, north, ENVELOPE_SEGMENT_DEG, west, east, south, north],
     )
 
@@ -294,9 +327,10 @@ def build_map_filters(
     date_from: date | None = None,
     date_to: date | None = None,
     varietal: str | None = None,
+    geography: bool = True,
 ) -> tuple[str, list[Any]]:
     """WHERE clause for a viewport query, and the parameters it binds."""
-    bbox_sql, params = _bbox_condition(west, south, east, north)
+    bbox_sql, params = _bbox_condition(west, south, east, north, geography)
     conditions = [bbox_sql, "location_role = %s"]
     params.append(role)
 
@@ -370,22 +404,22 @@ async def _heat_bins(
     An unordered LIMIT here used to bound the scan, but it made the surface a
     lie: Postgres returns whichever rows the plan reaches first, so at national
     zoom whole regions dropped out and reappeared when the viewport nudged. The
-    output is bounded by BIN_CAP instead, and grouping is cheap because it reads
-    two columns behind the GiST bbox filter.
+    output is bounded by BIN_CAP instead. The total is a window over the bins
+    rather than a second pass over the matched rows, which at national zoom
+    materialised millions of them to temp just to count them.
     """
     rows = await fetch_all(
         f"""--sql
-        WITH m AS (
-            SELECT latitude, longitude FROM {MAP_TABLE} {where}
-        ), g AS (
+        WITH g AS (
             SELECT floor(longitude / %s) AS gx, floor(latitude / %s) AS gy,
                    count(*) AS n
-              FROM m GROUP BY 1, 2
+              FROM {MAP_TABLE} {where}
+             GROUP BY 1, 2
         )
-        SELECT gx, gy, n, (SELECT count(*) FROM m) AS scanned
+        SELECT gx, gy, n, sum(n) OVER () AS scanned
           FROM g ORDER BY n DESC LIMIT %s
         """,
-        [*params, cell, cell, BIN_CAP],
+        [cell, cell, *params, BIN_CAP],
     )
 
     total = int(rows[0]["scanned"]) if rows else 0
@@ -504,6 +538,7 @@ async def map_points(
     where, params = build_map_filters(
         west, south, east, north, role, commodity, source, origin,
         class_type, date_from, date_to, await _resolve_varietal(varietal),
+        geography=mode == "image" or not await heat_index_available(),
     )
 
     try:

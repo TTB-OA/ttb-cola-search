@@ -107,6 +107,22 @@ def test_the_latitude_bounds_are_applied_exactly():
     assert_aligned(where, params)
 
 
+def test_the_heat_path_binds_plain_bounds_only():
+    """Heat mode aggregates from the covering btree as an index-only scan; a
+    reference to the geography column would pull every row back to the heap."""
+    where, params = build(bbox=(-156.0, 22.0, -36.0, 51.0), geography=False)
+    assert "location" not in where.replace("location_role", "")
+    assert "longitude BETWEEN %s AND %s AND latitude BETWEEN %s AND %s" in where
+    assert params == [-156.0, -36.0, 22.0, 51.0, "primary_premise"]
+
+
+def test_the_heat_path_across_the_antimeridian_binds_two_longitude_ranges():
+    where, params = build(bbox=(170.0, -40.0, -170.0, -30.0), geography=False)
+    assert "ST_MakeEnvelope" not in where
+    assert "(longitude >= %s OR longitude <= %s)" in where
+    assert_aligned(where, params)
+
+
 @pytest.mark.parametrize("span", [63.0, 120.0, 240.0, 359.0])
 def test_wide_viewports_still_bound_the_south(span):
     """A wide viewport used to lose everything below the great-circle bulge."""
