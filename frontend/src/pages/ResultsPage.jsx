@@ -582,6 +582,10 @@ export default function ResultsPage() {
                   onChange={(v) => setFacet('permitState', v)}
                 />
               </>
+            ) : data ? (
+              <div className="muted" style={{ fontSize: 13 }}>
+                Filter counts aren&apos;t available for this combination of filters.
+              </div>
             ) : (
               <div className="muted" style={{ fontSize: 13 }}>Loading filters…</div>
             )}

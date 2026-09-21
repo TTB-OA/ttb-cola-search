@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     postgres_pgbouncer: bool = False
     # Ceiling on any single statement, so a runaway query cannot pin a pool slot.
     postgres_statement_timeout_ms: int = 15000
+    # Shorter ceiling for the count/facet statement behind /colas. The paged rows
+    # are what the user is waiting on; when the aggregate cannot finish in time
+    # the response degrades to a floor total and no facets instead of a 504.
+    search_count_timeout_ms: int = 5000
+    # work_mem for the /colas statements. The server default (4MB) turns the
+    # tsvector bitmap scans lossy and forces a heap recheck of every candidate.
+    search_work_mem: str = "64MB"
+    # cola_search carries GIN indexes on ts_filter(search_tsv, '{a,b,c}') and
+    # ts_filter(search_tsv, '{d}'). Until they exist the weight-restricted
+    # predicates are written as weighted tsqueries against the plain search_tsv
+    # index, which returns every row holding the lexeme and rechecks each one.
+    search_weight_indexes: bool = False
     # Image search reads the upload into memory before embedding it.
     max_upload_bytes: int = 10 * 1024 * 1024
 
@@ -75,6 +87,10 @@ class Settings(BaseSettings):
     embedding_model: str = "gemini-embedding-2"
     embedding_dim: int = 768
     gemini_api_key: str | None = None
+    # Serve ANN queries from the halfvec(embedding_dim) expression index on
+    # cola_images instead of the full-precision one. Only turn on once that index
+    # is valid (pg_index.indisvalid); before that the cast form has no index.
+    ann_halfvec: bool = False
 
     # --- Telemetry / analytics ---------------------------------------------
     # Absent connection string == telemetry disabled, which is what local dev

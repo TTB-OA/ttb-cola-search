@@ -55,7 +55,7 @@ _ANN_OVERFETCH = 6
 # floor of 64 the scan lost the true 1st and 2nd nearest neighbours outright.
 # 1000 is pgvector's ceiling, and the needed value scales with the corpus: 600 gave
 # full recall at 80k indexed images but already dropped a true rank-3 label at 157k.
-# At 1.2M it is no longer sufficient on its own — see _ANN_MIN_CANDIDATES — and the
+# At 1.2M it is no longer sufficient on its own — see _ANN_MIN_CANDIDATES_TEXT — and the
 # next lever is the index itself (a rebuild at higher m / ef_construction).
 _HNSW_EF_SEARCH = 1000
 
@@ -63,8 +63,14 @@ _HNSW_EF_SEARCH = 1000
 # first pass produced, so a candidate LIMIT at or below ef_search leaves it inert
 # and recall stays at whatever the single greedy descent found. At 1.2M indexed
 # vectors that costs a fifth of the true top 48 on a text query; pulling 5000
-# candidates forces the scan to keep widening and recovers them for ~130 ms.
-_ANN_MIN_CANDIDATES = 5000
+# candidates forces the scan to keep widening and recovers them for ~130 ms warm.
+#
+# Only text queries need this. An image or a stored label vector sits inside the
+# cloud it is searched against, so the greedy descent already lands on the true
+# neighbours, and the extra candidates are pure cost: on a cold cache the 5000
+# pull read ~41k index pages (31 s at 1100 IOPS) where the plain overfetch read a
+# few hundred.
+_ANN_MIN_CANDIDATES_TEXT = 5000
 
 # Ceiling on tuples the resumed scan may visit before it gives up.
 _HNSW_MAX_SCAN_TUPLES = 200_000
@@ -103,6 +109,7 @@ async def _nearest_by_vector(
     exclude_cola_id: str | None,
     permit_num: str | None = None,
     permit_mode: str | None = None,
+    min_candidates: int = 0,
 ) -> list[ColaSummary]:
     params: list[Any] = [vector_literal]
     filters = ["i.image_feature_vector IS NOT NULL"]
@@ -121,18 +128,30 @@ async def _nearest_by_vector(
         params.append(permit_num)
     inner_where = " AND ".join(filters)
 
-    candidates = max(limit * _ANN_OVERFETCH, _ANN_MIN_CANDIDATES)
+    candidates = max(limit * _ANN_OVERFETCH, min_candidates)
     # The ORDER BY must be the bare distance operator (not an alias) for the
     # HNSW index to serve it; the literal is therefore bound twice.
     params.extend([vector_literal, candidates])
 
+    # The expression has to match the index definition exactly. The halfvec
+    # index is half the size of the full-precision one, which is what decides
+    # whether a cold scan reads from cache or from disk; it is opt-in until the
+    # concurrent build has finished, because until then the cast form would seq
+    # scan every vector.
+    settings = get_settings()
+    if settings.ann_halfvec:
+        dim = settings.embedding_dim
+        distance = f"i.image_feature_vector::halfvec({dim}) <=> %s::halfvec({dim})"
+    else:
+        distance = "i.image_feature_vector <=> %s::vector"
+
     query = (
         f"""--sql
         WITH knn AS (
-          SELECT i.cola_id, (i.image_feature_vector <=> %s::vector) AS dist
+          SELECT i.cola_id, ({distance}) AS dist
           FROM cola_images i
           WHERE {inner_where}
-          ORDER BY i.image_feature_vector <=> %s::vector
+          ORDER BY {distance}
           LIMIT %s
         ), best AS (
           SELECT DISTINCT ON (cola_id) cola_id, dist FROM knn ORDER BY cola_id, dist
@@ -301,7 +320,11 @@ async def search_by_description(
 
     commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
     items = await _nearest_by_vector(
-        vector_literal, limit=limit, commodity_code=commodity_code, exclude_cola_id=None
+        vector_literal,
+        limit=limit,
+        commodity_code=commodity_code,
+        exclude_cola_id=None,
+        min_candidates=_ANN_MIN_CANDIDATES_TEXT,
     )
     return SearchResponse(items=items, total=len(items), page=1, page_size=limit)
 

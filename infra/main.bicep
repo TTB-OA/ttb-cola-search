@@ -59,6 +59,12 @@ param embeddingProvider string = 'gemini'
 param embeddingModel string = 'gemini-embedding-2'
 param embeddingDim int = 768
 
+@description('cola_search has GIN indexes on ts_filter(search_tsv, {a,b,c}) and ts_filter(search_tsv, {d}). Record-only and label-only keyword matches then come straight off those indexes.')
+param searchWeightIndexes bool = true
+
+@description('Serve label similarity from the halfvec HNSW index on cola_images. Only true once that index reports indisvalid.')
+param annHalfvec bool = false
+
 @description('API key for the embedding provider. Stored as a Container App secret. Pass an empty string if not used yet.')
 @secure()
 param geminiApiKey string = ''
@@ -256,6 +262,8 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               { name: 'EMBEDDING_PROVIDER', value: embeddingProvider }
               { name: 'EMBEDDING_MODEL', value: embeddingModel }
               { name: 'EMBEDDING_DIM', value: string(embeddingDim) }
+              { name: 'SEARCH_WEIGHT_INDEXES', value: string(searchWeightIndexes) }
+              { name: 'ANN_HALFVEC', value: string(annHalfvec) }
               { name: 'CORS_ORIGINS', value: corsOrigins }
               { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', secretRef: 'appinsights-connection-string' }
               { name: 'TELEMETRY_SAMPLING_RATIO', value: telemetrySamplingRatio }

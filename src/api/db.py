@@ -196,17 +196,63 @@ async def close_pool() -> None:
         _token_provider = None
 
 
-async def fetch_all(query: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
-    async with _cursor() as cur:
-        await cur.execute(cast(QueryNoTemplate, query), params)
+async def fetch_all(
+    query: str,
+    params: list[Any] | None = None,
+    *,
+    work_mem: str | None = None,
+    statement_timeout_ms: int | None = None,
+    prepare: bool | None = None,
+) -> list[dict[str, Any]]:
+    """Run a query and return every row.
+
+    ``prepare=False`` keeps the statement off psycopg's server-side prepared
+    statement cache. Past the prepare threshold Postgres may switch a prepared
+    statement to a generic plan, and a generic plan for a tsquery parameter has
+    no idea how selective the term is; the same SQL serves every search term,
+    so a plan chosen for "vodka" would then be reused for "napa valley".
+    """
+    async with _tuned_cursor(work_mem, statement_timeout_ms) as cur:
+        await cur.execute(cast(QueryNoTemplate, query), params, prepare=prepare)
         rows = await cur.fetchall()
         # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
         return cast(list[dict[str, Any]], rows)
 
 
-async def fetch_one(query: str, params: list[Any] | None = None) -> dict[str, Any] | None:
-    async with _cursor() as cur:
-        await cur.execute(cast(QueryNoTemplate, query), params)
+async def fetch_one(
+    query: str,
+    params: list[Any] | None = None,
+    *,
+    work_mem: str | None = None,
+    statement_timeout_ms: int | None = None,
+    prepare: bool | None = None,
+) -> dict[str, Any] | None:
+    async with _tuned_cursor(work_mem, statement_timeout_ms) as cur:
+        await cur.execute(cast(QueryNoTemplate, query), params, prepare=prepare)
         row = await cur.fetchone()
         # row_factory=dict_row yields mapping rows at runtime; cast for static checkers.
         return cast(dict[str, Any] | None, row)
+
+
+@asynccontextmanager
+async def _tuned_cursor(
+    work_mem: str | None, statement_timeout_ms: int | None
+) -> AsyncIterator[AsyncCursor[Any]]:
+    """Plain cursor, or one whose transaction carries per-statement settings.
+
+    Settings go through ``set_config(..., true)`` so they die with the
+    transaction and never leak into the pooled session.
+    """
+    if work_mem is None and statement_timeout_ms is None:
+        async with _cursor() as cur:
+            yield cur
+        return
+    async with transaction_cursor() as cur:
+        if work_mem is not None:
+            await cur.execute("SELECT set_config('work_mem', %s, true)", [work_mem])
+        if statement_timeout_ms is not None:
+            await cur.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                [str(statement_timeout_ms)],
+            )
+        yield cur

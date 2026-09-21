@@ -168,9 +168,15 @@ def test_unknown_commodity_defaults_to_type_rank_first():
 def test_visual_interest_join_guards_a_non_array_rollup():
     """jsonb_array_elements raises on a scalar; NULL alone would be safe."""
     join = visual_interest_join_sql("ci")
-    assert "jsonb_typeof(vi_hero.images) = 'array'" in join
+    assert "jsonb_typeof(vi_detail.images) = 'array'" in join
     assert "LEFT JOIN LATERAL" in join
     assert "e ->> 'file_name' = ci.file_name" in join
+
+
+def test_visual_interest_scores_come_from_the_detail_table():
+    join = visual_interest_join_sql("ci")
+    assert "LEFT JOIN cola_search_detail vi_detail ON vi_detail.cola_id = ci.cola_id" in join
+    assert "vi_hero.images" not in join
 
 
 def test_join_and_order_agree_on_the_cola_search_alias():

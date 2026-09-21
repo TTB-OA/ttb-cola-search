@@ -23,6 +23,12 @@
     "embeddingDim": {
       "value": 768
     },
+    "searchWeightIndexes": {
+      "value": true
+    },
+    "annHalfvec": {
+      "value": false
+    },
     "corsOrigins": {
       "value": "*"
     },

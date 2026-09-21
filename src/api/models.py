@@ -167,7 +167,8 @@ class Facets(ApiModel):
 class SearchResponse(ApiModel):
     items: list[ColaSummary] = []
     total: int = 0
-    # True when the match count hit the server's cap; `total` is then a floor.
+    # True when `total` is a floor rather than an exact count: the match count
+    # hit the server's cap, or the count was not run and only this page is known.
     total_is_capped: bool = False
     page: int = 1
     page_size: int = 24

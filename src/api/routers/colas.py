@@ -3,26 +3,30 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from psycopg.errors import UndefinedTable
+from psycopg.errors import QueryCanceled, UndefinedTable
 
+from ..config import get_settings
 from ..db import fetch_all, fetch_one
 from ..mappers import (
     APPLICATION_TYPE_SEP,
     APPLICATION_TYPES,
     COMMODITY_CODE,
-    DETAIL_COLUMNS,
+    DETAIL_COLUMN_LIST,
+    DETAIL_JSON_COLUMN_LIST,
+    DETAIL_TABLE,
     MAP_TABLE,
-    OCR_TABLE,
     SEARCH_TABLE,
     SOURCE_CODE,
-    SUMMARY_COLUMNS,
+    SUMMARY_COLUMN_LIST,
     commodity_label,
     detail_from_rows,
     image_display_order_sql,
+    select_columns,
     source_label,
     summary_from_row,
     visual_interest_join_sql,
@@ -37,12 +41,14 @@ router = APIRouter(tags=["colas"])
 COUNT_CAP = 10_000
 
 # cola_id breaks ties so LIMIT/OFFSET paging stays stable, and lines the sort up
-# with the composite indexes on cola_search.
+# with the composite indexes on cola_search. Qualified because a keyword search
+# joins a second relation that also carries cola_id.
+_ID = f"{SEARCH_TABLE}.cola_id"
 SORTS = {
-    "relevance": "completed_date DESC NULLS LAST, cola_id DESC",
-    "approvalDate": "completed_date DESC NULLS LAST, cola_id DESC",
-    "brand": "brand_name ASC NULLS LAST, cola_id ASC",
-    "applicant": "applicant_name ASC NULLS LAST, cola_id ASC",
+    "relevance": f"completed_date DESC NULLS LAST, {_ID} DESC",
+    "approvalDate": f"completed_date DESC NULLS LAST, {_ID} DESC",
+    "brand": f"brand_name ASC NULLS LAST, {_ID} ASC",
+    "applicant": f"applicant_name ASC NULLS LAST, {_ID} ASC",
 }
 
 # Identifier columns the free-text box probes exactly, alongside the tsvector.
@@ -50,31 +56,143 @@ SORTS = {
 # spaces and leading zeros, so they cannot be normalised to a number.
 _ID_COLUMNS = ("cola_id", "serial_num", "permit_num", "primary_permit_id")
 
-# Matches the record document, the identifier columns, and the label OCR.
+# Aliases of the materialised id sets the list statements join onto cola_search.
+KEYWORD_ALIAS = "kw"
+
+# Table-qualified, since the joined relations also expose cola_id.
+_SUMMARY_COLUMNS = select_columns(SUMMARY_COLUMN_LIST, SEARCH_TABLE)
+
+# --- Keyword matching --------------------------------------------------------
+# search_tsv holds the record fields at weights A-C and the label OCR at weight
+# D, so one document covers both and a weight restriction separates them. The
+# restriction can be written two ways, and which one is used is a deployment
+# setting because it depends on which indexes exist:
 #
-# Written as a semi-join over a UNION rather than one OR-list. OR-ing an EXISTS
-# against cola_search_ocr cannot be turned into a join, so the planner falls
-# back to a per-row subplan over a sequential scan of cola_search (measured at
-# 7-13s, past the statement timeout). Each UNION branch drives its own index and
-# the result feeds a semi-join on the primary key instead.
-_Q_MATCH = (
-    f"{SEARCH_TABLE}.cola_id IN (SELECT cola_id FROM {SEARCH_TABLE} "
-    "WHERE search_tsv @@ websearch_to_tsquery('english', %s)"
-    + "".join(
-        f" UNION ALL SELECT cola_id FROM {SEARCH_TABLE} WHERE {c} = %s"
-        for c in _ID_COLUMNS
+# - ts_filter(search_tsv, weights) @@ query, against a GIN index on that same
+#   expression. Index-exact: the candidate set is only the rows matching at
+#   those weights and no row is fetched to recheck.
+# - search_tsv @@ query-with-weight-labels, against the plain GIN on search_tsv.
+#   GIN stores lexemes without weights, so it returns every row that has the
+#   lexeme at any weight and the executor fetches each one to recheck. For a
+#   term that is mostly label text ("cabernet sauvignon": 21k record hits, 96k
+#   candidates) that is 4x the heap fetches plus a detoast of the OCR-sized
+#   tsvector per row - 22 s cold where the record-only index took 1 s.
+#
+# websearch_to_tsquery has no weight syntax, so for the second form the tsquery
+# is rendered to text, every quoted lexeme gets a weight suffix, and it is parsed
+# back. Lexemes are single-quoted with '' as the escape.
+_TSQUERY = "websearch_to_tsquery('english', %s)"
+_RECORD_WEIGHTS = "ABC"
+_LABEL_WEIGHTS = "D"
+
+
+def _weighted_tsquery(weights: str) -> str:
+    return (
+        f"regexp_replace({_TSQUERY}::text, "
+        f"'''((?:[^'']|'''')*)''', '''\\1'':{weights}', 'g')::tsquery"
     )
-    + f" UNION ALL SELECT cola_id FROM {OCR_TABLE} "
-    "WHERE ocr_tsv @@ websearch_to_tsquery('english', %s))"
-)
+
+
+def ts_filter_sql(weights: str) -> str:
+    """The expression the upstream weight indexes are defined on."""
+    labels = ",".join(weights.lower())
+    return f"ts_filter(search_tsv, '{{{labels}}}'::\"char\"[])"
+
+
+def weighted_match(weights: str) -> str:
+    """`search_tsv` restricted to `weights` matches the bound term (one %s)."""
+    if get_settings().search_weight_indexes:
+        return f"{ts_filter_sql(weights)} @@ {_TSQUERY}"
+    return f"search_tsv @@ {_weighted_tsquery(weights)}"
+
+
+def _with_id_columns(match: str) -> str:
+    return f"({match}" + "".join(f" OR {c} = %s" for c in _ID_COLUMNS) + ")"
+
+
+def term_match() -> str:
+    """Record fields or label text, plus the identifier columns."""
+    return _with_id_columns(f"search_tsv @@ {_TSQUERY}")
+
+
+def record_match() -> str:
+    """Record fields only. Under the relevance sort these rank ahead of
+    label-only matches, so a page they fill on their own is the whole answer."""
+    return _with_id_columns(weighted_match(_RECORD_WEIGHTS))
+
+
+def _term_params(q: str) -> list[Any]:
+    term = q.strip()
+    return [term, *([_id_term(term)] * len(_ID_COLUMNS))]
+
 
 # Ranks rows whose record fields match above those that only match on label OCR.
 # Without it the date sort would bury an exact brand hit under every label that
 # happens to print the word.
-_Q_RANK = "(search_tsv @@ websearch_to_tsquery('english', %s)) DESC"
+_Q_RANK = f"{KEYWORD_ALIAS}.rec DESC"
+
+# An index walk has to pass over every matching row before the page, so its cost
+# grows with the offset (page 20 of "vodka" measured 2.5 s against 35 ms for
+# page 1). The materialised form costs the same at any depth and takes over.
+_INDEX_WALK_MAX_OFFSET = 240
+
+
+@dataclass(frozen=True)
+class Source:
+    """A set of cola_ids, materialised once and joined onto cola_search.
+
+    The other filters go inside it, with the term. A CTE has no ORDER BY or
+    LIMIT, so the planner has nothing to gain from walking a sort index and
+    testing the term row by row - the plan that ran past 120 s on "vodka" AND
+    commodity=wine when the same predicates sat in an ordered, limited query -
+    and instead ANDs the term's GIN bitmap with the filter's index (72k term
+    matches x 2M wine rows resolve to 248 heap fetches). MATERIALIZED keeps the
+    outer ORDER BY/LIMIT from being folded back in.
+    """
+
+    alias: str
+    body: str
+    params: list[Any] = field(default_factory=list)
+
+
+def _keyword_source(
+    q: str,
+    where: str = "",
+    where_params: list[Any] | None = None,
+    *,
+    record_only: bool = False,
+    ranked: bool = False,
+) -> Source:
+    where_params = where_params or []
+    if record_only:
+        return Source(
+            KEYWORD_ALIAS,
+            f"SELECT cola_id FROM {SEARCH_TABLE} {_and(where, record_match())}",
+            [*_term_params(q), *where_params],
+        )
+    if ranked:
+        # The flag is computed here, once per match, rather than re-tested in
+        # ORDER BY for every row the outer query touches.
+        return Source(
+            KEYWORD_ALIAS,
+            f"SELECT cola_id, ({weighted_match(_RECORD_WEIGHTS)}) AS rec "
+            f"FROM {SEARCH_TABLE} {_and(where, term_match())}",
+            [q.strip(), *_term_params(q), *where_params],
+        )
+    return Source(
+        KEYWORD_ALIAS,
+        f"SELECT cola_id FROM {SEARCH_TABLE} {_and(where, term_match())}",
+        [*_term_params(q), *where_params],
+    )
+
 
 # Permit id resolves against the COLA permit number, the primary permit, or the
-# GIN-indexed permits rollup.
+# GIN-indexed permits rollup. All three arms sit on cola_search so the OR is one
+# BitmapOr, or a filter on the sort-index walk when the prefix is common: a
+# BWN-CA prefix covers 218k rows, which the walk answers in milliseconds and a
+# materialised union answered in 13.7 s. The rollup therefore stays on
+# cola_search until an indexed narrow equivalent (e.g. permit_ids text[]) exists
+# there; the detail-table copy is read for display only.
 _PERMIT_ID_MATCH = (
     "(permit_num LIKE %s OR primary_permit_id LIKE %s"
     " OR permits @> jsonb_build_array(jsonb_build_object('permit_id', %s::text)))"
@@ -84,6 +202,56 @@ _PERMIT_ID_MATCH = (
 # applicant_name is the permit/plant name, falling back to the submitter when no
 # permit is on file, and carries a trigram index, so the name half stays cheap.
 _BUSINESS_MATCH = f"(applicant_name ILIKE %s OR {_PERMIT_ID_MATCH})"
+
+
+def compose(sources: list[Source]) -> tuple[str, str, list[Any]]:
+    """(WITH clause, FROM clause, parameters) for a set of sources."""
+    if not sources:
+        return "", SEARCH_TABLE, []
+    with_sql = "WITH " + ", ".join(f"{s.alias} AS MATERIALIZED ({s.body})" for s in sources)
+    from_sql = SEARCH_TABLE + "".join(
+        f" JOIN {s.alias} ON {s.alias}.cola_id = {_ID}" for s in sources
+    )
+    return with_sql, from_sql, [p for s in sources for p in s.params]
+
+
+def _and(where: str, condition: str) -> str:
+    """Prepend a condition to a WHERE clause built by _build_filters."""
+    if not where:
+        return f"WHERE {condition}"
+    return f"WHERE {condition} AND {where.removeprefix('WHERE ')}"
+
+
+def only_status_filtered(filters: dict[str, Any]) -> bool:
+    """Whether the term predicate can safely sit in the WHERE with the filters.
+
+    status is the one filter the UI always sends and its dominant value covers
+    97% of rows, so a common term cannot be absent from it and an index walk
+    with the term as a filter stays short. Anything else goes through a Source.
+    """
+    return all(not value for name, value in filters.items() if name != "status")
+
+
+# Filters with no index behind them: each one is a parallel sequential scan of
+# the whole table (12-45s measured), which the paged rows survive by walking the
+# date index and stopping early, but a count or facet aggregate cannot. Unless
+# one of _ANCHOR_FILTERS narrows the set first, the aggregate is skipped.
+_UNINDEXED_FILTERS = ("qualification", "submitter")
+# Filters that reach the matching rows through a selective index.
+_ANCHOR_FILTERS = (
+    "q",
+    "ttb_id",
+    "brand",
+    "fanciful",
+    "applicant",
+    "business",
+    "permit",
+    "permit_name",
+    "permit_city",
+    "varietal",
+    "label_text",
+    "class_type",
+)
 
 
 def _prefix(term: str) -> str:
@@ -98,8 +266,14 @@ def _id_term(value: str) -> str:
     return value.strip().upper()
 
 
+def aggregate_is_affordable(**filters: Any) -> bool:
+    """Whether a count/facet pass over this filter set can use an index."""
+    if not any(filters.get(name) for name in _UNINDEXED_FILTERS):
+        return True
+    return any((filters.get(name) or "").strip() for name in _ANCHOR_FILTERS)
+
+
 def _build_filters(
-    q: str | None,
     ttb_id: str | None,
     brand: str | None,
     fanciful: str | None,
@@ -123,18 +297,13 @@ def _build_filters(
     received_by: str | None = None,
     application_type: str | None = None,
 ) -> tuple[str, list[Any]]:
+    """WHERE clause for every filter except `q`, which resolves through a Source."""
     conditions: list[str] = []
     params: list[Any] = []
 
-    if q:
-        term = q.strip()
-        conditions.append(_Q_MATCH)
-        params.append(term)
-        params.extend([_id_term(term)] * len(_ID_COLUMNS))
-        params.append(term)
     if ttb_id:
         term = _id_term(ttb_id)
-        conditions.append("(cola_id = %s OR serial_num LIKE %s)")
+        conditions.append(f"({_ID} = %s OR serial_num LIKE %s)")
         params.extend([term, _prefix(term)])
     if brand:
         conditions.append("brand_name ILIKE %s")
@@ -181,10 +350,7 @@ def _build_filters(
         conditions.append("parsed_qualifications ILIKE %s")
         params.append(f"%{qualification}%")
     if label_text:
-        conditions.append(
-            f"EXISTS (SELECT 1 FROM {OCR_TABLE} o WHERE o.cola_id = {SEARCH_TABLE}.cola_id "
-            "AND o.ocr_tsv @@ websearch_to_tsquery('english', %s))"
-        )
+        conditions.append(weighted_match(_LABEL_WEIGHTS))
         params.append(label_text.strip())
     if commodity:
         conditions.append("ct_commodity = %s")
@@ -196,9 +362,12 @@ def _build_filters(
         conditions.append("(upper(class_type) = upper(%s) OR class_type_code = %s)")
         params.extend([term, term])
     if received_by:
+        # Only the code is indexed, so a description is resolved to its code
+        # through the reference table rather than compared on the row.
         term = received_by.strip()
         conditions.append(
-            "(upper(received_description) = upper(%s) OR received_code = upper(%s))"
+            "received_code IN (SELECT received_code FROM ref_received_codes "
+            "WHERE upper(description) = upper(%s) UNION SELECT upper(%s))"
         )
         params.extend([term, term])
     if application_type:
@@ -229,46 +398,70 @@ def _build_filters(
     return where, params
 
 
-def _order_by(sort: str, q: str | None) -> tuple[str, list[Any]]:
-    """ORDER BY for the requested sort, plus any parameters it binds."""
+def _order_by(sort: str, ranked: bool) -> str:
+    """ORDER BY for the requested sort; `ranked` when the keyword join is present."""
     key = sort if sort in SORTS else "relevance"
-    if key == "relevance" and q and q.strip():
-        return f"{_Q_RANK}, {SORTS[key]}", [q.strip()]
-    return SORTS[key], []
+    if key == "relevance" and ranked:
+        return f"{_Q_RANK}, {SORTS[key]}"
+    return SORTS[key]
 
 
-async def _facets(where: str, params: list[Any]) -> Facets:
-    # One materialised CTE (PG materialises multiply-referenced CTEs by default)
-    # so the filtered set is scanned once instead of once per dimension.
-    #
-    # The CTE is bounded by the same COUNT_CAP as the total. A broad term such as
-    # "vodka" matches tens of thousands of rows, and the bitmap heap fetch for all
-    # of them costs far more than the statement timeout allows. Capping the scan
-    # keeps the aggregation bounded; past the cap the counts are a floor, which
-    # total_is_capped already reports for the same result set.
-    rows = await fetch_all(
-        f"""--sql
-        WITH m AS (
-          SELECT ct_commodity, ct_source, origin, status, primary_permit_state_addr
-          FROM {SEARCH_TABLE} {where} LIMIT %s
+async def _count_and_facets(
+    sources: list[Source], where: str, where_params: list[Any], want_facets: bool
+) -> tuple[int, Facets | None] | None:
+    """Capped match count and, optionally, facet counts, from one pass.
+
+    The filtered set is materialised once in a CTE bounded by COUNT_CAP (PG
+    materialises multiply-referenced CTEs by default) and every aggregate reads
+    that. A broad term such as "vodka" matches tens of thousands of rows, and the
+    bitmap heap fetch for all of them costs far more than the statement timeout
+    allows; past the cap both the total and the facet counts are a floor, which
+    total_is_capped reports.
+
+    Returns None when the statement ran out of its time budget. The paged rows
+    are what the user is waiting on, so an aggregate that cannot finish in time
+    degrades the response instead of failing it.
+    """
+    settings = get_settings()
+    with_sql, from_sql, source_params = compose(sources)
+    columns = "ct_commodity, ct_source, origin, status, primary_permit_state_addr"
+    sql = f"""--sql
+        {with_sql}{', ' if with_sql else 'WITH '}m AS (
+          SELECT {columns} FROM {from_sql} {where} LIMIT %s
         )
-        SELECT 'commodity' AS dim, ct_commodity AS value, COUNT(*) AS count FROM m GROUP BY 1, 2
+        SELECT 'total' AS dim, NULL::text AS value, COUNT(*) AS count FROM m
+        """
+    if want_facets:
+        sql += """--sql
+        UNION ALL SELECT 'commodity', ct_commodity, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'source', ct_source, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'origin', origin, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'status', status, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'permitState', primary_permit_state_addr, COUNT(*) FROM m GROUP BY 1, 2
-        """,
-        [*params, COUNT_CAP],
-    )
+        """
+    try:
+        rows = await fetch_all(
+            sql,
+            [*source_params, *where_params, COUNT_CAP + 1],
+            work_mem=settings.search_work_mem,
+            statement_timeout_ms=settings.search_count_timeout_ms,
+            prepare=False,
+        )
+    except QueryCanceled:
+        logger.info("search aggregate exceeded its time budget", extra={"where": where})
+        return None
 
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         grouped.setdefault(row["dim"], []).append(row)
+    total = int(grouped["total"][0]["count"]) if grouped.get("total") else 0
+    if not want_facets:
+        return total, None
 
     def bucket(dim: str) -> list[dict[str, Any]]:
         return sorted(grouped.get(dim, []), key=lambda r: r["count"], reverse=True)
 
-    return Facets(
+    return total, Facets(
         commodity=[
             FacetBucket(value=commodity_label(r["value"]), count=r["count"])
             for r in bucket("commodity")
@@ -297,7 +490,7 @@ async def _facets(where: str, params: list[Any]) -> Facets:
     )
 
 
-async def _no_facets() -> Facets | None:
+async def _no_aggregate() -> tuple[int, Facets | None] | None:
     return None
 
 
@@ -480,17 +673,17 @@ async def list_colas(
         ),
     ),
 ) -> SearchResponse:
-    where, params = _build_filters(
-        q,
-        ttb_id,
-        brand,
-        fanciful,
-        commodity,
-        source,
-        origin,
-        status,
-        date_from,
-        date_to,
+    settings = get_settings()
+    filters: dict[str, Any] = dict(
+        ttb_id=ttb_id,
+        brand=brand,
+        fanciful=fanciful,
+        commodity=commodity,
+        source=source,
+        origin=origin,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
         applicant=applicant,
         business=business,
         permit=permit,
@@ -505,38 +698,86 @@ async def list_colas(
         received_by=received_by,
         application_type=application_type,
     )
-    order_by, order_params = _order_by(sort, q)
+    term = (q or "").strip()
+    where, where_params = _build_filters(**filters)
+    ranked = bool(term) and (sort not in SORTS or sort == "relevance")
     offset = (page - 1) * page_size
 
-    # The count is bounded so a broad filter cannot force a full scan; anything
-    # past the cap is reported as a floor via total_is_capped.
-    count_sql = (
-        f"SELECT COUNT(*) AS n FROM (SELECT 1 FROM {SEARCH_TABLE} {where} LIMIT %s) t"
-    )
-    rows_sql = (
-        f"SELECT {SUMMARY_COLUMNS} FROM {SEARCH_TABLE} {where} "
-        f"ORDER BY {order_by} LIMIT %s OFFSET %s"
+    def rows_sql(sources: list[Source], where_sql: str, ranked_source: bool) -> tuple[str, list[Any]]:
+        # A keyword source already carries the filters, so the outer WHERE is
+        # empty in that case; the tier-1 pass has no source and keeps them.
+        with_sql, from_sql, source_params = compose(sources)
+        outer_params = where_params if where_sql else []
+        return (
+            f"{with_sql} SELECT {_SUMMARY_COLUMNS} FROM {from_sql} {where_sql} "
+            f"ORDER BY {_order_by(sort, ranked=ranked_source)} LIMIT %s OFFSET %s",
+            [*source_params, *outer_params, page_size + 1, offset],
+        )
+
+    async def run(sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        return await fetch_all(sql, params, work_mem=settings.search_work_mem, prepare=False)
+
+    async def fetch_page() -> list[dict[str, Any]]:
+        # One row past the page tells whether there is a next page when the count
+        # is unavailable, and whether a record-only pass filled the page. It is
+        # never returned.
+        if ranked:
+            # Record matches rank ahead of label-only ones, so a page they fill
+            # on their own is the answer and label text is never consulted.
+            if only_status_filtered(filters) and offset <= _INDEX_WALK_MAX_OFFSET:
+                # Plain predicate: the planner may walk the sort index and
+                # filter, which for a common term beats fetching every match.
+                sql, params = rows_sql([], _and(where, record_match()), False)
+                params[:0] = _term_params(term)
+            else:
+                sql, params = rows_sql(
+                    [_keyword_source(term, where, where_params, record_only=True)], "", False
+                )
+            rows = await run(sql, params)
+            if len(rows) > page_size:
+                return rows
+        if term:
+            return await run(
+                *rows_sql([_keyword_source(term, where, where_params, ranked=ranked)], "", ranked)
+            )
+        return await run(*rows_sql([], where, False))
+
+    affordable = aggregate_is_affordable(q=q, **filters)
+    if term:
+        aggregate_coro = _count_and_facets(
+            [_keyword_source(term, where, where_params)], "", [], facets
+        )
+    else:
+        aggregate_coro = _count_and_facets([], where, where_params, facets)
+    rows, aggregate = await asyncio.gather(
+        fetch_page(), aggregate_coro if affordable else _no_aggregate()
     )
 
-    total_row, rows, facet_data = await asyncio.gather(
-        fetch_one(count_sql, [*params, COUNT_CAP + 1]),
-        fetch_all(rows_sql, [*params, *order_params, page_size, offset]),
-        _facets(where, params) if facets else _no_facets(),
-    )
-
-    raw_total = int(total_row["n"]) if total_row else 0
-    capped = raw_total > COUNT_CAP
+    has_more = len(rows) > page_size
+    rows = rows[:page_size]
+    if aggregate is not None:
+        raw_total, facet_data = aggregate
+        capped = raw_total > COUNT_CAP
+        total = COUNT_CAP if capped else raw_total
+    else:
+        # No count: report what this page proves. A full page plus one more row
+        # means at least one further page exists, which is enough for the pager.
+        facet_data = None
+        total = offset + len(rows) + (1 if has_more else 0)
+        capped = has_more
 
     # Read back by the analytics middleware; the response body is not inspected.
     request.state.analytics = {
-        "result_total": COUNT_CAP if capped else raw_total,
-        "zero_results": raw_total == 0,
+        "result_total": total,
+        "zero_results": total == 0,
         "total_is_capped": capped,
+        "count_skipped": not affordable,
+        "count_timed_out": affordable and aggregate is None,
     }
 
     return SearchResponse(
         items=[summary_from_row(r) for r in rows],
-        total=COUNT_CAP if capped else raw_total,
+        total=total,
         total_is_capped=capped,
         page=page,
         page_size=page_size,
@@ -552,7 +793,11 @@ async def get_cola(cola_id: str) -> ColaDetail:
 async def load_detail(cola_id: str) -> ColaDetail:
     """Assemble a full ColaDetail, or raise 404. Shared with the form renderer."""
     base = await fetch_one(
-        f"SELECT {DETAIL_COLUMNS} FROM {SEARCH_TABLE} WHERE cola_id = %s", [cola_id]
+        f"SELECT {select_columns(DETAIL_COLUMN_LIST, 's')}, "
+        f"{select_columns(DETAIL_JSON_COLUMN_LIST, 'd')} "
+        f"FROM {SEARCH_TABLE} s LEFT JOIN {DETAIL_TABLE} d ON d.cola_id = s.cola_id "
+        "WHERE s.cola_id = %s",
+        [cola_id],
     )
     if base is None:
         raise HTTPException(status_code=404, detail="COLA not found")

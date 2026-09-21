@@ -20,6 +20,12 @@ from .models import (
 # Materialised, indexed search surface. vw_colas is still the upstream source
 # that maintains it, but the API never reads the view directly.
 SEARCH_TABLE = "cola_search"
+# The jsonb rollups (permits, qualifications, images, analyses, OCR text) live
+# here, one row per COLA, so cola_search itself stays narrow enough for its
+# heap fetches to be cheap. Joined on the primary key where a page needs them.
+DETAIL_TABLE = "cola_search_detail"
+# Still maintained upstream, but the label OCR is also folded into
+# cola_search.search_tsv at weight D, which is what the API searches now.
 OCR_TABLE = "cola_search_ocr"
 # Refresh queue drained by the materialisation job; its depth is how far the
 # search surface currently trails the source tables.
@@ -85,10 +91,7 @@ DETAIL_COLUMN_LIST: tuple[str, ...] = SUMMARY_COLUMN_LIST + (
     "expiration_date",
     "mailing_address",
     "grape_varietal",
-    "grape_varietals",
     "parsed_qualifications",
-    "qualifications",
-    "permits",
     "submitter_id",
     "tel_no",
     "fax_no",
@@ -101,6 +104,9 @@ DETAIL_COLUMN_LIST: tuple[str, ...] = SUMMARY_COLUMN_LIST + (
     "analysis_count",
     "image_vector_count",
 )
+
+# Rollups the detail endpoint reads from cola_search_detail.
+DETAIL_JSON_COLUMN_LIST: tuple[str, ...] = ("permits", "qualifications", "grape_varietals")
 
 
 def select_columns(columns: tuple[str, ...], alias: str | None = None) -> str:
@@ -195,11 +201,16 @@ def visual_interest_hero_join_sql(alias: str, search_alias: str = "vi_hero") -> 
 
 
 def visual_interest_join_sql(
-    alias: str, search_alias: str = "vi_hero", out: str = "vi"
+    alias: str,
+    search_alias: str = "vi_hero",
+    out: str = "vi",
+    detail_alias: str = "vi_detail",
 ) -> str:
-    """Join the per-image scores back out of the cola_search `images` rollup."""
+    """Join the per-image scores back out of the `images` rollup."""
     return (
         f"{visual_interest_hero_join_sql(alias, search_alias)} "
+        f"LEFT JOIN {DETAIL_TABLE} {detail_alias} "
+        f"ON {detail_alias}.cola_id = {alias}.cola_id "
         "LEFT JOIN LATERAL ("
         "SELECT (e ->> 'visual_interest_score')::float8 AS visual_interest_score, "
         "(e ->> 'visual_interest_rank')::int AS visual_interest_rank, "
@@ -208,8 +219,8 @@ def visual_interest_join_sql(
         "(e ->> 'visual_interest_embedding_distance_score')::float8 "
         "AS embedding_distance_score "
         "FROM jsonb_array_elements("
-        f"CASE WHEN jsonb_typeof({search_alias}.images) = 'array' "
-        f"THEN {search_alias}.images ELSE '[]'::jsonb END"
+        f"CASE WHEN jsonb_typeof({detail_alias}.images) = 'array' "
+        f"THEN {detail_alias}.images ELSE '[]'::jsonb END"
         ") AS e "
         f"WHERE e ->> 'file_name' = {alias}.file_name LIMIT 1"
         f") {out} ON TRUE"

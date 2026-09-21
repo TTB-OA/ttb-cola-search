@@ -210,6 +210,27 @@ customEvents
 | order by count_ desc
 ```
 
+### Degraded search counts
+
+`/api/colas` returns the paged rows even when it cannot afford the match count
+and facets: `count_skipped` means the filter set has no index behind it (the
+aggregate was never attempted), `count_timed_out` means it ran past
+`SEARCH_COUNT_TIMEOUT_MS`. Either way `total` is a floor and `facets` is null.
+A rising `count_timed_out` rate on an indexed filter set is the early warning
+that the working set has outgrown the buffer cache again.
+
+```kusto
+customEvents
+| where timestamp > ago(7d) and name == "search_performed"
+| summarize
+    searches = count(),
+    skipped = countif(tobool(customDimensions.count_skipped)),
+    timed_out = countif(tobool(customDimensions.count_timed_out))
+  by filters = tostring(customDimensions.filters_used)
+| where skipped > 0 or timed_out > 0
+| order by timed_out desc, skipped desc
+```
+
 ### Slowest database calls
 
 ```kusto
