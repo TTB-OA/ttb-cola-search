@@ -1,7 +1,7 @@
 import Icon from './Icon.jsx';
 import { useTheme } from '../lib/theme.jsx';
 
-export default function ThemeToggle({ className = 'nav-theme', showLabel = false }) {
+export default function ThemeToggle({ className = 'nav-theme' }) {
   const { theme, toggle } = useTheme();
   const dark = theme === 'dark';
   const label = dark ? 'Switch to light theme' : 'Switch to dark theme';
@@ -14,8 +14,7 @@ export default function ThemeToggle({ className = 'nav-theme', showLabel = false
       aria-label={label}
       aria-pressed={dark}
     >
-      <Icon name={dark ? 'sun' : 'moon'} size={showLabel ? 14 : 16} />
-      {showLabel ? (dark ? 'Light' : 'Dark') : null}
+      <Icon name={dark ? 'sun' : 'moon'} size={16} />
     </button>
   );
 }

@@ -40,7 +40,7 @@ export default function Header() {
         </nav>
         <nav className="header-nav-mobile" aria-label="Primary">
           <NavLink to="/map" className={({ isActive }) => `map-nav-link${isActive ? ' active' : ''}`}>
-            <Icon name="map" size={14} /> Map <span className="new-badge">New!</span>
+            <Icon name="map" size={14} /> Map
           </NavLink>
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name="grid" size={14} /> Coverage
@@ -54,7 +54,7 @@ export default function Header() {
           <button type="button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>
-          <ThemeToggle className="" showLabel />
+          <ThemeToggle className="theme-toggle-mobile" />
         </nav>
       </div>
     </header>
