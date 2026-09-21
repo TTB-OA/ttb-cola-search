@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -108,22 +108,26 @@ _COMPLETE_PREDICATE = """--sql
     )
 """
 
-# The CTE is read three times, so the qualifying set is materialised once and
-# both ends of the range come out of a single pass over it. Rejected and
-# withdrawn filings carry a completed_date too, so the range is confined to
-# approvals to match what the rest of the site presents.
+# Only the two ends are wanted, so each is an ordered walk of
+# colas_completed_date_idx that stops at the first row clearing the predicate.
+# Materialising the qualifying set instead means half a million probes into
+# cola_images and cola_image_analysis, which runs past the statement timeout.
+# The floor keeps the ascending walk off the pre-pipeline years, where no row
+# can qualify and every index entry would still be read and discarded.
+# Rejected and withdrawn filings carry a completed_date too, so the range is
+# confined to approvals to match what the rest of the site presents.
 _COMPLETE_RANGE_SQL = f"""--sql
-WITH complete AS (
-    SELECT c.cola_id, c.completed_date
-      FROM colas c
-     WHERE c.completed_date IS NOT NULL
-       AND c.status = 'Approved'
-       AND {_COMPLETE_PREDICATE}
-), bounds AS (
-    SELECT (SELECT cola_id FROM complete
-             ORDER BY completed_date, cola_id LIMIT 1) AS earliest_id,
-           (SELECT cola_id FROM complete
-             ORDER BY completed_date DESC, cola_id DESC LIMIT 1) AS latest_id
+WITH bounds AS (
+    SELECT (SELECT c.cola_id FROM colas c
+             WHERE c.completed_date >= %s
+               AND c.status = 'Approved'
+               AND {_COMPLETE_PREDICATE}
+             ORDER BY c.completed_date, c.cola_id LIMIT 1) AS earliest_id,
+           (SELECT c.cola_id FROM colas c
+             WHERE c.completed_date >= %s
+               AND c.status = 'Approved'
+               AND {_COMPLETE_PREDICATE}
+             ORDER BY c.completed_date DESC, c.cola_id DESC LIMIT 1) AS latest_id
 )
 SELECT b.earliest_id, b.latest_id, {select_columns(SUMMARY_COLUMN_LIST, "s")}
   FROM bounds b
@@ -192,9 +196,28 @@ async def _map_status() -> MapIndexStatus | None:
     )
 
 
-async def _complete_range() -> CompleteRange | None:
+def _complete_floor(years: list[CoverageYear]) -> date | None:
+    """Earliest year that could hold a fully processed record.
+
+    A record clearing every stage necessarily contributes to its year's detail,
+    image, OCR and embedding counts, so a year missing any of them cannot hold
+    one. Years before the first such year are skipped rather than walked.
+    """
+    qualifying = [
+        y.year
+        for y in years
+        if min(y.detail_count, y.image_count, y.ocr_count, y.embedding_count) > 0
+    ]
+    return date(min(qualifying), 1, 1) if qualifying else None
+
+
+async def _complete_range(years: list[CoverageYear]) -> CompleteRange | None:
+    floor = _complete_floor(years)
+    if floor is None:
+        # No year reached every stage, so nothing is fully processed yet.
+        return CompleteRange()
     try:
-        rows = await fetch_all(_COMPLETE_RANGE_SQL)
+        rows = await fetch_all(_COMPLETE_RANGE_SQL, [floor, floor])
     except Exception:  # noqa: BLE001 - coverage is still worth showing without it
         logger.warning("could not read the fully-processed range", exc_info=True)
         return None
@@ -258,7 +281,7 @@ async def _load() -> CoverageResponse:
         totals=_totals(years),
         search=await _search_status(),
         map=await _map_status(),
-        complete_range=await _complete_range(),
+        complete_range=await _complete_range(years),
         as_of=as_of,
     )
 

@@ -66,17 +66,17 @@ def client():
     return TestClient(app)
 
 
-def stub(monkeypatch, rows, status=None, complete=()) -> list[str]:
-    """Replace the database reads; returns the list of queries actually issued."""
-    calls: list[str] = []
+def stub(monkeypatch, rows, status=None, complete=()) -> list[tuple]:
+    """Replace the database reads; returns the (query, params) pairs issued."""
+    calls: list[tuple] = []
 
     async def fake_fetch_all(query, params=None):
-        calls.append(query)
+        calls.append((query, params))
         # Two different reads share fetch_all, so dispatch on the query itself.
         return list(complete) if "bounds" in query else list(rows)
 
     async def fake_fetch_one(query, params=None):
-        calls.append(query)
+        calls.append((query, params))
         return _status() if status is None else status
 
     monkeypatch.setattr(coverage_router, "fetch_all", fake_fetch_all)
@@ -226,8 +226,30 @@ def test_the_range_is_confined_to_approvals(client, monkeypatch):
     """Rejected and withdrawn filings carry a completed_date but are not approvals."""
     calls = stub(monkeypatch, [_row(2025)], complete=[_summary("7", "7", "7")])
     client.get(PATH)
-    range_query = next(q for q in calls if "bounds" in q)
+    range_query, _ = next(c for c in calls if "bounds" in c[0])
     assert "c.status = 'Approved'" in range_query
+
+
+def test_the_range_walk_starts_at_the_first_fully_staged_year(client, monkeypatch):
+    """Years missing a stage cannot hold a complete record, so they are not walked."""
+    calls = stub(
+        monkeypatch,
+        [_row(2025), _row(2024), _row(2023, ocr_cola_count=0)],
+        complete=[_summary("7", "7", "7")],
+    )
+    client.get(PATH)
+    _, params = next(c for c in calls if "bounds" in c[0])
+    assert params == [date(2024, 1, 1), date(2024, 1, 1)]
+
+
+def test_a_pipeline_that_has_not_finished_a_stage_reports_an_empty_range(
+    client, monkeypatch
+):
+    """With no year past every stage there is nothing to find, so nothing is queried."""
+    calls = stub(monkeypatch, [_row(2025, embedding_cola_count=0)])
+    rng = client.get(PATH).json()["completeRange"]
+    assert rng == {"earliest": None, "latest": None}
+    assert not any("bounds" in c[0] for c in calls)
 
 
 def test_no_complete_records_yields_an_empty_range_rather_than_an_error(client, monkeypatch):
