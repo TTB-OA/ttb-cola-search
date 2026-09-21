@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -7,7 +7,7 @@ import Highlight from '../components/Highlight.jsx';
 import ScoreMeter, { toPct } from '../components/ScoreMeter.jsx';
 import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
-import { clearPendingImageSearch, readPendingImageSearch } from '../lib/imageSearchStore.js';
+import { readPendingImageSearch } from '../lib/imageSearchStore.js';
 import { track } from '../lib/analytics.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
@@ -366,21 +366,20 @@ export default function ResultsPage() {
     track('view_mode_changed', { view: v, mode });
   };
 
-  // Image-search payload was stashed by the search form (a File can't ride in a URL).
-  const [pending] = useState(() => {
-    if (!isImg) return null;
-    const stashed = readPendingImageSearch();
-    // No file means a deep link, refresh or back-nav dropped it — a dead end
-    // the server cannot see, since no request is ever made.
-    if (!stashed || !stashed.file) track('image_search_state_lost', {});
-    return stashed;
-  });
+  // Image-search payload was stashed by the search form (a File can't ride in a
+  // URL); `isid` is the handle, so back-nav into these results finds it again.
+  const pending = isImg ? readPendingImageSearch(criteria.isid) : null;
 
-  // Held in state now, so drop the module-level reference: otherwise a later
-  // visit to /results?mode=image would re-run this stale search.
+  // A refresh or a deep link has no live File, and the server never sees that
+  // dead end because no request is made.
+  const lossReported = useRef(null);
   useEffect(() => {
-    clearPendingImageSearch();
-  }, []);
+    if (!isImg || (pending && pending.file)) return;
+    const handle = criteria.isid || '-';
+    if (lossReported.current === handle) return;
+    lossReported.current = handle;
+    track('image_search_state_lost', {});
+  });
 
   // Build the text-search query object passed to the API.
   const textParams = useMemo(() => {
@@ -401,7 +400,7 @@ export default function ResultsPage() {
   const imageState = useAsync(
     (signal) => api.searchByImage({ file: pending.file, commodity: criteria.commodity, limit: VECTOR_LIMIT }, signal),
     [searchParams.toString()],
-    { skip: !isImg || !pending || !pending.file }
+    { skip: !isImg || !pending || !pending.file, cacheKey: `image:${searchParams.toString()}` }
   );
 
   const describeState = useAsync(

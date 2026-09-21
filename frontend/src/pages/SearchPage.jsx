@@ -557,8 +557,8 @@ export default function SearchPage() {
 
   function submitImage() {
     if (!draft.image) return;
-    setPendingImageSearch({ file: draft.image.file, name: draft.image.name, url: draft.image.url, commodity: draft.commodity });
-    navigate({ pathname: '/results', search: toQuery({ mode: 'image', commodity: draft.commodity }) });
+    const isid = setPendingImageSearch({ file: draft.image.file, name: draft.image.name, url: draft.image.url, commodity: draft.commodity });
+    navigate({ pathname: '/results', search: toQuery({ mode: 'image', commodity: draft.commodity, isid }) });
   }
 
   function submitDescribe() {

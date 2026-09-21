@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Annotated, Any
@@ -461,17 +463,19 @@ async def _count_and_facets(
     def bucket(dim: str) -> list[dict[str, Any]]:
         return sorted(grouped.get(dim, []), key=lambda r: r["count"], reverse=True)
 
+    def labelled(dim: str, label: Callable[[str | None], str]) -> list[FacetBucket]:
+        # Counts are summed after labelling because several codes collapse onto
+        # one label ('import' and 'unknown' are both Imported); grouping by the
+        # raw code alone would repeat that label as two buckets.
+        totals: Counter[str] = Counter()
+        for r in grouped.get(dim, []):
+            if r["value"] is not None:
+                totals[label(r["value"])] += r["count"]
+        return [FacetBucket(value=value, count=n) for value, n in totals.most_common()]
+
     return total, Facets(
-        commodity=[
-            FacetBucket(value=commodity_label(r["value"]), count=r["count"])
-            for r in bucket("commodity")
-            if r["value"] is not None
-        ],
-        source=[
-            FacetBucket(value=source_label(r["value"]), count=r["count"])
-            for r in bucket("source")
-            if r["value"] is not None
-        ],
+        commodity=labelled("commodity", commodity_label),
+        source=labelled("source", source_label),
         origin=[
             FacetBucket(value=r["value"], count=r["count"])
             for r in bucket("origin")

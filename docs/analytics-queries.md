@@ -146,8 +146,11 @@ customEvents
 | render timechart
 ```
 
-`image_search_state_lost` fires when a refresh or deep link drops the stashed
-upload — a dead end the server never sees, because no request is ever made.
+`image_search_state_lost` fires when the results route has no live upload to
+search — a refresh, or a link shared with someone whose browser never held the
+file. A dead end the server never sees, because no request is ever made.
+Back-navigation from a detail page no longer counts: the upload is keyed to the
+`isid` handle in the URL and is recovered on return.
 
 Upload sizes, to sanity-check `MAX_UPLOAD_BYTES`:
 
