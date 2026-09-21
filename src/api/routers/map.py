@@ -8,7 +8,10 @@ timeout.
 
 Heat mode aggregates onto a server-side grid rather than returning raw points:
 at low zoom a viewport covers millions of rows, and the browser cannot render
-them even if the wire could carry them.
+them even if the wire could carry them. It reads from the covering btree
+``cola_map_search_heat_idx`` as an index-only scan where that exists; the
+GiST-indexed geography column serves image and area mode, which fetch heap
+rows anyway.
 """
 from __future__ import annotations
 

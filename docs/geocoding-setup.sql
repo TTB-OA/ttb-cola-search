@@ -140,6 +140,20 @@ CREATE TABLE IF NOT EXISTS cola_map_search (
 CREATE INDEX IF NOT EXISTS cola_map_search_location_gix
     ON cola_map_search USING gist (location);
 
+-- Heat mode aggregates latitude/longitude for every row in view. A national
+-- viewport matches a quarter of the surface, so the GiST is rightly refused and
+-- the plan is a sequential scan of the whole heap (6.5 GB at 9M rows: 17-22 s,
+-- a 504). This covering btree carries the three columns the aggregate reads and
+-- every filter column the map offers, so the same query runs as an index-only
+-- scan of ~1 GB instead (1-2 s at national zoom). The API probes for it by
+-- name (to_regclass) and only drops the geography predicate when it exists.
+-- Index-only scans need the visibility map: run VACUUM (ANALYZE) on
+-- cola_map_search after each wholesale rebuild, or a quarter of the rows fetch
+-- from the heap until autovacuum catches up.
+CREATE INDEX IF NOT EXISTS cola_map_search_heat_idx
+    ON cola_map_search (location_role, latitude, longitude)
+    INCLUDE (ct_commodity, ct_source, origin, class_type_code, class_type, completed_date);
+
 -- Each filter is paired with completed_date because image mode orders by it.
 CREATE INDEX IF NOT EXISTS cola_map_search_role_date_ix
     ON cola_map_search (location_role, completed_date);

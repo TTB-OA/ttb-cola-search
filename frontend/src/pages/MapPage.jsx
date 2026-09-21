@@ -590,7 +590,7 @@ export default function MapPage() {
             <span className="muted map-count">
               {pointsState.loading
                 ? 'Loading…'
-                : unavailable
+                : unavailable || pointsState.error
                   ? ''
                   : `${data?.totalIsCapped ? `${num(total)}+` : num(total)} in view`}
             </span>
