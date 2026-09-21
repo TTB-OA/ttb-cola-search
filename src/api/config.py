@@ -45,10 +45,12 @@ class Settings(BaseSettings):
     # tsvector bitmap scans lossy and forces a heap recheck of every candidate.
     search_work_mem: str = "64MB"
     # cola_search carries GIN indexes on ts_filter(search_tsv, '{a,b,c}') and
-    # ts_filter(search_tsv, '{d}'). Until they exist the weight-restricted
-    # predicates are written as weighted tsqueries against the plain search_tsv
-    # index, which returns every row holding the lexeme and rechecks each one.
-    search_weight_indexes: bool = False
+    # ts_filter(search_tsv, '{d}') (cola_search_tsv_record_idx / _label_idx);
+    # /health lists them as required. Set false only against a database that
+    # lacks them: the weight-restricted predicates are then written as weighted
+    # tsqueries against the plain search_tsv index, which returns every row
+    # holding the lexeme and rechecks each one (22 s for "cabernet sauvignon").
+    search_weight_indexes: bool = True
     # Image search reads the upload into memory before embedding it.
     max_upload_bytes: int = 10 * 1024 * 1024
 

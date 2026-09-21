@@ -20,6 +20,11 @@ from .models import (
 # Materialised, indexed search surface. vw_colas is still the upstream source
 # that maintains it, but the API never reads the view directly.
 SEARCH_TABLE = "cola_search"
+# Expression GIN indexes on search_tsv restricted to the record weights (A-C)
+# and the label weight (D). Named here because the search predicates are only
+# index-served when they exist, so /health probes for them like a table.
+SEARCH_RECORD_INDEX = "cola_search_tsv_record_idx"
+SEARCH_LABEL_INDEX = "cola_search_tsv_label_idx"
 # The jsonb rollups (permits, qualifications, images, analyses, OCR text) live
 # here, one row per COLA, so cola_search itself stays narrow enough for its
 # heap fetches to be cheap. Joined on the primary key where a page needs them.

@@ -8,7 +8,14 @@ from fastapi import APIRouter
 from ..config import get_settings
 from ..db import fetch_one
 from ..embedding import available_providers
-from ..mappers import COVERAGE_TABLE, DETAIL_TABLE, PERMIT_TABLE, SEARCH_TABLE
+from ..mappers import (
+    COVERAGE_TABLE,
+    DETAIL_TABLE,
+    PERMIT_TABLE,
+    SEARCH_LABEL_INDEX,
+    SEARCH_RECORD_INDEX,
+    SEARCH_TABLE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +24,16 @@ router = APIRouter(tags=["health"])
 # Relations no request can be served without. A bare "SELECT 1" only proves the
 # connection works: when search_path points at a schema that does not hold these
 # it still succeeds while every real query fails with UndefinedTable, so resolve
-# the names as well as the connection.
+# the names as well as the connection. Indexes are relations too: without the
+# two weight indexes keyword searches still run, but the ones the indexes were
+# built for time out.
 REQUIRED_RELATIONS: tuple[str, ...] = (
     SEARCH_TABLE,
     DETAIL_TABLE,
     COVERAGE_TABLE,
     PERMIT_TABLE,
+    SEARCH_RECORD_INDEX,
+    SEARCH_LABEL_INDEX,
 )
 
 # to_regclass() resolves through search_path exactly as a query would, and is a

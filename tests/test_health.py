@@ -99,11 +99,20 @@ def test_probe_does_not_leak_driver_messages(client, monkeypatch):
 
 def test_required_relations_match_the_tables_queried():
     """Guards against a new hot table being added without probe coverage."""
-    from api.mappers import COVERAGE_TABLE, DETAIL_TABLE, PERMIT_TABLE, SEARCH_TABLE
+    from api.mappers import (
+        COVERAGE_TABLE,
+        DETAIL_TABLE,
+        PERMIT_TABLE,
+        SEARCH_LABEL_INDEX,
+        SEARCH_RECORD_INDEX,
+        SEARCH_TABLE,
+    )
 
     assert set(health_router.REQUIRED_RELATIONS) == {
         SEARCH_TABLE,
         DETAIL_TABLE,
         COVERAGE_TABLE,
         PERMIT_TABLE,
+        SEARCH_RECORD_INDEX,
+        SEARCH_LABEL_INDEX,
     }
