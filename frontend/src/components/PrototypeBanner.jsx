@@ -55,7 +55,7 @@ export default function PrototypeBanner() {
       <div className="wrap">
         <Icon name="info" size={16} />
         <span>
-          <b>Prototype</b> — this tool is a prototype to assess capabilities. It is not intended for public use.
+          <b>Prototype</b> — this tool is a prototype to assess capabilities. Historical data is not completely available, and all findings should be verified against source systems (COLAs Online). The tool is not intended for public use.
         </span>
         <span className="feedback-links">
           <span className="feedback-label">Feedback:</span>
