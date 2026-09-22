@@ -1,0 +1,4 @@
+[submodule "pipeline"]
+	path = pipeline
+	url = https://github.com/TTB-OA/cola-data-scraping.git
+	branch = main

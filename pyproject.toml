@@ -39,3 +39,10 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+# pipeline/ is the cola-data-scraping submodule; it has its own tooling config.
+[tool.ruff]
+extend-exclude = ["pipeline"]
+
+[tool.pyright]
+exclude = ["pipeline", "**/__pycache__", ".venv"]

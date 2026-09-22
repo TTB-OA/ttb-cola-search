@@ -28,3 +28,6 @@ node_modules/
 *.log
 dist/
 infra/
+
+# Upstream pipeline submodule - source of the database, never part of the API image
+pipeline/
