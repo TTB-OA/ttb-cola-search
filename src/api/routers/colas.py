@@ -188,16 +188,16 @@ def _keyword_source(
     )
 
 
-# Permit id resolves against the COLA permit number, the primary permit, or the
-# GIN-indexed permits rollup. All three arms sit on cola_search so the OR is one
+# Permit id resolves against the COLA permit number, the primary permit, or any
+# associated permit. All three arms sit on cola_search so the OR is one
 # BitmapOr, or a filter on the sort-index walk when the prefix is common: a
 # BWN-CA prefix covers 218k rows, which the walk answers in milliseconds and a
-# materialised union answered in 13.7 s. The rollup therefore stays on
-# cola_search until an indexed narrow equivalent (e.g. permit_ids text[]) exists
-# there; the detail-table copy is read for display only.
+# materialised union answered in 13.7 s. The third arm is exact because its GIN
+# on permit_ids serves containment only, not prefixes; the two prefix arms carry
+# that case on their btrees.
 _PERMIT_ID_MATCH = (
     "(permit_num LIKE %s OR primary_permit_id LIKE %s"
-    " OR permits @> jsonb_build_array(jsonb_build_object('permit_id', %s::text)))"
+    " OR permit_ids @> ARRAY[%s::text])"
 )
 
 # One box for "who made this": the business name or any of its permit numbers.

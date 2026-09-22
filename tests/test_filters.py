@@ -161,7 +161,7 @@ def test_business_matches_the_name_and_the_permit_number():
     where, params = build(business="cedar hollow")
     assert "applicant_name ILIKE %s" in where
     assert "permit_num LIKE %s" in where
-    assert "permits @>" in where
+    assert "permit_ids @> ARRAY[%s::text]" in where
     # Name half is a substring match; permit half is an upper-cased prefix.
     assert params[0] == "%cedar hollow%"
     assert params[1:] == ["CEDAR HOLLOW%", "CEDAR HOLLOW%", "CEDAR HOLLOW"]
@@ -169,11 +169,11 @@ def test_business_matches_the_name_and_the_permit_number():
 
 
 def test_permit_match_stays_on_the_search_table():
-    # An OR across two tables cannot use either index; the rollup GIN on
+    # An OR across two tables cannot use either index; the permit_ids GIN on
     # cola_search is what keeps this a BitmapOr.
     where, params = build(permit="bwn-ca%1234")
     assert "cola_search_detail" not in where
-    assert " OR permits @>" in where
+    assert " OR permit_ids @> ARRAY[%s::text]" in where
     assert params == [r"BWN-CA\%1234%", r"BWN-CA\%1234%", "BWN-CA%1234"]
     assert_aligned(where, params)
 
