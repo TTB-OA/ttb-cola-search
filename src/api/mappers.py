@@ -314,6 +314,9 @@ def permit_from_json(entry: dict[str, Any]) -> PermitRef:
 
 def summary_from_row(row: Mapping[str, Any], score: float | None = None) -> ColaSummary:
     cola_id = str(row["cola_id"])
+    # Vector queries carry the nearest image forward; show that one rather than the
+    # record's default face, so the thumbnail is the artwork that matched.
+    matched_file = row.get("matched_file")
     return ColaSummary(
         id=cola_id,
         ttb_id=cola_id,
@@ -335,7 +338,8 @@ def summary_from_row(row: Mapping[str, Any], score: float | None = None) -> Cola
         permit_state=row.get("primary_permit_state_addr"),
         applicant=row.get("applicant_name") or row.get("brand_name"),
         submitter=submitter_name(row),
-        thumb_url=thumb_url(cola_id),
+        thumb_url=image_url(cola_id, matched_file) if matched_file else thumb_url(cola_id),
+        matched_file=matched_file,
         score=score,
     )
 

@@ -110,6 +110,9 @@ class ColaSummary(ApiModel):
     applicant: str | None = None
     submitter: str | None = None
     thumb_url: str | None = None
+    # Set only by vector search: the label image that actually matched the query,
+    # which is usually not the record's default front image.
+    matched_file: str | None = None
     score: float | None = None
 
 

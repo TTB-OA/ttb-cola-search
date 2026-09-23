@@ -2,6 +2,8 @@
 // runtime; `route` moves the app to the page a step lives on (a function when
 // the path depends on a sample record). Steps flagged `requireTarget` are
 // dropped when their element is missing; others fall back to a centered card.
+// On small screens a target too tall to spotlight is swapped for `mobileTarget`
+// if given, else the first heading inside it, else no spotlight at all.
 const SEEN_KEY = 'ttb-cola:tour-seen:v1';
 
 // One of these is typed into the search box during the `search` step, then
@@ -81,6 +83,7 @@ export const TOUR_STEPS = [
     id: 'recent',
     route: '/',
     target: '[data-tour="recent"]',
+    mobileTarget: '[data-tour="recent-head"]',
     placement: 'top',
     requireTarget: true,
     title: 'Browse the newest approvals',
@@ -109,6 +112,7 @@ export const TOUR_STEPS = [
     id: 'detail-images',
     route: (ctx) => (ctx.colaId ? `/cola/${encodeURIComponent(ctx.colaId)}` : null),
     target: '[data-tour="detail-images"]',
+    mobileTarget: '[data-tour="detail-images"] .lv-thumbs',
     placement: 'right',
     title: 'Every approved label image',
     body:
@@ -172,6 +176,7 @@ export const TOUR_STEPS = [
     id: 'coverage',
     route: '/coverage',
     target: '[data-tour="coverage-tiles"]',
+    mobileTarget: '[data-tour="coverage-head"]',
     placement: 'bottom',
     title: 'One more thing: data coverage',
     body:

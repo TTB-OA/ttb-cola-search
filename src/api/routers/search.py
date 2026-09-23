@@ -178,15 +178,17 @@ async def _nearest_by_vector(
     query = (
         f"""--sql
         WITH knn AS (
-          SELECT i.cola_id, ({distance}) AS dist
+          SELECT i.cola_id, i.file_name, ({distance}) AS dist
           FROM cola_images i
           WHERE {inner_where}
           ORDER BY {distance}
           LIMIT %s
         ), best AS (
-          SELECT DISTINCT ON (cola_id) cola_id, dist FROM knn ORDER BY cola_id, dist
+          SELECT DISTINCT ON (cola_id) cola_id, file_name, dist
+          FROM knn ORDER BY cola_id, dist
         )
-        SELECT {select_columns(SUMMARY_COLUMN_LIST, 'v')}, b.dist
+        SELECT {select_columns(SUMMARY_COLUMN_LIST, 'v')}, b.dist,
+               b.file_name AS matched_file
         FROM best b JOIN {SEARCH_TABLE} v ON v.cola_id = b.cola_id
         """
     )

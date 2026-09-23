@@ -260,7 +260,7 @@ export default function CoveragePage() {
     <div className="wrap an-page">
       <div className="an-head">
         <div>
-          <h1>Data coverage</h1>
+          <h1 data-tour="coverage-head">Data coverage</h1>
           <p className="an-caption">
             How much of the TTB COLA Registry this site holds, and how far each
             year has been enriched. Search only finds what has been ingested, and the

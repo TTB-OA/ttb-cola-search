@@ -143,15 +143,22 @@ const HEAT_RADIUS = ['interpolate', ['linear'], ['zoom'], 0, 40, 10, 46, 16, 52]
 // Raising this lifts every bin at once, and a national view is the sum of many
 // small ones, so it saturates the whole surface rather than just the sparse end.
 // Sparse views are lifted by the intensity below instead.
-const WEIGHT_FLOOR = 0.12;
+const WEIGHT_FLOOR = 0.06;
+// log10 already compresses four orders of magnitude into the ramp, which leaves
+// an ordinary bin at a third of the weight of a metro one. Enough of those
+// within a radius of each other stack past the top of the ramp, which is what
+// turns half the eastern seaboard red. The exponent pushes the middle of the
+// distribution back down so only genuinely dense cells carry real weight.
+const WEIGHT_GAMMA = 1.8;
 const BASE_INTENSITY = 1.2;
+const MIN_INTENSITY = 0.05;
 const MAX_INTENSITY = 6;
-// Landing the peak exactly on the top of the ramp puts the top colour at a
-// single pixel, which still reads as a smudge. Aiming just past it gives the
-// hottest cluster a saturated core with some area.
-const PEAK_TARGET = 1.3;
+// Where the hottest cluster in view should land on the ramp. Just past the top
+// so the peak has a saturated core with some area, but close enough that the
+// red band stays confined to it rather than spreading down the gradient.
+const PEAK_TARGET = 1.15;
 // Enough probes to cover the plausible peaks without an O(n^2) pass over 20k bins.
-const PEAK_PROBES = 12;
+const PEAK_PROBES = 24;
 
 function heatRadius(zoom) {
   if (zoom <= 0) return 40;
@@ -161,10 +168,11 @@ function heatRadius(zoom) {
 
 // The ramp reads heatmap-density, which is the stacked kernel rather than any
 // one bin's weight, so what turns red depends on how many bins fall within a
-// radius of each other. Zoomed out they pile up and saturate; zoomed into a
-// metro they stand apart and the hottest cluster tops out at GAUSS_COEF of its
-// weight, halfway up the ramp, which is the muted smudge. Measuring the peak
-// the view will actually produce lets the intensity lift it back to red.
+// radius of each other. Zoomed out they pile up and every populated region
+// saturates alike; zoomed into a metro they stand apart and the hottest cluster
+// tops out at GAUSS_COEF of its weight, halfway up the ramp. Measuring the peak
+// the view will actually produce, and scaling the whole surface to it in both
+// directions, keeps the top of the ramp on the single densest cluster.
 function heatIntensity(bins, weightOf, instance) {
   const radius = heatRadius(instance.getZoom());
   // exp(-4.5 * 4) is ~1e-8, so nothing beyond two radii moves the sum.
@@ -173,7 +181,24 @@ function heatIntensity(bins, weightOf, instance) {
     const { x, y } = instance.project([b.lng, b.lat]);
     return { x, y, w: weightOf(b.count) };
   });
-  const probes = [...pts].sort((a, b) => b.w - a.w).slice(0, PEAK_PROBES);
+  // The peak of the stacked field sits in the densest neighbourhood, which is
+  // not necessarily where the single heaviest bin is, so candidates are ranked
+  // by a cheap grid sum before the exact kernel is evaluated on the best few.
+  const cells = new Map();
+  for (const p of pts) {
+    const key = `${Math.floor(p.x / radius)},${Math.floor(p.y / radius)}`;
+    const cell = cells.get(key);
+    if (cell) {
+      cell.sum += p.w;
+      if (p.w > cell.best.w) cell.best = p;
+    } else {
+      cells.set(key, { sum: p.w, best: p });
+    }
+  }
+  const probes = [...cells.values()]
+    .sort((a, b) => b.sum - a.sum)
+    .slice(0, PEAK_PROBES)
+    .map((c) => c.best);
   let peak = 0;
   for (const probe of probes) {
     let stacked = 0;
@@ -186,9 +211,10 @@ function heatIntensity(bins, weightOf, instance) {
     if (stacked > peak) peak = stacked;
   }
   if (peak <= 0) return BASE_INTENSITY;
-  // Never below the base: zoomed out the peak already saturates, and dividing
-  // into it would flatten the national surface this ramp was tuned against.
-  return Math.min(MAX_INTENSITY, Math.max(BASE_INTENSITY, PEAK_TARGET / (peak * GAUSS_COEF)));
+  // Scaled down as readily as up: zoomed out the raw stack runs far past the
+  // top of the ramp, and leaving it there is what flattens every dense region
+  // into the same red.
+  return Math.min(MAX_INTENSITY, Math.max(MIN_INTENSITY, PEAK_TARGET / (peak * GAUSS_COEF)));
 }
 
 // Counts across a viewport routinely span four orders of magnitude, so weight
@@ -201,9 +227,18 @@ function heatPaint(bins, instance) {
   const maxCount = bins.reduce((m, b) => (b.count > m ? b.count : m), 0);
   const top = Math.max(0.5, Math.log10(Math.max(2, maxCount)));
   const weightOf = (count) =>
-    WEIGHT_FLOOR + (Math.log10(Math.max(count, 1)) / top) * (1 - WEIGHT_FLOOR);
+    WEIGHT_FLOOR +
+    Math.min(1, Math.log10(Math.max(count, 1)) / top) ** WEIGHT_GAMMA * (1 - WEIGHT_FLOOR);
   return {
-    'heatmap-weight': ['interpolate', ['linear'], ['log10', ['max', ['get', 'count'], 1]], 0, WEIGHT_FLOOR, top, 1],
+    'heatmap-weight': [
+      '+',
+      WEIGHT_FLOOR,
+      [
+        '*',
+        1 - WEIGHT_FLOOR,
+        ['^', ['min', 1, ['/', ['log10', ['max', ['get', 'count'], 1]], top]], WEIGHT_GAMMA],
+      ],
+    ],
     'heatmap-intensity': bins.length ? heatIntensity(bins, weightOf, instance) : BASE_INTENSITY,
     'heatmap-radius': HEAT_RADIUS,
     'heatmap-opacity': 0.82,
@@ -213,11 +248,15 @@ function heatPaint(bins, instance) {
       ['heatmap-density'],
       // Fades to a transparent version of the first colour. Transparent black
       // would interpolate through grey and fog the whole map.
+      // Stops are weighted towards the cool end: most of a viewport is ordinary
+      // density and should read as such, with the warm half of the ramp held
+      // back for the top fifth of the scale.
       0, 'rgba(120,168,214,0)',
-      0.12, 'rgba(120,168,214,0.45)',
-      0.3, 'rgba(94,200,178,0.7)',
-      0.55, 'rgba(243,199,94,0.85)',
-      0.78, 'rgba(226,122,64,0.92)',
+      0.1, 'rgba(120,168,214,0.4)',
+      0.32, 'rgba(120,168,214,0.62)',
+      0.55, 'rgba(94,200,178,0.72)',
+      0.74, 'rgba(243,199,94,0.82)',
+      0.89, 'rgba(226,122,64,0.9)',
       1, 'rgba(190,52,52,0.97)',
     ],
   };
