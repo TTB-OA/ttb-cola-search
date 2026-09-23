@@ -661,7 +661,7 @@ export default function SearchPage() {
       </section>
 
       <section className="wrap" style={{ marginTop: 44 }}>
-        <div className="row between" style={{ marginBottom: 16 }}>
+        <div className="row between" style={{ marginBottom: 16 }} data-tour="recent-head">
           <h2 style={{ fontSize: 20 }}>Recently approved</h2>
           <button className="linkbtn" onClick={() => navigate({ pathname: '/results', search: toQuery({ sort: 'approvalDate', status: 'Approved' }) })}>
             Browse all approvals <Icon name="arrowRt" size={16} />

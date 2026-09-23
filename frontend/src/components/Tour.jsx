@@ -16,17 +16,38 @@ export function useTour() {
 const GAP = 14;
 const PAD = 8;
 const POP_W = 360;
+// On small screens, targets taller than this share of the viewport are swapped
+// for a smaller stand-in so the spotlight doesn't swallow the whole screen.
+const LARGE_FRACTION = 0.45;
+const HEADING_SELECTOR = 'h1, h2, h3, h4, .section-title';
 
 function prefersReducedMotion() {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
-function findTarget(step) {
-  if (!step || !step.target) return null;
-  const el = document.querySelector(step.target);
+function isMobileViewport() {
+  return window.matchMedia('(max-width: 720px)').matches;
+}
+
+function visible(el) {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   return r.width >= 4 && r.height >= 4 ? el : null;
+}
+
+function findTarget(step) {
+  if (!step || !step.target) return null;
+  return visible(document.querySelector(step.target));
+}
+
+// Element to spotlight: the target itself, or on small screens when it is too
+// large, the step's mobileTarget, else the section's own heading, else nothing
+// (the card is centered instead).
+function spotlightFor(step, el) {
+  if (!el || !isMobileViewport()) return el;
+  if (el.getBoundingClientRect().height <= window.innerHeight * LARGE_FRACTION) return el;
+  const alt = step.mobileTarget && visible(document.querySelector(step.mobileTarget));
+  return alt || visible(el.querySelector(HEADING_SELECTOR));
 }
 
 function clamp(v, min, max) {
@@ -88,7 +109,7 @@ function TourOverlay({ steps, index, onNext, onPrev, onClose }) {
   const step = steps[index];
   const popRef = useRef(null);
   const readyRef = useRef(false);
-  const scrolledRef = useRef(-1);
+  const scrolledRef = useRef({ index: -1, el: null });
   const [ready, setReady] = useState(false);
   const [rect, setRect] = useState(null);
   const [pos, setPos] = useState(null);
@@ -118,13 +139,17 @@ function TourOverlay({ steps, index, onNext, onPrev, onClose }) {
         readyRef.current = true;
         setReady(true);
       }
-      if (scrolledRef.current !== index && readyRef.current) {
-        scrolledRef.current = index;
+      const spot = spotlightFor(step, el);
+      const focus = spot || el;
+      // Re-scroll if the spotlight swaps element (e.g. content grew past the threshold).
+      const scrolled = scrolledRef.current;
+      if (readyRef.current && (scrolled.index !== index || scrolled.el !== focus)) {
+        scrolledRef.current = { index, el: focus };
         const behavior = prefersReducedMotion() ? 'auto' : 'smooth';
-        if (el) el.scrollIntoView({ behavior, block: 'center', inline: 'nearest' });
+        if (focus) focus.scrollIntoView({ behavior, block: 'center', inline: 'nearest' });
         else window.scrollTo({ top: 0, behavior });
       }
-      const r = el ? el.getBoundingClientRect() : null;
+      const r = spot ? spot.getBoundingClientRect() : null;
       const next = r
         ? {
             top: r.top - PAD,
@@ -339,7 +364,7 @@ export function TourProvider({ children }) {
         });
     }
 
-    const isMobile = window.matchMedia('(max-width: 720px)').matches;
+    const isMobile = isMobileViewport();
     let tries = 0;
     const id = setInterval(() => {
       tries += 1;
