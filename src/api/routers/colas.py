@@ -60,6 +60,7 @@ _ID_COLUMNS = ("cola_id", "serial_num", "permit_num", "primary_permit_id")
 
 # Aliases of the materialised id sets the list statements join onto cola_search.
 KEYWORD_ALIAS = "kw"
+FILTERED_ALIAS = "fs"
 
 # Table-qualified, since the joined relations also expose cola_id.
 _SUMMARY_COLUMNS = select_columns(SUMMARY_COLUMN_LIST, SEARCH_TABLE)
@@ -185,6 +186,13 @@ def _keyword_source(
         KEYWORD_ALIAS,
         f"SELECT cola_id FROM {SEARCH_TABLE} {_and(where, term_match())}",
         [*_term_params(q), *where_params],
+    )
+
+
+def filtered_source(where: str, where_params: list[Any]) -> Source:
+    """The rows matching `where`, for a set known to be small."""
+    return Source(
+        FILTERED_ALIAS, f"SELECT cola_id FROM {SEARCH_TABLE} {where}", list(where_params)
     )
 
 
@@ -721,7 +729,7 @@ async def list_colas(
     async def run(sql: str, params: list[Any]) -> list[dict[str, Any]]:
         return await fetch_all(sql, params, work_mem=settings.search_work_mem, prepare=False)
 
-    async def fetch_page() -> list[dict[str, Any]]:
+    async def fetch_page(label_narrow: bool = False) -> list[dict[str, Any]]:
         # One row past the page tells whether there is a next page when the count
         # is unavailable, and whether a record-only pass filled the page. It is
         # never returned.
@@ -744,6 +752,8 @@ async def list_colas(
             return await run(
                 *rows_sql([_keyword_source(term, where, where_params, ranked=ranked)], "", ranked)
             )
+        if label_narrow:
+            return await run(*rows_sql([filtered_source(where, where_params)], "", False))
         return await run(*rows_sql([], where, False))
 
     affordable = aggregate_is_affordable(q=q, **filters)
@@ -753,9 +763,18 @@ async def list_colas(
         )
     else:
         aggregate_coro = _count_and_facets([], where, where_params, facets)
-    rows, aggregate = await asyncio.gather(
-        fetch_page(), aggregate_coro if affordable else _no_aggregate()
-    )
+    if label_text and not term:
+        # The label GIN overestimates rare lexemes (6.8k rows estimated, 45 actual
+        # for "hangover"), so the planner walks the date index testing every row
+        # and runs past the timeout. The capped count settles it first: a set
+        # under the cap is materialised, a common term keeps the short walk.
+        aggregate = await aggregate_coro
+        narrow = aggregate is not None and aggregate[0] <= COUNT_CAP
+        rows = await fetch_page(label_narrow=narrow)
+    else:
+        rows, aggregate = await asyncio.gather(
+            fetch_page(), aggregate_coro if affordable else _no_aggregate()
+        )
 
     has_more = len(rows) > page_size
     rows = rows[:page_size]

@@ -28,6 +28,7 @@ from api.routers.colas import (  # noqa: E402
     _order_by,
     _term_params,
     compose,
+    filtered_source,
     only_status_filtered,
     record_match,
 )
@@ -181,7 +182,7 @@ async def stat_statements() -> None:
 async def explain(label: str, sql: str, params: list[Any], setup: list[str] | None = None) -> None:
     print(f"\n--- {label} ---")
     async with transaction_cursor() as cur:
-        await cur.execute("SET LOCAL statement_timeout TO '120s'")
+        await cur.execute("SELECT set_config('statement_timeout', %s, true)", [os.environ.get("DIAG_TIMEOUT", "120s")])
         await cur.execute("SELECT set_config('work_mem', %s, true)", [os.environ.get("DIAG_WORK_MEM", "64MB")])
         for s in setup or []:
             await cur.execute(s)
@@ -238,6 +239,9 @@ def list_sql(**filters: Any) -> tuple[list[tuple[str, str, list[Any]]]]:
         agg_where, agg_params = "", []
     else:
         stmts.append(("rows tier3 (full)", *rows_sql([], where, False)))
+        if args.get("label_text"):
+            stmts.append(("rows label (filtered source)",
+                          *rows_sql([filtered_source(where, where_params)], "", False)))
         with_sql, from_sql, source_params = "", SEARCH_TABLE, []
         agg_where, agg_params = where, where_params
     agg_sql = f"""--sql
@@ -288,6 +292,10 @@ LIST_CASES: dict[str, dict[str, Any]] = {
     "varietal_pinot": {"varietal": "pinot"},
     "qualification_ilike": {"qualification": "sulfite"},
     "label_text_only": {"label_text": "organic"},
+    "label_hangover_status": {"label_text": "hangover", "status": "Approved"},
+    "label_organic_status": {"label_text": "organic", "status": "Approved"},
+    "label_alcohol_status": {"label_text": "alcohol", "status": "Approved"},
+    "label_hangover_wine": {"label_text": "hangover", "status": "Approved", "commodity": "wine"},
     "commodity_date_range": {"commodity": "Wine", "date_from": "2015-01-01", "date_to": "2015-12-31"},
     "state_only": {"permit_state": "CA"},
     "state_city": {"permit_state": "CA", "permit_city": "napa"},

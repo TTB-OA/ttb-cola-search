@@ -12,6 +12,8 @@ import pytest
 
 from src.api.config import get_settings
 from src.api.routers.colas import (
+    COUNT_CAP,
+    FILTERED_ALIAS,
     KEYWORD_ALIAS,
     SORTS,
     _and,
@@ -339,3 +341,37 @@ def test_every_sort_has_a_qualified_cola_id_tiebreaker():
 )
 def test_aggregate_is_skipped_for_unindexed_filters_without_an_anchor(filters, expected):
     assert aggregate_is_affordable(**filters) is expected
+
+
+# --- Label-text-only routing -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "total,materialised",
+    [(0, True), (45, True), (COUNT_CAP, True), (COUNT_CAP + 1, False)],
+)
+def test_label_text_only_materialises_a_set_under_the_count_cap(
+    monkeypatch, total, materialised
+):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.api.routers import colas as colas_router
+
+    statements: list[str] = []
+
+    async def fake_fetch_all(sql, params=None, **kwargs):
+        if "'total' AS dim" in sql:
+            return [{"dim": "total", "value": None, "count": total}]
+        statements.append(sql)
+        assert sql.count("%s") == len(params)
+        return []
+
+    monkeypatch.setattr(colas_router, "fetch_all", fake_fetch_all)
+    response = TestClient(app).get(
+        "/api/colas", params={"labelText": "hangover", "status": "Approved"}
+    )
+
+    assert response.status_code == 200
+    (rows_sql,) = statements
+    assert (f"{FILTERED_ALIAS} AS MATERIALIZED" in rows_sql) is materialised
