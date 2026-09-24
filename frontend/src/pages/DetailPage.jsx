@@ -601,18 +601,6 @@ export default function DetailPage() {
             >
               <Icon name="print" size={16} /> View form 5100.31
             </a>
-            {rec.formUrl && (
-              // Leaves our origin, so this is the only place the download is visible.
-              <a
-                className="btn sm"
-                href={rec.formUrl}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => track('cola_form_downloaded', {})}
-              >
-                <Icon name="download" size={16} /> Download COLA
-              </a>
-            )}
           </div>
         </div>
 
