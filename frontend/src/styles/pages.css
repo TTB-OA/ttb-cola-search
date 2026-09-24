@@ -105,6 +105,25 @@
 .g-meta { font-size: 12.5px; color: var(--base-dark); margin-top: 4px; }
 .mchip { font-size: 11px; font-weight: 600; background: var(--base-lightest); color: var(--base-darker); padding: 3px 8px; border-radius: 999px; }
 
+/* ---------- Near-identical artwork groups ---------- */
+.g-cell { position: relative; display: flex; flex-direction: column; }
+.g-cell > .g-card { flex: 1; }
+.g-cell.stacked > .g-card { --stack: 5px 5px 0 -1px var(--white), 5px 5px 0 0 var(--base-lighter), 10px 10px 0 -2px var(--white), 10px 10px 0 -1px var(--base-lighter); box-shadow: var(--stack); }
+.g-cell.stacked > .g-card:hover { box-shadow: var(--stack), var(--shadow-2); }
+.g-cell.is-dupe > .g-card, .l-cell.is-dupe > .l-row { border-style: dashed; border-color: var(--base-light); }
+.l-cell { display: flex; flex-direction: column; }
+.l-cell.stacked > .l-row { box-shadow: 0 5px 0 -1px var(--white), 0 5px 0 0 var(--base-lighter); }
+.dup-toggle { display: inline-flex; align-items: center; gap: 5px; font: inherit; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; cursor: pointer; border: 1px solid var(--base-lighter); background: var(--white); color: var(--base-darker); }
+.dup-toggle:hover { border-color: var(--accent); color: var(--accent); }
+.dup-toggle[aria-expanded="true"] { background: var(--accent-lighter); border-color: var(--accent); color: var(--accent); }
+.dup-toggle.overlay { position: absolute; top: 10px; left: 10px; background: rgba(27,27,27,.82); color: #fff; border-color: transparent; backdrop-filter: blur(2px); }
+.dup-toggle.overlay[aria-expanded="true"] { background: var(--accent); color: #fff; }
+.dup-toggle.bar { align-self: flex-start; margin: 12px 0 0 16px; }
+.dup-toggle.inline { margin-top: 6px; }
+.dup-mark { font-size: 12px; font-weight: 600; color: var(--base-dark); margin-top: 6px; }
+.data-table tbody tr.is-dupe td:first-child { box-shadow: inset 3px 0 0 var(--base-light); }
+.dup-switch { font-size: 13.5px; font-weight: 600; padding: 0; }
+
 /* ---------- List ---------- */
 .list-view { display: flex; flex-direction: column; gap: 12px; }
 .l-row { display: grid; grid-template-columns: 76px 1fr 180px; gap: 18px; text-align: left; background: var(--white); border: 1px solid var(--base-lighter); border-radius: var(--radius-md); padding: 16px; cursor: pointer; transition: box-shadow .15s, border-color .15s; align-items: start; }

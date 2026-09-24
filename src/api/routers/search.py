@@ -50,6 +50,10 @@ def _embedding_search_limiter() -> SlidingWindowLimiter:
 # de-duplication, so the ANN scan has to return more candidates than requested.
 _ANN_OVERFETCH = 6
 
+# Near-identical re-filings are folded under their best-ranked copy, so `limit`
+# counts distinct artwork and the query pulls extra rows to fill the groups.
+_GROUP_OVERFETCH = 3
+
 # A text query lands outside the cloud of image vectors, so every label sits in a
 # narrow, nearly equidistant band (cosine 0.64-0.92, sd 0.03). Greedy HNSW descent
 # has almost no gradient to follow there and settles in a local minimum: at the old
@@ -132,6 +136,31 @@ def store_query_vector(key: str, literal: str) -> None:
         _query_vector_cache.popitem(last=False)
 
 
+def group_near_duplicates(
+    items: list[ColaSummary], pairs: list[tuple[int, int]], limit: int
+) -> list[ColaSummary]:
+    """Mark each item near-identical to an earlier group lead and keep the first
+    `limit` leads plus their duplicates, in rank order.
+
+    `pairs` holds (earlier, later) indexes into `items`. Membership is tested
+    against the lead only, so a chain of small differences cannot drift a group
+    into unrelated artwork.
+    """
+    near: dict[int, set[int]] = {}
+    for a, b in pairs:
+        near.setdefault(b, set()).add(a)
+    leads: list[int] = []
+    out: list[ColaSummary] = []
+    for i, item in enumerate(items):
+        lead = next((j for j in leads if j in near.get(i, ())), None)
+        if lead is not None:
+            out.append(item.model_copy(update={"duplicate_of": items[lead].id}))
+        elif len(leads) < limit:
+            leads.append(i)
+            out.append(item)
+    return out
+
+
 async def _nearest_by_vector(
     vector_literal: str,
     limit: int,
@@ -199,7 +228,7 @@ async def _nearest_by_vector(
     if outer:
         query += " WHERE " + " AND ".join(outer)
     query += " ORDER BY b.dist LIMIT %s"
-    params.append(limit)
+    params.append(limit * _GROUP_OVERFETCH)
 
     # ef_search has to exceed the candidate LIMIT or HNSW recall collapses.
     ef_search = min(1000, max(_HNSW_EF_SEARCH, candidates))
@@ -231,8 +260,29 @@ async def _nearest_by_vector(
         await cur.execute(SQL("SET LOCAL enable_seqscan TO off"))
         await cur.execute(cast(QueryNoTemplate, query), params)
         rows = cast(list[dict[str, Any]], await cur.fetchall())
+        pairs: list[tuple[int, int]] = []
+        if len(rows) > 1:
+            await cur.execute(
+                """--sql
+                WITH m AS (
+                  SELECT t.ord, i.image_feature_vector AS vec
+                  FROM unnest(%s::text[], %s::text[]) WITH ORDINALITY AS t(cola_id, file_name, ord)
+                  JOIN cola_images i ON i.cola_id = t.cola_id AND i.file_name = t.file_name
+                )
+                SELECT a.ord - 1 AS a, b.ord - 1 AS b
+                FROM m a JOIN m b ON a.ord < b.ord
+                WHERE (a.vec <=> b.vec) <= %s
+                """,
+                [
+                    [r["cola_id"] for r in rows],
+                    [r["matched_file"] for r in rows],
+                    1.0 - settings.duplicate_image_similarity,
+                ],
+            )
+            pairs = [(int(p["a"]), int(p["b"])) for p in await cur.fetchall()]
 
-    return [summary_from_row(r, score=round(1.0 - float(r["dist"]), 4)) for r in rows]
+    items = [summary_from_row(r, score=round(1.0 - float(r["dist"]), 4)) for r in rows]
+    return group_near_duplicates(items, pairs, limit)
 
 
 def _enforce_embedding_limit(request: Request, noun: str) -> None:

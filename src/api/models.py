@@ -114,6 +114,9 @@ class ColaSummary(ApiModel):
     # which is usually not the record's default front image.
     matched_file: str | None = None
     score: float | None = None
+    # Set only by vector search: id of the higher-ranked result whose matched
+    # image is near-identical to this one (the same artwork filed again).
+    duplicate_of: str | None = None
 
 
 class ColaDetail(ColaSummary):

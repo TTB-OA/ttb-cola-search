@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # short enough that a repeated query sees them within the hour.
     describe_cache_seconds: int = 900
     describe_cache_size: int = 256
+    # Cosine similarity at which two matched label images count as the same
+    # artwork. Re-filed labels score ~0.97-1.0; distinct products sharing a
+    # brand template sit around 0.83-0.93 (calibrated 2026-09-23).
+    duplicate_image_similarity: float = 0.97
 
     # --- Telemetry / analytics ---------------------------------------------
     # Absent connection string == telemetry disabled, which is what local dev

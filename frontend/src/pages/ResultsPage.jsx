@@ -9,6 +9,7 @@ import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { readPendingImageSearch } from '../lib/imageSearchStore.js';
 import { track } from '../lib/analytics.js';
+import { groupDuplicates } from '../lib/duplicates.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
@@ -121,96 +122,134 @@ function RankBadge({ n }) {
   return <span className="rank-badge mono">#{n}</span>;
 }
 
+// Sits beside the card rather than inside it: a button can't nest in a button.
+function DupToggle({ e, onToggle, className = '' }) {
+  if (!e.dupCount) return null;
+  return (
+    <button
+      type="button"
+      className={`dup-toggle ${className}`}
+      aria-expanded={e.open}
+      title={e.open ? 'Hide approvals with the same artwork' : 'Show approvals with the same artwork'}
+      onClick={(ev) => {
+        ev.stopPropagation();
+        onToggle(e.r.id);
+      }}
+    >
+      <Icon name="layers" size={12} />
+      {e.open ? `Hide ${e.dupCount}` : `+${e.dupCount} near-identical`}
+    </button>
+  );
+}
+
+function DupMark({ e }) {
+  return e.dupeOf ? <div className="dup-mark">Same artwork as #{e.rank}</div> : null;
+}
+
 /* ---------- views ---------- */
-function GalleryView({ rows, criteria, isVector, showRank, onOpen }) {
+function GalleryView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
   return (
     <div className="gallery-grid">
-      {rows.map((r, i) => (
-        <button key={r.id} className="g-card" onClick={() => onOpen(r.id, i)}>
-          <div className="g-thumb">
-            <LabelThumb rec={r} />
-            {showRank ? (
-              <span className="g-score">#{i + 1}</span>
-            ) : (
-              isVector && r.score != null && (
-                <span className="g-score">
-                  <Icon name="sparkle" size={12} />
-                  {toPct(r.score)}%
-                </span>
-              )
-            )}
+      {entries.map((e) => {
+        const r = e.r;
+        return (
+          <div key={r.id} className={`g-cell${e.dupCount ? ' stacked' : ''}${e.dupeOf ? ' is-dupe' : ''}`}>
+            <button className="g-card" onClick={() => onOpen(r.id, e.i)}>
+              <div className="g-thumb">
+                <LabelThumb rec={r} />
+                {showRank ? (
+                  <span className="g-score">{e.dupeOf ? '≈' : ''}#{e.rank}</span>
+                ) : (
+                  isVector && r.score != null && (
+                    <span className="g-score">
+                      <Icon name="sparkle" size={12} />
+                      {toPct(r.score)}%
+                    </span>
+                  )
+                )}
+              </div>
+              <div className="g-body">
+                <div className="row between gap-8">
+                  <CatTag rec={r} />
+                  <StatusBadge status={r.status} />
+                </div>
+                <div className="g-brand">
+                  <Highlight text={r.brand} q={criteria.brand || criteria.q} />
+                </div>
+                <div className="g-fanciful">
+                  <Highlight text={r.fanciful} q={criteria.fanciful || criteria.q} />
+                </div>
+                <div className="g-meta mono">{r.ttbId}</div>
+                <div className="g-meta">
+                  {r.originFlag ? r.originFlag + ' ' : ''}{r.origin} · {fmtDate(r.approvalDate)}
+                </div>
+                <DupMark e={e} />
+              </div>
+            </button>
+            <DupToggle e={e} onToggle={onToggle} className="overlay" />
           </div>
-          <div className="g-body">
-            <div className="row between gap-8">
-              <CatTag rec={r} />
-              <StatusBadge status={r.status} />
-            </div>
-            <div className="g-brand">
-              <Highlight text={r.brand} q={criteria.brand || criteria.q} />
-            </div>
-            <div className="g-fanciful">
-              <Highlight text={r.fanciful} q={criteria.fanciful || criteria.q} />
-            </div>
-            <div className="g-meta mono">{r.ttbId}</div>
-            <div className="g-meta">
-              {r.originFlag ? r.originFlag + ' ' : ''}{r.origin} · {fmtDate(r.approvalDate)}
-            </div>
-          </div>
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function ListView({ rows, criteria, isVector, showRank, onOpen }) {
+function ListView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
   return (
     <div className="list-view">
-      {rows.map((r, i) => (
-        <button key={r.id} className="l-row" onClick={() => onOpen(r.id, i)}>
-          <div className="l-thumb">
-            <LabelThumb rec={r} />
-          </div>
-          <div className="l-main">
-            <div className="row gap-8" style={{ marginBottom: 4 }}>
-              <CatTag rec={r} />
-              <span className="muted mono" style={{ fontSize: 12 }}>
-                {r.classType}
-              </span>
-            </div>
-            <div className="l-brand">
-              <Highlight text={r.brand} q={criteria.brand || criteria.q} /> <span className="l-fanciful">{r.fanciful}</span>
-            </div>
-            <div className="l-meta">
-              <span className="mono">{r.ttbId}</span>
-              <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
-              <span>
-                <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
-              </span>
-              {r.permitId && <span className="mono">{r.permitId}</span>}
-              {r.permitState && (
-                <span>
-                  {r.permitCity ? r.permitCity + ', ' : ''}
-                  {r.permitState}
+      {entries.map((e) => {
+        const r = e.r;
+        return (
+          <div key={r.id} className={`l-cell${e.dupCount ? ' stacked' : ''}${e.dupeOf ? ' is-dupe' : ''}`}>
+            <button className="l-row" onClick={() => onOpen(r.id, e.i)}>
+              <div className="l-thumb">
+                <LabelThumb rec={r} />
+              </div>
+              <div className="l-main">
+                <div className="row gap-8" style={{ marginBottom: 4 }}>
+                  <CatTag rec={r} />
+                  <span className="muted mono" style={{ fontSize: 12 }}>
+                    {r.classType}
+                  </span>
+                </div>
+                <div className="l-brand">
+                  <Highlight text={r.brand} q={criteria.brand || criteria.q} /> <span className="l-fanciful">{r.fanciful}</span>
+                </div>
+                <div className="l-meta">
+                  <span className="mono">{r.ttbId}</span>
+                  <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
+                  <span>
+                    <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+                  </span>
+                  {r.permitId && <span className="mono">{r.permitId}</span>}
+                  {r.permitState && (
+                    <span>
+                      {r.permitCity ? r.permitCity + ', ' : ''}
+                      {r.permitState}
+                    </span>
+                  )}
+                </div>
+                <DupMark e={e} />
+              </div>
+              <div className="l-side">
+                {showRank ? <RankBadge n={e.rank} /> : isVector && r.score != null ? <ScoreMeter score={r.score} /> : <StatusBadge status={r.status} />}
+                <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+                  Approved {fmtDate(r.approvalDate)}
+                </div>
+                <span className="linkbtn" style={{ marginTop: 8 }}>
+                  View COLA <Icon name="chevRight" size={14} />
                 </span>
-              )}
-            </div>
+              </div>
+            </button>
+            <DupToggle e={e} onToggle={onToggle} className="bar" />
           </div>
-          <div className="l-side">
-            {showRank ? <RankBadge n={i + 1} /> : isVector && r.score != null ? <ScoreMeter score={r.score} /> : <StatusBadge status={r.status} />}
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
-              Approved {fmtDate(r.approvalDate)}
-            </div>
-            <span className="linkbtn" style={{ marginTop: 8 }}>
-              View COLA <Icon name="chevRight" size={14} />
-            </span>
-          </div>
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function TableView({ rows, criteria, isVector, showRank, onOpen }) {
+function TableView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
   return (
     <div className="table-wrap panel">
       <table className="data-table">
@@ -228,8 +267,8 @@ function TableView({ rows, criteria, isVector, showRank, onOpen }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.id} onClick={() => onOpen(r.id, i)}>
+          {entries.map(({ r, ...e }) => (
+            <tr key={r.id} className={e.dupeOf ? 'is-dupe' : undefined} onClick={() => onOpen(r.id, e.i)}>
               <td>
                 <div className="t-thumb">
                   <LabelThumb rec={r} />
@@ -242,6 +281,8 @@ function TableView({ rows, criteria, isVector, showRank, onOpen }) {
                 <div className="muted" style={{ fontSize: 12.5 }}>
                   {r.fanciful}
                 </div>
+                <DupMark e={e} />
+                <DupToggle e={{ r, ...e }} onToggle={onToggle} className="inline" />
               </td>
               <td>
                 <CatTag rec={r} />
@@ -262,7 +303,7 @@ function TableView({ rows, criteria, isVector, showRank, onOpen }) {
                 {r.ttbId}
               </td>
               <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.approvalDate)}</td>
-              <td>{showRank ? <RankBadge n={i + 1} /> : isVector && r.score != null ? <ScoreMeter score={r.score} compact /> : <StatusBadge status={r.status} />}</td>
+              <td>{showRank ? <RankBadge n={e.rank} /> : isVector && r.score != null ? <ScoreMeter score={r.score} compact /> : <StatusBadge status={r.status} />}</td>
               <td>
                 <Icon name="chevRight" size={16} className="muted" />
               </td>
@@ -366,6 +407,21 @@ export default function ResultsPage() {
     track('view_mode_changed', { view: v, mode });
   };
 
+  const [groupDupes, setGroupDupesState] = useState(() => localStorage.getItem('cola.groupDupes') !== 'off');
+  const setGroupDupes = (on) => {
+    setGroupDupesState(on);
+    localStorage.setItem('cola.groupDupes', on ? 'on' : 'off');
+  };
+  const [expanded, setExpanded] = useState(() => new Set());
+  useEffect(() => setExpanded(new Set()), [searchParams.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toggleGroup = (id) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   // Image-search payload was stashed by the search form (a File can't ride in a
   // URL); `isid` is the handle, so back-nav into these results finds it again.
   const pending = isImg ? readPendingImageSearch(criteria.isid) : null;
@@ -413,6 +469,22 @@ export default function ResultsPage() {
   const data = state.data;
   const loading = isImg ? (pending && pending.file ? state.loading : false) : state.loading;
   const rows = (data && data.items) || [];
+  const groups = useMemo(() => (isVector ? groupDuplicates(rows) : []), [rows, isVector]);
+  const hasDupes = groups.length < rows.length;
+  const grouping = isVector && groupDupes && hasDupes;
+  // `i` is the position in the API list (what result_clicked reports); `rank`
+  // numbers distinct artwork, so a folded group never skips a rank.
+  const entries = useMemo(() => {
+    if (!grouping) return rows.map((r, i) => ({ r, i, rank: i + 1 }));
+    const pos = new Map(rows.map((r, i) => [r.id, i]));
+    const out = [];
+    groups.forEach((g, k) => {
+      const open = expanded.has(g.lead.id);
+      out.push({ r: g.lead, i: pos.get(g.lead.id), rank: k + 1, dupCount: g.dupes.length, open });
+      if (open) g.dupes.forEach((d) => out.push({ r: d, i: pos.get(d.id), rank: k + 1, dupeOf: g.lead.id }));
+    });
+    return out;
+  }, [rows, groups, grouping, expanded]);
   // `q` is the artwork description in describe mode, so highlighting it against
   // brand and applicant text would just be noise.
   const highlightCriteria = isDescribe ? { ...criteria, q: '' } : criteria;
@@ -602,7 +674,11 @@ export default function ResultsPage() {
           <div className="results-toolbar">
             <div>
               <div style={{ fontSize: 22, fontWeight: 800 }}>
-                {loading ? 'Searching…' : (
+                {loading ? 'Searching…' : grouping ? (
+                  <>
+                    {groups.length.toLocaleString()} distinct {groups.length === 1 ? 'label' : 'labels'}
+                  </>
+                ) : (
                   <>
                     {total.toLocaleString()}{totalCapped ? '+' : ''}{' '}
                     {total === 1 ? 'result' : 'results'}
@@ -611,11 +687,21 @@ export default function ResultsPage() {
               </div>
               {!loading && (
                 <div className="muted" style={{ fontSize: 13.5 }}>
-                  {isVector ? 'Similar labels in the registry' : 'Matching certificates of label approval'}
+                  {grouping
+                    ? `${rows.length.toLocaleString()} approvals · near-identical artwork grouped`
+                    : isVector
+                      ? 'Similar labels in the registry'
+                      : 'Matching certificates of label approval'}
                 </div>
               )}
             </div>
             <div className="row gap-16 wrap-flex" data-tour="results-views">
+              {isVector && hasDupes && !loading && (
+                <label className="checkrow dup-switch" title="Fold approvals whose label image is near-identical to a higher-ranked result">
+                  <input type="checkbox" checked={groupDupes} onChange={(e) => setGroupDupes(e.target.checked)} />
+                  <span>Group near-identical</span>
+                </label>
+              )}
               {!isVector && (
                 <div className="row gap-8">
                   <span className="muted" style={{ fontSize: 13, fontWeight: 600 }}>
@@ -686,7 +772,7 @@ export default function ResultsPage() {
             </div>
           ) : (
             <>
-              <View rows={rows} criteria={highlightCriteria} isVector={isVector} showRank={isDescribe} onOpen={onOpen} />
+              <View entries={entries} criteria={highlightCriteria} isVector={isVector} showRank={isDescribe} onOpen={onOpen} onToggle={toggleGroup} />
               {!isVector && pageCount > 1 && (
                 <div className="row between" style={{ marginTop: 24, alignItems: 'center' }}>
                   <button className="btn secondary sm" disabled={page <= 1} onClick={() => goPage(page - 1)}>

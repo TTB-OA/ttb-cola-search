@@ -8,6 +8,7 @@ import { toPct } from '../components/ScoreMeter.jsx';
 import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
 import { fmtDate, fmtPhone, orderFaces } from '../lib/format.js';
+import { groupDuplicates } from '../lib/duplicates.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 
@@ -192,7 +193,7 @@ function Notice({ tone, title, children }) {
   );
 }
 
-function SimilarCard({ r, onOpen, tourAnchor }) {
+function SimilarCard({ r, dupCount = 0, onOpen, tourAnchor }) {
   return (
     <button className="recent-card" onClick={() => onOpen(r.id)} data-tour={tourAnchor || undefined}>
       <div style={{ position: 'relative' }}>
@@ -216,6 +217,11 @@ function SimilarCard({ r, onOpen, tourAnchor }) {
         <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
           {fmtDate(r.approvalDate)}
         </div>
+        {dupCount > 0 && (
+          <div className="dup-mark" title="Other approvals with near-identical label artwork">
+            <Icon name="layers" size={12} /> +{dupCount} near-identical {dupCount === 1 ? 'approval' : 'approvals'}
+          </div>
+        )}
       </div>
     </button>
   );
@@ -543,9 +549,9 @@ export default function DetailPage() {
     );
   }
 
-  const dropSelf = (list) => (list || []).filter((r) => String(r.id) !== String(rec.id));
-  const memberSimilar = dropSelf(memberState.data);
-  const othersSimilar = dropSelf(othersState.data);
+  const similarGroups = (list) => groupDuplicates((list || []).filter((r) => String(r.id) !== String(rec.id)));
+  const memberSimilar = similarGroups(memberState.data);
+  const othersSimilar = similarGroups(othersState.data);
   const proc = rec.processing || {};
   const activeView = views.find((v) => v.img.fileName === activeFile) || views[0];
   const currentImage = activeView && activeView.img;
@@ -885,8 +891,8 @@ export default function DetailPage() {
               Visually similar approved labels filed under permit {memberPermit || '—'}.
             </p>
             <div className="recent-grid">
-              {memberSimilar.map((r, i) => (
-                <SimilarCard key={r.id} r={r} onOpen={onOpen} tourAnchor={i === 0 ? 'detail-similar' : undefined} />
+              {memberSimilar.map((g, i) => (
+                <SimilarCard key={g.lead.id} r={g.lead} dupCount={g.dupes.length} onOpen={onOpen} tourAnchor={i === 0 ? 'detail-similar' : undefined} />
               ))}
             </div>
           </section>
@@ -899,10 +905,11 @@ export default function DetailPage() {
               Visually similar approved labels from other permit holders — useful for trade-dress comparison.
             </p>
             <div className="recent-grid">
-              {othersSimilar.map((r, i) => (
+              {othersSimilar.map((g, i) => (
                 <SimilarCard
-                  key={r.id}
-                  r={r}
+                  key={g.lead.id}
+                  r={g.lead}
+                  dupCount={g.dupes.length}
                   onOpen={onOpen}
                   tourAnchor={i === 0 && memberSimilar.length === 0 ? 'detail-similar' : undefined}
                 />
