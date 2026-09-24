@@ -1,0 +1,56 @@
+﻿
+== batch turnaround by submit day (hours) ==
+  ERROR: function round(double precision, integer) does not exist
+LINE 3:                round(percentile_cont(0.5) WITHIN GROUP (ORDE...
+                       ^
+HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+
+== submit failures by day and kind ==
+  d | spend_cap | quota | req_lost | bytes_uploaded_for_nothing
+  2026-09-10 | 0 | 4 | 1290 | 365 MB
+  2026-09-14 | 0 | 4 | 3149 | 688 MB
+  2026-09-15 | 0 | 777 | 373043 | 82 GB
+  2026-09-16 | 0 | 431 | 1397 | 213 MB
+  2026-09-18 | 795 | 0 | 6533 | 2810 MB
+  2026-09-20 | 0 | 19 | 49 | 13 MB
+  2026-09-21 | 0 | 32 | 18665 | 3861 MB
+  2026-09-22 | 170 | 175 | 169585 | 35 GB
+  2026-09-23 | 0 | 439 | 217645 | 48 GB
+
+== in-flight load at the moment of each quota 429 (last 3d) ==
+  submitted_on | request_count | jobs_in_flight | requests_in_flight
+  2026-09-23 23:21:08.760757+00:00 | 781 | 121 | 61033
+  2026-09-23 23:20:45.138525+00:00 | 333 | 121 | 61033
+  2026-09-23 23:20:23.663716+00:00 | 194 | 121 | 61033
+  2026-09-23 23:20:03.394520+00:00 | 125 | 121 | 61033
+  2026-09-23 23:19:27.667074+00:00 | 944 | 121 | 61033
+  2026-09-23 23:18:53.463644+00:00 | 872 | 121 | 61033
+  2026-09-23 23:18:35.703679+00:00 | 65 | 121 | 61033
+  2026-09-23 23:17:58.462274+00:00 | 1000 | 121 | 61033
+  2026-09-23 23:17:26.067184+00:00 | 761 | 121 | 61033
+  2026-09-23 23:17:04.072343+00:00 | 754 | 121 | 61033
+  2026-09-23 23:16:16.645401+00:00 | 1000 | 121 | 61033
+  2026-09-23 23:15:57.425108+00:00 | 75 | 121 | 61033
+
+== resubmitted 'complete' day: what the image looks like ==
+  (none)
+
+== vector model mix ==
+  image_feature_vector_model | count
+  gemini-embedding-2 | 5376934
+
+== scan_extract ledger: not-complete by status ==
+  status | days | min | max | latest_run
+  in_progress | 1 | 2006-05-01 | 2006-05-01 | 2026-09-23 23:23:43.702949+00:00
+  pending | 2 | 2006-05-08 | 2006-05-23 | 2026-09-23 23:10:21.682106+00:00
+  complete | 7686 | 1970-01-14 | 2026-09-21 | 2026-09-23 23:23:43.575563+00:00
+
+== per embedding day retried in the last cycle (candidate churn) ==
+  status | days
+  complete | 49
+  gave_up | 232
+  pending | 94
+
+== still-invalid images (never embedded after re-encode) ==
+  images | failed_attempts
+  6 | 107
