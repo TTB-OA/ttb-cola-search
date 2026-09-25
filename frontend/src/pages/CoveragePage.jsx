@@ -222,7 +222,14 @@ function CoverageTable({ years, totals }) {
         <tbody>
           {years.map((row) => (
             <tr key={row.year}>
-              <th scope="row">{row.year}</th>
+              <th scope="row">
+                <Link
+                  to={`/results?dateFrom=${row.year}-01-01&dateTo=${row.year}-12-31&sort=approvalDate`}
+                  title={`Search COLAs approved in ${row.year}`}
+                >
+                  {row.year}
+                </Link>
+              </th>
               <td>{row.apiCount === null || row.apiCount === undefined ? '—' : num(row.apiCount)}</td>
               {STAGES.map((s) => (
                 <StageCell key={s.key} row={row} stage={s} />
