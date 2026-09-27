@@ -1,17 +1,20 @@
 import Icon from './Icon.jsx';
 
-// Displays a visual-similarity score (0-100). API scores arrive as 0..1, so we
-// normalize any value <= 1 to a percentage.
+// Raw image-to-image cosine for unrelated labels centres on 0.63 (p90 0.71), so
+// the scale starts there: 0.70 -> 0%, same artwork (>= 0.97) -> 90%+.
+// Measured with scripts/_diag_scores.py.
+const NOISE_FLOOR = 0.7;
+
 function toPct(score) {
   if (score == null) return null;
-  const n = score <= 1 ? score * 100 : score;
-  return Math.round(n);
+  const n = ((score - NOISE_FLOOR) / (1 - NOISE_FLOOR)) * 100;
+  return Math.round(Math.min(100, Math.max(0, n)));
 }
 
 export default function ScoreMeter({ score, compact }) {
   const pct = toPct(score);
   if (pct == null) return null;
-  const hue = pct >= 88 ? 'var(--green)' : pct >= 75 ? 'var(--gold-dark)' : 'var(--base)';
+  const hue = pct >= 90 ? 'var(--green)' : pct >= 60 ? 'var(--gold-dark)' : 'var(--base)';
   if (compact) {
     return (
       <span className="score-pill" style={{ color: hue }}>
