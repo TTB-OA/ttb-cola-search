@@ -33,6 +33,19 @@ const PATHS = {
       <line x1="3.5" y1="18" x2="3.6" y2="18" />
     </>
   ),
+  wall: (
+    <>
+      <rect x="3" y="3" width="4.5" height="4.5" />
+      <rect x="9.75" y="3" width="4.5" height="4.5" />
+      <rect x="16.5" y="3" width="4.5" height="4.5" />
+      <rect x="3" y="9.75" width="4.5" height="4.5" />
+      <rect x="9.75" y="9.75" width="4.5" height="4.5" />
+      <rect x="16.5" y="9.75" width="4.5" height="4.5" />
+      <rect x="3" y="16.5" width="4.5" height="4.5" />
+      <rect x="9.75" y="16.5" width="4.5" height="4.5" />
+      <rect x="16.5" y="16.5" width="4.5" height="4.5" />
+    </>
+  ),
   table: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="1" />
