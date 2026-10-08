@@ -2,9 +2,9 @@
 
 Geometry mirrors the official form (``docs/f510031.pdf``): US Legal, 612 x 1008pt,
 with every numbered item drawn where the real form's widget sits. The registry
-does not publish alcohol content, email address, the item 15 container text or
-either signature, so those items render blank and the footer says the form was
-reconstructed.
+does not publish alcohol content or (in practice) the email address, and the
+signatures are only known to exist, so those items render blank or as a note
+and the footer says the form was reconstructed.
 """
 from __future__ import annotations
 
@@ -489,13 +489,34 @@ def _address_key(value: str) -> str:
 
 
 def _mailing_address(detail: ColaDetail, applicant_block: str) -> str:
-    """Item 8a, blank when it only repeats the address already in item 8."""
+    """Item 8a: the form's own answer when scraped, else the permit address
+    unless it only repeats item 8."""
+    scraped = _clean(detail.form_mailing_address)
+    if scraped:
+        return scraped
     mailing = _clean(detail.mailing_address)
     key = _address_key(mailing)
     block = _address_key(applicant_block)
     if key and block and (key in block or block in key):
         return ""
     return mailing
+
+
+def _applicant_signature_note(detail: ColaDetail) -> str:
+    """Item 17 cannot be reproduced; say what the registry shows there."""
+    value = _clean(detail.applicant_signature).upper()
+    if value == "E-FILED":
+        return "(Application was e-filed)"
+    if value == "SIGNED":
+        return "(Signed on the original)"
+    return ""
+
+
+def _ttb_signature_note(detail: ColaDetail) -> str:
+    """Item 20: the registry serves the signature as an image we do not copy."""
+    if detail.ttb_signed is True:
+        return "(Signed by TTB on the original)"
+    return ""
 
 
 def _qualification_texts(detail: ColaDetail) -> list[str]:
@@ -707,8 +728,16 @@ def _draw_application(
         "11. WINE APPELLATION (If on label)",
         _clean(detail.appellation),
     )
-    _field(c, LEFT, 650, 124, 34, "12. PHONE NUMBER", _phone(detail.submitter_phone))
-    _field(c, LEFT + 124, 650, 232, 34, "13. EMAIL ADDRESS")
+    _field(
+        c,
+        LEFT,
+        650,
+        124,
+        34,
+        "12. PHONE NUMBER",
+        _phone(detail.applicant_phone or detail.submitter_phone),
+    )
+    _field(c, LEFT + 124, 650, 232, 34, "13. EMAIL ADDRESS", _clean(detail.applicant_email))
 
     flags = _application_flags(detail)
     _field(c, 378, 650, RIGHT - 378, 94, "14. TYPE OF APPLICATION (Check applicable box(es))")
@@ -749,6 +778,10 @@ def _draw_application(
         "15. SHOW ANY INFORMATION THAT IS BLOWN, BRANDED, OR EMBOSSED ON THE CONTAINER "
         "(e.g., net contents) ONLY IF IT DOES NOT APPEAR ON THE LABELS AFFIXED BELOW. "
         "ALSO, SHOW TRANSLATIONS OF FOREIGN LANGUAGE TEXT APPEARING ON LABELS.",
+        _clean(detail.container_text),
+        value_size=7.5,
+        autosize=True,
+        min_value_size=5.5,
     )
 
     _band(c, LEFT, 562, RIGHT - LEFT, 13, "PART II - APPLICANT'S CERTIFICATION")
@@ -777,7 +810,16 @@ def _draw_application(
         _date(detail.application_date),
         value_size=8.0,
     )
-    _field(c, LEFT + 110, 486, 234, 26, "17. SIGNATURE OF APPLICANT OR AUTHORIZED AGENT")
+    _field(
+        c,
+        LEFT + 110,
+        486,
+        234,
+        26,
+        "17. SIGNATURE OF APPLICANT OR AUTHORIZED AGENT",
+        _applicant_signature_note(detail),
+        value_size=7.0,
+    )
     _field(
         c,
         LEFT + 344,
@@ -785,7 +827,7 @@ def _draw_application(
         RIGHT - LEFT - 344,
         26,
         "18. PRINT NAME OF APPLICANT OR AUTHORIZED AGENT",
-        _clean(detail.submitter),
+        _clean(detail.printed_name) or _clean(detail.submitter),
     )
 
     _band(c, LEFT, 466, RIGHT - LEFT, 13, "PART III - TTB CERTIFICATE")
@@ -815,6 +857,8 @@ def _draw_application(
         RIGHT - LEFT - 124,
         26,
         "20. AUTHORIZED SIGNATURE, ALCOHOL AND TOBACCO TAX AND TRADE BUREAU",
+        _ttb_signature_note(detail),
+        value_size=7.0,
     )
 
     _band(c, LEFT, 412, RIGHT - LEFT, 13, "FOR TTB USE ONLY")

@@ -31,7 +31,7 @@ Table colas {
   received_code        varchar     [note: 'receivedCode [list], label via ref_received_codes']
   vendor_code          varchar     [note: 'vendorCode [detail]']
   for_sale_in          text        [note: 'forSaleIn [detail]']
-  formula_num          varchar     [note: 'formulaNum [detail]']
+  formula_num          varchar     [note: 'form item 9 "FORMULA" [scraped]; the detail API formulaNum is null even when the form prints one, so the page is the source']
   bottle_capacity      "numeric(12,4)" [note: 'bottleCapacity [detail], numeric upstream']
   image_count_to_parse integer     [note: 'images found by the image run [local]']
   scraped_on           timestamptz [note: 'last list-pass write [local]']
@@ -44,6 +44,18 @@ Table colas {
   application_date     date        [note: 'form item "DATE OF APPLICATION" [scraped]']
   issued_date          date        [note: 'form item "DATE ISSUED" [scraped], blank until the certificate issues']
   expiration_date      date        [note: '"EXPIRATION DATE (If any)" from the certificate status block [scraped], set only where status is Expired']
+  appellation          text        [note: 'form item 11 "WINE APPELLATION" [scraped]']
+  applicant_phone      varchar     [note: 'form item 12 [scraped], digits only like cola_submitters.tel_no; search view "Phone Number" for paper']
+  applicant_fax        varchar     [note: 'search view "Fax Number" [scraped], paper COLAs only']
+  applicant_email      text        [note: 'form item 13 [scraped]; TTB prints the box blank on every page sampled']
+  printed_name         text        [note: 'form item 18 "PRINT NAME OF APPLICANT OR AUTHORIZED AGENT" [scraped]']
+  container_text       text        [note: 'form item 15 blown/branded/embossed container text and translations [scraped], N/A answers stored as NULL']
+  form_mailing_address text        [note: 'form item 8a "MAILING ADDRESS, IF DIFFERENT" [scraped]']
+  applicant_signature  varchar     [note: 'form item 17 [scraped]: E-FILED from the form view, SIGNED when a scan shows one']
+  ttb_signed           boolean     [note: 'form item 20 [scraped]: the form view embeds publicViewSignature.do?ttbid= when TTB signed']
+  wine_vintage         varchar     [note: 'search view "Wine Vintage" [scraped], paper COLAs only']
+  form_view            varchar     [note: 'which COLAs Online view answered: form (publicFormDisplay) | search (publicDisplaySearchBasic) [local]']
+  form_scraped_on      timestamptz [note: 'last detail-page read [local]; NULL selects the row for --backfill-form-flags, and list_ingest clears it when status_code changes']
 
   indexes {
     completed_date

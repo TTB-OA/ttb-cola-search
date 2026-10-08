@@ -102,6 +102,15 @@ DETAIL_COLUMN_LIST: tuple[str, ...] = SUMMARY_COLUMN_LIST + (
     "issued_date",
     "expiration_date",
     "mailing_address",
+    "form_mailing_address",
+    "applicant_phone",
+    "applicant_fax",
+    "applicant_email",
+    "container_text",
+    "applicant_signature",
+    "printed_name",
+    "ttb_signed",
+    "wine_vintage",
     "grape_varietal",
     "parsed_qualifications",
     "submitter_id",
@@ -449,6 +458,16 @@ def _positive(value: Any) -> bool:
         return False
 
 
+TTB_SIGNATURE_URL = "https://ttbonline.gov/colasonline/publicViewSignature.do?ttbid="
+
+
+def ttb_signature_url(base: Mapping[str, Any]) -> str | None:
+    """Item 20 as COLAs Online serves it; the pipeline stores only that it exists."""
+    if base.get("ttb_signed") is not True:
+        return None
+    return TTB_SIGNATURE_URL + quote(str(base.get("cola_id") or ""), safe="")
+
+
 def processing_from_row(base: Mapping[str, Any]) -> ProcessingStatus:
     """Which pipeline stages have actually run for this COLA.
 
@@ -544,6 +563,16 @@ def detail_from_rows(
         vendor_code=base.get("vendor_code"),
         formula=base.get("formula"),
         appellation=base.get("appellation"),
+        form_mailing_address=base.get("form_mailing_address"),
+        applicant_phone=base.get("applicant_phone"),
+        applicant_fax=base.get("applicant_fax"),
+        applicant_email=base.get("applicant_email"),
+        container_text=base.get("container_text"),
+        applicant_signature=base.get("applicant_signature"),
+        printed_name=base.get("printed_name"),
+        ttb_signed=base.get("ttb_signed"),
+        ttb_signature_url=ttb_signature_url(base),
+        wine_vintage=base.get("wine_vintage"),
         grape_varietals=varietals,
         qualifications=base.get("parsed_qualifications"),
         qualification_items=qualifications,

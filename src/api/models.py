@@ -142,6 +142,18 @@ class ColaDetail(ColaSummary):
     vendor_code: str | None = None
     formula: str | None = None
     appellation: str | None = None
+    # Items 8a, 12, 13, 15, 17, 18, 20 as printed on the form page; the
+    # API never carries them. Phone is digits only, like submitter_phone.
+    form_mailing_address: str | None = None
+    applicant_phone: str | None = None
+    applicant_fax: str | None = None
+    applicant_email: str | None = None
+    container_text: str | None = None
+    applicant_signature: str | None = None
+    printed_name: str | None = None
+    ttb_signed: bool | None = None
+    ttb_signature_url: str | None = None
+    wine_vintage: str | None = None
     grape_varietals: list[str] = []
     qualifications: str | None = None
     qualification_items: list[Qualification] = []

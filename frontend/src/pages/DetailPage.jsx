@@ -154,6 +154,16 @@ function addressOnPermit(mailing, permits) {
   });
 }
 
+// Items 17 and 20 are only known to exist; the registry never publishes them.
+function signatureSummary(rec) {
+  const parts = [];
+  if (rec.applicantSignature === 'E-FILED') parts.push('Applicant: e-filed');
+  else if (rec.applicantSignature === 'SIGNED') parts.push('Applicant: signed');
+  if (rec.ttbSigned === true) parts.push('TTB: signed');
+  else if (rec.ttbSigned === false) parts.push('TTB: not yet signed');
+  return parts.length ? parts.join(' · ') : null;
+}
+
 function isBlank(value) {
   return value == null || value === false || (typeof value === 'string' && !value.trim());
 }
@@ -678,6 +688,8 @@ export default function DetailPage() {
                     value: rec.grapeVarietals && rec.grapeVarietals.length ? rec.grapeVarietals.join(', ') : null,
                   },
                   { label: 'Appellation', value: rec.appellation },
+                  { label: 'Vintage', value: rec.wineVintage },
+                  { label: 'Blown / embossed container text', value: rec.containerText },
                 ]}
               />
 
@@ -685,10 +697,13 @@ export default function DetailPage() {
                 title="Application & permit"
                 fields={[
                   { label: 'Applicant / business', value: rec.applicant },
-                  // Dropped when the permit list below already shows the same address.
+                  // The form's own 8a answer when scraped; otherwise the permit
+                  // address, dropped when the permit list below already shows it.
                   {
                     label: 'Mailing address',
-                    value: addressOnPermit(rec.mailingAddress, rec.permits) ? null : rec.mailingAddress,
+                    value:
+                      rec.formMailingAddress ||
+                      (addressOnPermit(rec.mailingAddress, rec.permits) ? null : rec.mailingAddress),
                   },
                   { label: 'Application type', value: rec.applicationType },
                   // Redundant with the permit list below, which carries the same
@@ -709,9 +724,23 @@ export default function DetailPage() {
                 title="Submitter"
                 fields={[
                   { label: 'Name', value: rec.submitter },
+                  { label: 'Printed name on form', value: rec.printedName !== rec.submitter ? rec.printedName : null },
                   { label: 'Submitter ID', value: rec.submitterId, mono: true },
-                  { label: 'Telephone', value: rec.submitterPhone && fmtPhone(rec.submitterPhone), mono: true },
-                  { label: 'Fax', value: rec.submitterFax && fmtPhone(rec.submitterFax), mono: true },
+                  {
+                    label: 'Telephone',
+                    value: (rec.applicantPhone || rec.submitterPhone) && fmtPhone(rec.applicantPhone || rec.submitterPhone),
+                    mono: true,
+                  },
+                  {
+                    label: 'Fax',
+                    value: (rec.applicantFax || rec.submitterFax) && fmtPhone(rec.applicantFax || rec.submitterFax),
+                    mono: true,
+                  },
+                  { label: 'Email', value: rec.applicantEmail },
+                  {
+                    label: 'Signatures',
+                    value: signatureSummary(rec),
+                  },
                 ]}
               />
 
