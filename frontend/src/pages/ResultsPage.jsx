@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -15,6 +15,14 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
 
 const PAGE_SIZE = 24;
+// The wall fits several times more tiles on screen; 96 is under the API cap of
+// 100 and divides evenly into most column counts.
+const WALL_PAGE_SIZE = 96;
+
+// Artwork wall tile width bounds (px).
+const WALL_MIN = 56;
+const WALL_MAX = 240;
+const WALL_DEFAULT = 112;
 
 // Image and describe results are unpaged, so anything past this is unreachable;
 // ask for the API maximum rather than a text page's worth. Matching a label at
@@ -201,6 +209,117 @@ function GalleryView({ entries, criteria, isVector, showRank, onOpen, onToggle }
         );
       })}
     </div>
+  );
+}
+
+// Fixed-position hover card beside a wall tile, flipped or dropped below when
+// it would run off the viewport.
+function WallPeek({ e, rect, isVector, showRank }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  useLayoutEffect(() => {
+    const w = ref.current.offsetWidth;
+    const h = ref.current.offsetHeight;
+    const m = 10;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    let left = rect.right + m;
+    let top = Math.max(m, Math.min(rect.top, vh - h - m));
+    if (left + w > vw - m) left = rect.left - w - m;
+    if (left < m) {
+      left = Math.max(m, Math.min(rect.left + rect.width / 2 - w / 2, vw - w - m));
+      top = rect.bottom + m + h <= vh ? rect.bottom + m : Math.max(m, rect.top - h - m);
+    }
+    setPos({ left, top });
+  }, [rect]);
+  const r = e.r;
+  return (
+    <div ref={ref} className="wall-peek" role="tooltip" style={pos || { left: 0, top: 0, visibility: 'hidden' }}>
+      <div className="wp-body">
+        <div className="row between gap-8">
+          <CatTag rec={r} />
+          {showRank ? (
+            <RankBadge n={e.rank} />
+          ) : isVector && r.score != null ? (
+            <span className="wp-score">
+              <Icon name="sparkle" size={12} />
+              {toPct(r.score)}%
+            </span>
+          ) : (
+            <StatusBadge status={r.status} />
+          )}
+        </div>
+        <div className="wp-brand">{r.brand}</div>
+        {r.fanciful && <div className="wp-fanciful">{r.fanciful}</div>}
+        {r.classType && <div className="wp-meta">{r.classType}</div>}
+        {r.applicant && <div className="wp-meta">{r.applicant}</div>}
+        <div className="wp-meta">
+          {r.originFlag ? r.originFlag + ' ' : ''}{r.origin} · {fmtDate(r.approvalDate)}
+        </div>
+        <div className="wp-meta mono">{r.ttbId}</div>
+        <DupMark e={e} />
+      </div>
+    </div>
+  );
+}
+
+function WallView({ entries, isVector, showRank, onOpen, onToggle, tileSize }) {
+  const [hover, setHover] = useState(null);
+  // The card is fixed-position, so any scroll leaves it stranded.
+  useEffect(() => {
+    if (!hover) return undefined;
+    const clear = () => setHover(null);
+    window.addEventListener('scroll', clear, { passive: true, capture: true });
+    window.addEventListener('resize', clear);
+    return () => {
+      window.removeEventListener('scroll', clear, { capture: true });
+      window.removeEventListener('resize', clear);
+    };
+  }, [hover]);
+  const show = (e, ev) => setHover({ e, rect: ev.currentTarget.getBoundingClientRect() });
+  return (
+    <>
+      <div className="wall-grid" style={{ '--wall-size': `${tileSize}px` }} onMouseLeave={() => setHover(null)}>
+        {entries.map((e) => {
+          const r = e.r;
+          return (
+            <div key={r.id} className={`w-cell${e.dupeOf ? ' is-dupe' : ''}`}>
+              <button
+                className="w-tile"
+                onClick={() => onOpen(r.id, e.i)}
+                onMouseEnter={(ev) => show(e, ev)}
+                onFocus={(ev) => show(e, ev)}
+                onBlur={() => setHover(null)}
+                aria-label={[r.brand, r.fanciful, r.ttbId].filter(Boolean).join(', ')}
+              >
+                <LabelThumb rec={r} />
+              </button>
+              {e.dupCount ? (
+                <button
+                  type="button"
+                  className="w-dup"
+                  aria-expanded={e.open}
+                  title={e.open ? 'Hide approvals with the same artwork' : `Show ${e.dupCount} approvals with the same artwork`}
+                  onClick={() => onToggle(r.id)}
+                >
+                  <Icon name="layers" size={11} />
+                  {e.open ? '−' : `+${e.dupCount}`}
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {hover && (
+        <WallPeek
+          key={hover.e.r.id}
+          e={hover.e}
+          rect={hover.rect}
+          isVector={isVector}
+          showRank={showRank}
+        />
+      )}
+    </>
   );
 }
 
@@ -421,10 +540,29 @@ export default function ResultsPage() {
       setViewState('list');
     }
   }, [isMobile]);
+  const pageSize = view === 'wall' ? WALL_PAGE_SIZE : PAGE_SIZE;
   const setView = (v) => {
+    // Keep the first visible result in view when the page size changes.
+    const nextSize = v === 'wall' ? WALL_PAGE_SIZE : PAGE_SIZE;
+    if (!isVector && page > 1 && nextSize !== pageSize) {
+      const nextPage = Math.floor(((page - 1) * pageSize) / nextSize) + 1;
+      patchParams((p) => {
+        if (nextPage <= 1) delete p.page;
+        else p.page = String(nextPage);
+      });
+    }
     setViewState(v);
     localStorage.setItem('cola.view', v);
     track('view_mode_changed', { view: v, mode });
+  };
+
+  const [wallSize, setWallSizeState] = useState(() => {
+    const n = parseInt(localStorage.getItem('cola.wallSize') || '', 10);
+    return n >= WALL_MIN && n <= WALL_MAX ? n : WALL_DEFAULT;
+  });
+  const setWallSize = (n) => {
+    setWallSizeState(n);
+    localStorage.setItem('cola.wallSize', String(n));
   };
 
   const [groupDupes, setGroupDupesState] = useState(() => localStorage.getItem('cola.groupDupes') !== 'off');
@@ -459,18 +597,18 @@ export default function ResultsPage() {
 
   // Build the text-search query object passed to the API.
   const textParams = useMemo(() => {
-    const p = { pageSize: PAGE_SIZE, page, facets: true };
+    const p = { pageSize, page, facets: true };
     FILTER_KEYS.forEach((k) => {
       if (hasValue(criteria[k])) p[k] = criteria[k];
     });
     if (criteria.sort) p.sort = criteria.sort;
     return p;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.toString()]);
+  }, [searchParams.toString(), pageSize]);
 
-  const textState = useAsync((signal) => api.searchColas(textParams, signal), [searchParams.toString()], {
+  const textState = useAsync((signal) => api.searchColas(textParams, signal), [searchParams.toString(), pageSize], {
     skip: isVector,
-    cacheKey: `text:${searchParams.toString()}`,
+    cacheKey: `text:${pageSize}:${searchParams.toString()}`,
   });
 
   const imageState = useAsync(
@@ -512,7 +650,7 @@ export default function ResultsPage() {
   const totalCapped = Boolean(data && data.totalIsCapped);
   const facets = (data && data.facets) || null;
   // The API refuses pages past 500; don't offer links the server will reject.
-  const pageCount = Math.min(500, Math.max(1, Math.ceil((total || 0) / PAGE_SIZE)));
+  const pageCount = Math.min(500, Math.max(1, Math.ceil((total || 0) / pageSize)));
 
   function patchParams(mutator) {
     const next = paramsToObject(searchParams);
@@ -571,7 +709,7 @@ export default function ResultsPage() {
 
   const activeFacet = (group) => criteria[FACET_PARAM[group]] || null;
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
-  const View = view === 'gallery' ? GalleryView : view === 'list' ? ListView : TableView;
+  const View = { gallery: GalleryView, wall: WallView, list: ListView }[view] || TableView;
   // Carry the search term so the detail page can highlight matching label text.
   // In describe mode `q` is an artwork prompt, not text to look for.
   const onOpen = (id, rank) => {
@@ -579,7 +717,7 @@ export default function ResultsPage() {
     const key = keys.find((k) => (criteria[k] || '').trim());
     const term = key ? criteria[key].trim() : '';
     track('result_clicked', {
-      rank: typeof rank === 'number' ? (page - 1) * PAGE_SIZE + rank + 1 : -1,
+      rank: typeof rank === 'number' ? (page - 1) * pageSize + rank + 1 : -1,
       view,
       mode,
     });
@@ -747,9 +885,27 @@ export default function ResultsPage() {
                   </select>
                 </div>
               )}
+              {view === 'wall' && (
+                <label className="wall-size" title="Artwork size">
+                  <Icon name="image" size={13} />
+                  <input
+                    type="range"
+                    min={WALL_MIN}
+                    max={WALL_MAX}
+                    step={8}
+                    value={wallSize}
+                    onChange={(e) => setWallSize(Number(e.target.value))}
+                    aria-label="Artwork size"
+                  />
+                  <Icon name="image" size={19} />
+                </label>
+              )}
               <div className="seg">
                 <button className={view === 'gallery' ? 'active' : ''} onClick={() => setView('gallery')} title="Gallery">
                   <Icon name="grid" />
+                </button>
+                <button className={view === 'wall' ? 'active' : ''} onClick={() => setView('wall')} title="Artwork wall">
+                  <Icon name="wall" />
                 </button>
                 <button className={view === 'list' ? 'active' : ''} onClick={() => setView('list')} title="List">
                   <Icon name="list" />
@@ -771,6 +927,12 @@ export default function ResultsPage() {
               <button className="btn secondary sm" onClick={modifySearch}>
                 Back to search
               </button>
+            </div>
+          ) : loading && view === 'wall' ? (
+            <div className="wall-grid" style={{ '--wall-size': `${wallSize}px` }}>
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} className="skel" style={{ aspectRatio: '4/5' }}></div>
+              ))}
             </div>
           ) : loading ? (
             <div className="gallery-grid">
@@ -799,7 +961,15 @@ export default function ResultsPage() {
             </div>
           ) : (
             <>
-              <View entries={entries} criteria={highlightCriteria} isVector={isVector} showRank={isDescribe} onOpen={onOpen} onToggle={toggleGroup} />
+              <View
+                entries={entries}
+                criteria={highlightCriteria}
+                isVector={isVector}
+                showRank={isDescribe}
+                onOpen={onOpen}
+                onToggle={toggleGroup}
+                tileSize={wallSize}
+              />
               {!isVector && pageCount > 1 && (
                 <div className="row between" style={{ marginTop: 24, alignItems: 'center' }}>
                   <button className="btn secondary sm" disabled={page <= 1} onClick={() => goPage(page - 1)}>

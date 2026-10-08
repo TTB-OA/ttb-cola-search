@@ -106,7 +106,7 @@ export const TOUR_STEPS = [
     placement: 'bottom',
     title: 'Sort and switch views',
     body:
-      'Re-sort by relevance, newest approval, brand, or applicant, and switch between gallery, list, and table views. Your view preference is remembered.',
+      'Re-sort by relevance, newest approval, brand, or applicant, and switch between gallery, artwork wall, list, and table views. Your view preference is remembered.',
   },
   {
     id: 'detail-images',
