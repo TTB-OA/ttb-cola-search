@@ -111,9 +111,16 @@ def test_ttb_id_probes_cola_id_as_text():
 def test_class_type_matches_the_description_or_the_code():
     where, params = build(class_type="  table red wine  ")
     # Both arms line up with an index: upper(class_type) and class_type_code.
-    assert "upper(class_type) = upper(%s)" in where
-    assert "class_type_code = %s" in where
-    assert params == ["table red wine", "table red wine"]
+    assert "upper(class_type) = ANY(%s)" in where
+    assert "class_type_code = ANY(%s)" in where
+    assert params == [["TABLE RED WINE"], ["table red wine"]]
+
+
+def test_class_type_accepts_several_values():
+    where, params = build(class_type=["TABLE RED WINE", " 80 ", ""])
+    assert_aligned(where, params)
+    assert params == [["TABLE RED WINE", "80"], ["TABLE RED WINE", "80"]]
+    assert build(class_type=["", "  "]) == ("", [])
 
 
 def test_class_type_is_independent_of_the_commodity_rollup():
@@ -327,6 +334,9 @@ def test_every_sort_has_a_qualified_cola_id_tiebreaker():
         ({"varietal": "pinot"}, True),
         ({"permit_city": "napa", "permit_state": "CA"}, True),
         ({"class_type": "TABLE RED WINE"}, True),
+        ({"class_type": ["TABLE RED WINE", "80"]}, True),
+        ({"qualification": "sulfite", "class_type": ["TABLE RED WINE"]}, True),
+        ({"qualification": "sulfite", "class_type": [" "]}, False),
         ({"received_by": "ES"}, True),
         # Still sequential scans.
         ({"qualification": "sulfite", "commodity": "Wine"}, False),

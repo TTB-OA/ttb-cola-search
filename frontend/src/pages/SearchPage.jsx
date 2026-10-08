@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import Combobox, { matchOptions } from '../components/Combobox.jsx';
@@ -30,7 +30,7 @@ const EMPTY = {
   qualification: '',
   labelText: '',
   commodity: '',
-  classType: '',
+  classType: [],
   receivedBy: '',
   applicationType: '',
   source: '',
@@ -70,16 +70,46 @@ const PASSTHROUGH_KEYS = [
   'dateTo',
 ];
 
+// Params that repeat once per value; `toQuery` turns the array back into that.
+const MULTI_KEYS = ['classType'];
+
+const hasValue = (v) => (Array.isArray(v) ? v.length > 0 : Boolean(v));
+
 // Turn the form draft into the API/URL query object (camelCase matches the API).
 function draftToParams(draft) {
   const p = {};
   if (draft.text) p.q = draft.text;
   PASSTHROUGH_KEYS.forEach((k) => {
-    if (draft[k]) p[k] = draft[k];
+    if (hasValue(draft[k])) p[k] = draft[k];
   });
   if (draft.sort && draft.sort !== 'relevance') p.sort = draft.sort;
   return p;
 }
+
+// Inverse of draftToParams: the results page links back here with its own
+// query string so the form reopens filled in. A fresh visit has no params and
+// gets the defaults.
+function paramsToDraft(sp) {
+  const d = { ...EMPTY };
+  if (![...sp.keys()].length) return d;
+  const mode = sp.get('mode');
+  d.mode = mode === 'image' || mode === 'describe' ? mode : 'text';
+  const q = sp.get('q') || '';
+  if (d.mode === 'describe') d.description = q;
+  else d.text = q;
+  PASSTHROUGH_KEYS.forEach((k) => {
+    if (MULTI_KEYS.includes(k)) d[k] = sp.getAll(k).filter(Boolean);
+    else if (sp.has(k)) d[k] = sp.get(k);
+  });
+  // A text search carries status explicitly, so its absence means "any".
+  if (d.mode === 'text' && !sp.has('status')) d.status = '';
+  if (sp.get('sort')) d.sort = sp.get('sort');
+  return d;
+}
+
+// Fields that only exist in the advanced panel, so restoring one should open it.
+const ADVANCED_KEYS = PASSTHROUGH_KEYS.filter((k) => k !== 'commodity');
+const usesAdvanced = (draft) => ADVANCED_KEYS.some((k) => hasValue(draft[k]) && draft[k] !== EMPTY[k]);
 
 const MODES = [
   { id: 'text', icon: 'search', label: 'Text search', short: 'Text' },
@@ -110,6 +140,61 @@ function permitLine(p) {
     .join(' · ');
 }
 
+// Combobox that collects several picks from a fixed vocabulary as chips. The
+// backend matches class/type exactly, so only vocabulary values are accepted.
+function MultiPick({ values, onChange, vocabulary, placeholder, ariaLabel, emptyText }) {
+  const [term, setTerm] = useState('');
+  const options = useMemo(
+    () => matchOptions(vocabulary.filter((v) => !values.includes(v)), term),
+    [vocabulary, values, term],
+  );
+
+  function add(v) {
+    if (!values.includes(v)) onChange([...values, v]);
+    setTerm('');
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter' && term.trim()) {
+      // Enter on free text adds the exact vocabulary match; a highlighted
+      // suggestion was already consumed by the Combobox.
+      const hit = vocabulary.find((v) => v.toLowerCase() === term.trim().toLowerCase());
+      if (hit) {
+        e.preventDefault();
+        add(hit);
+      }
+    } else if (e.key === 'Backspace' && !term && values.length) {
+      onChange(values.slice(0, -1));
+    }
+  }
+
+  return (
+    <div onKeyDown={onKeyDown}>
+      <Combobox
+        ariaLabel={ariaLabel}
+        placeholder={values.length ? 'Add another…' : placeholder}
+        value={term}
+        onChange={setTerm}
+        onPick={(opt) => add(opt.value)}
+        options={options}
+        emptyText={emptyText}
+      />
+      {values.length > 0 && (
+        <div className="chips" style={{ marginTop: 8 }}>
+          {values.map((v) => (
+            <span className="chip" key={v}>
+              {v}
+              <button type="button" onClick={() => onChange(values.filter((x) => x !== v))} aria-label={`Remove ${v}`}>
+                <Icon name="close" size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdvancedFields({ draft, set, refData }) {
   const sources = refData.sources || [];
   const domestic = refData.domesticOrigins || [];
@@ -121,7 +206,6 @@ function AdvancedFields({ draft, set, refData }) {
   const applicationTypes = refData.applicationTypes || [];
   const varietals = refData.varietals || [];
 
-  const classTypeOptions = useMemo(() => matchOptions(classTypes, draft.classType), [classTypes, draft.classType]);
   const varietalOptions = useMemo(() => matchOptions(varietals, draft.varietal), [varietals, draft.varietal]);
 
   const business = usePermitSuggest(draft.business, (p) => ({
@@ -171,13 +255,16 @@ function AdvancedFields({ draft, set, refData }) {
       </div>
       <div className="field adv-wide">
         <label>Class / Type</label>
-        <div className="hint">Specific class/type on the application — use the quick filters for a whole commodity</div>
-        <Combobox
+        <div className="hint">
+          Specific class/type on the application — pick several to match any of them; use the quick filters for a
+          whole commodity
+        </div>
+        <MultiPick
           ariaLabel="Class / Type"
           placeholder="Start typing, e.g. TABLE RED WINE"
-          value={draft.classType}
+          values={draft.classType}
           onChange={(v) => set('classType', v)}
-          options={classTypeOptions}
+          vocabulary={classTypes}
           emptyText="No matching class/type"
         />
       </div>
@@ -529,9 +616,10 @@ function DescribeSearch({ draft, set, refData, onSubmit }) {
 export default function SearchPage() {
   useDocumentTitle(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const isMobile = useIsMobile();
-  const [draft, setDraft] = useState(EMPTY);
-  const [advanced, setAdvanced] = useState(false);
+  const [draft, setDraft] = useState(() => paramsToDraft(searchParams));
+  const [advanced, setAdvanced] = useState(() => usesAdvanced(draft));
   const set = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
 
   const refState = useAsync((signal) => api.reference(signal), [], { cacheKey: 'reference' });

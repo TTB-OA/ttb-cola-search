@@ -276,11 +276,17 @@ def _id_term(value: str) -> str:
     return value.strip().upper()
 
 
+def _terms(value: str | list[str] | None) -> list[str]:
+    """Stripped, non-empty values of a filter that may be given more than once."""
+    values = value if isinstance(value, list) else [value]
+    return [v.strip() for v in values if v and v.strip()]
+
+
 def aggregate_is_affordable(**filters: Any) -> bool:
     """Whether a count/facet pass over this filter set can use an index."""
     if not any(filters.get(name) for name in _UNINDEXED_FILTERS):
         return True
-    return any((filters.get(name) or "").strip() for name in _ANCHOR_FILTERS)
+    return any(_terms(filters.get(name)) for name in _ANCHOR_FILTERS)
 
 
 def _build_filters(
@@ -303,7 +309,7 @@ def _build_filters(
     varietal: str | None = None,
     qualification: str | None = None,
     label_text: str | None = None,
-    class_type: str | None = None,
+    class_type: str | list[str] | None = None,
     received_by: str | None = None,
     application_type: str | None = None,
 ) -> tuple[str, list[Any]]:
@@ -365,12 +371,13 @@ def _build_filters(
     if commodity:
         conditions.append("ct_commodity = %s")
         params.append(COMMODITY_CODE.get(commodity, commodity))
-    if class_type:
+    class_terms = _terms(class_type)
+    if class_terms:
         # The description is what the UI sends; the code is accepted so an API
-        # caller can filter straight off classTypeCode.
-        term = class_type.strip()
-        conditions.append("(upper(class_type) = upper(%s) OR class_type_code = %s)")
-        params.extend([term, term])
+        # caller can filter straight off classTypeCode. Several values OR
+        # together, and = ANY keeps both arms on their btrees.
+        conditions.append("(upper(class_type) = ANY(%s) OR class_type_code = ANY(%s))")
+        params.extend([[t.upper() for t in class_terms], class_terms])
     if received_by:
         # Only the code is indexed, so a description is resolved to its code
         # through the reference table rather than compared on the row.
@@ -599,13 +606,14 @@ async def list_colas(
         ),
     ),
     commodity: str | None = None,
-    class_type: str | None = Query(
+    class_type: list[str] | None = Query(
         default=None,
         alias="classType",
         description=(
             "Granular TTB class/type on the application, e.g. `TABLE RED WINE`. "
             "Matched case-insensitively against the class/type description, or "
-            "exactly against `classTypeCode`. Use `commodity` for the coarse "
+            "exactly against `classTypeCode`. Repeat the parameter to match any of "
+            "several class/types. Use `commodity` for the coarse "
             "wine/malt beverage/distilled spirits grouping."
         ),
         examples=["TABLE RED WINE", "80"],

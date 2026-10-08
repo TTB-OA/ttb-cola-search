@@ -41,11 +41,16 @@ async function request(path, { method = 'GET', body, signal } = {}) {
   return res.json();
 }
 
-// Build a query string from a plain object, skipping empty values.
+// Build a query string from a plain object, skipping empty values. An array
+// value repeats the key once per item (`classType=A&classType=B`).
 export function toQuery(params) {
   const usp = new URLSearchParams();
   Object.entries(params || {}).forEach(([k, v]) => {
     if (v === undefined || v === null || v === '') return;
+    if (Array.isArray(v)) {
+      v.forEach((item) => item !== '' && item != null && usp.append(k, item));
+      return;
+    }
     usp.set(k, v);
   });
   const s = usp.toString();

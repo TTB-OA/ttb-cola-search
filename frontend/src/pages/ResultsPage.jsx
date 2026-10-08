@@ -62,11 +62,21 @@ const FACET_PARAM = {
   permitState: 'permitState',
 };
 
+// Params that may repeat; they come out of the URL as arrays.
+const MULTI_KEYS = ['classType'];
+
 function paramsToObject(sp) {
   const o = {};
   for (const [k, v] of sp.entries()) o[k] = v;
+  MULTI_KEYS.forEach((k) => {
+    const all = sp.getAll(k).filter(Boolean);
+    if (all.length) o[k] = all;
+    else delete o[k];
+  });
   return o;
 }
+
+const hasValue = (v) => (Array.isArray(v) ? v.length > 0 : Boolean(v));
 
 // Keeps a long describe prompt from overrunning the browser tab title.
 function clip(value, max = 60) {
@@ -343,17 +353,20 @@ const CHIP_LABELS = {
 };
 
 function ActiveChips({ criteria, onClearKey }) {
-  const items = FILTER_KEYS.filter((k) => criteria[k]).map((k) => ({
-    k,
-    label: k === 'q' ? `“${criteria[k]}”` : `${CHIP_LABELS[k]}: ${criteria[k]}`,
-  }));
+  const items = [];
+  FILTER_KEYS.filter((k) => hasValue(criteria[k])).forEach((k) => {
+    if (k === 'q') items.push({ k, key: k, label: `“${criteria[k]}”` });
+    else if (Array.isArray(criteria[k]))
+      criteria[k].forEach((v) => items.push({ k, value: v, key: `${k}:${v}`, label: `${CHIP_LABELS[k]}: ${v}` }));
+    else items.push({ k, key: k, label: `${CHIP_LABELS[k]}: ${criteria[k]}` });
+  });
   if (!items.length) return null;
   return (
     <div className="chips" style={{ marginTop: 12 }}>
       {items.map((it) => (
-        <span className="chip" key={it.k}>
+        <span className="chip" key={it.key}>
           {it.label}
-          <button onClick={() => onClearKey(it.k)} aria-label="Remove">
+          <button onClick={() => onClearKey(it.k, it.value)} aria-label="Remove">
             <Icon name="close" size={12} />
           </button>
         </span>
@@ -375,11 +388,18 @@ export default function ResultsPage() {
   const isVector = isImg || isDescribe;
   const page = Math.max(1, parseInt(criteria.page || '1', 10) || 1);
 
+  // Back to the form with the current query, so it reopens filled in.
+  const modifySearch = () => {
+    const sp = new URLSearchParams(searchParams);
+    sp.delete('page');
+    navigate({ pathname: '/', search: sp.toString() });
+  };
+
   // Name the tab after whichever filter the user most likely typed: FILTER_KEYS
   // is ordered from the broadest query down to the narrower fields.
   const titleTerm = (() => {
-    const key = FILTER_KEYS.find((k) => criteria[k]);
-    return key ? clip(criteria[key]) : '';
+    const key = FILTER_KEYS.find((k) => hasValue(criteria[k]));
+    return key ? clip([].concat(criteria[key]).join(', ')) : '';
   })();
   useDocumentTitle(
     isImg
@@ -441,7 +461,7 @@ export default function ResultsPage() {
   const textParams = useMemo(() => {
     const p = { pageSize: PAGE_SIZE, page, facets: true };
     FILTER_KEYS.forEach((k) => {
-      if (criteria[k]) p[k] = criteria[k];
+      if (hasValue(criteria[k])) p[k] = criteria[k];
     });
     if (criteria.sort) p.sort = criteria.sort;
     return p;
@@ -519,9 +539,16 @@ export default function ResultsPage() {
     });
   }
 
-  function clearKey(k) {
+  // Removes one value of a repeatable filter, or the whole filter otherwise.
+  function clearKey(k, value) {
     patchParams((p) => {
-      delete p[k];
+      if (value !== undefined && Array.isArray(p[k])) {
+        const rest = p[k].filter((v) => v !== value);
+        if (rest.length) p[k] = rest;
+        else delete p[k];
+      } else {
+        delete p[k];
+      }
       delete p.page;
     });
   }
@@ -575,7 +602,7 @@ export default function ResultsPage() {
             <Icon name="image" size={34} className="muted" />
             <h3 style={{ marginTop: 12 }}>Upload an image to search</h3>
             <p className="muted">Image results can't be reopened from a link. Start a new image search to find similar labels.</p>
-            <button className="btn secondary sm" onClick={() => navigate('/')}>
+            <button className="btn secondary sm" onClick={() => navigate({ pathname: '/', search: '?mode=image' })}>
               Go to image search
             </button>
           </div>
@@ -588,7 +615,7 @@ export default function ResultsPage() {
     <div className="results-page">
       <div className="results-bar">
         <div className="wrap">
-          <button className="linkbtn" onClick={() => navigate('/')}>
+          <button className="linkbtn" onClick={modifySearch}>
             <Icon name="chevLeft" size={16} /> Modify search
           </button>
           {isImg ? (
@@ -741,7 +768,7 @@ export default function ResultsPage() {
                 {state.error.status === 429 ? 'Too many searches right now' : 'Something went wrong'}
               </h3>
               <p className="muted">{state.error.message || 'The search could not be completed.'}</p>
-              <button className="btn secondary sm" onClick={() => navigate('/')}>
+              <button className="btn secondary sm" onClick={modifySearch}>
                 Back to search
               </button>
             </div>
@@ -766,7 +793,7 @@ export default function ResultsPage() {
                   ? 'Try describing colors, shapes, and motifs rather than naming a brand.'
                   : 'Try removing a filter or broadening your search terms.'}
               </p>
-              <button className="btn secondary sm" onClick={() => navigate('/')}>
+              <button className="btn secondary sm" onClick={modifySearch}>
                 Modify search
               </button>
             </div>
