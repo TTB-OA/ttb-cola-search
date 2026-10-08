@@ -2,7 +2,7 @@ import Icon from './Icon.jsx';
 
 // Raw image-to-image cosine for unrelated labels centres on 0.63 (p90 0.71), so
 // the scale starts there: 0.70 -> 0%, same artwork (>= 0.97) -> 90%+.
-// Measured with scripts/_diag_scores.py.
+// Measured empirically against the pgvector image embeddings.
 const NOISE_FLOOR = 0.7;
 
 function toPct(score) {
