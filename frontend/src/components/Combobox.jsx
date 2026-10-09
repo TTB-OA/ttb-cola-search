@@ -115,9 +115,20 @@ export default function Combobox({
   );
 }
 
-/** Client-side match over a fixed vocabulary, prefix hits first. */
-export function matchOptions(list, term, limit = 10) {
+/**
+ * Client-side match over a fixed vocabulary, prefix hits first. With `counts`
+ * (value -> records), values without records are dropped, the most frequent
+ * matches come first, and each label carries its count.
+ */
+export function matchOptions(list, term, limit = 10, counts = null) {
   const t = (term || '').trim().toLowerCase();
+  if (counts && Object.keys(counts).length) {
+    return list
+      .filter((v) => counts[v] > 0 && (!t || v.toLowerCase().includes(t)))
+      .sort((a, b) => counts[b] - counts[a])
+      .slice(0, limit)
+      .map((v) => ({ value: v, label: `${v} (${counts[v].toLocaleString()})` }));
+  }
   if (!t) return list.slice(0, limit).map((v) => ({ value: v, label: v }));
   const starts = [];
   const contains = [];

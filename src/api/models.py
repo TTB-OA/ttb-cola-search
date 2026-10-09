@@ -208,6 +208,10 @@ class ReferenceData(ApiModel):
     received_types: list[str] = []
     varietals: list[str] = []
     application_types: list[str] = []
+    # Records per vocabulary value. Empty until computed; then values missing
+    # from the map have no records.
+    class_type_counts: dict[str, int] = {}
+    varietal_counts: dict[str, int] = {}
 
 
 class PermitSuggestion(ApiModel):

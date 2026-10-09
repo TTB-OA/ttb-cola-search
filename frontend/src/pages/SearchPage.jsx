@@ -150,11 +150,11 @@ function permitLine(p) {
 
 // Combobox that collects several picks from a fixed vocabulary as chips. The
 // backend matches class/type exactly, so only vocabulary values are accepted.
-function MultiPick({ values, onChange, vocabulary, placeholder, ariaLabel, emptyText }) {
+function MultiPick({ values, onChange, vocabulary, counts, placeholder, ariaLabel, emptyText }) {
   const [term, setTerm] = useState('');
   const options = useMemo(
-    () => matchOptions(vocabulary.filter((v) => !values.includes(v)), term),
-    [vocabulary, values, term],
+    () => matchOptions(vocabulary.filter((v) => !values.includes(v)), term, 10, counts),
+    [vocabulary, values, term, counts],
   );
 
   function add(v) {
@@ -227,7 +227,10 @@ function AdvancedFields({ draft, set, refData }) {
   const applicationTypes = refData.applicationTypes || [];
   const varietals = refData.varietals || [];
 
-  const varietalOptions = useMemo(() => matchOptions(varietals, draft.varietal), [varietals, draft.varietal]);
+  const varietalOptions = useMemo(
+    () => matchOptions(varietals, draft.varietal, 10, refData.varietalCounts),
+    [varietals, draft.varietal, refData.varietalCounts],
+  );
 
   const business = usePermitSuggest(draft.business, (p) => ({
     value: p.name || p.permitId,
@@ -286,6 +289,7 @@ function AdvancedFields({ draft, set, refData }) {
           values={draft.classType}
           onChange={(v) => set('classType', v)}
           vocabulary={classTypes}
+          counts={refData.classTypeCounts}
           emptyText="No matching class/type"
         />
       </div>
