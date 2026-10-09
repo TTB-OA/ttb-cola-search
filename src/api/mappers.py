@@ -523,6 +523,14 @@ def ttb_signature_url(base: Mapping[str, Any]) -> str | None:
     return TTB_SIGNATURE_URL + quote(str(base.get("cola_id") or ""), safe="")
 
 
+def compact_address(value: str | None) -> str | None:
+    """Drop the empty parts the view joins in, so ", ," reads as no address."""
+    if not value:
+        return None
+    parts = [" ".join(p.split()) for p in value.split(",")]
+    return ", ".join(p for p in parts if p) or None
+
+
 def received_date_from_ttb_id(ttb_id: str | None) -> date | None:
     """TTB IDs open with YYJJJ, the year and day-of-year TTB received the application."""
     if not ttb_id or len(ttb_id) < 5 or not ttb_id[:5].isdigit():
@@ -617,7 +625,7 @@ def detail_from_rows(
         final_status=base.get("final_status_flg"),
         net_contents=str(bottle_capacity) if bottle_capacity is not None else None,
         abv=None,
-        mailing_address=base.get("mailing_address"),
+        mailing_address=compact_address(base.get("mailing_address")),
         source_of_product=base.get("source_of_product"),
         type_of_product=base.get("type_of_product"),
         application_type=base.get("application_type"),
