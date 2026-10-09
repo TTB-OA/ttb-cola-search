@@ -775,7 +775,16 @@ export default function SearchPage() {
                   </div>
 
                   {advanced && (
-                    <div className="adv-wrap">
+                    <div
+                      className="adv-wrap"
+                      onKeyDown={(e) => {
+                        // Comboboxes preventDefault when Enter picks a suggestion.
+                        if (e.key !== 'Enter' || e.defaultPrevented) return;
+                        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SELECT') return;
+                        e.preventDefault();
+                        submitText();
+                      }}
+                    >
                       <hr className="divider" style={{ margin: '20px 0' }} />
                       <AdvancedFields draft={draft} set={set} refData={ref} />
                       <div className="row between" style={{ marginTop: 4 }}>
