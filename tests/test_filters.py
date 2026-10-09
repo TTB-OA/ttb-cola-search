@@ -53,6 +53,10 @@ FILTER_VALUES = {
     "varietal": "merlot",
     "qualification": "qual",
     "label_text": "government warning",
+    "appellation": "willamette valley",
+    "formula": "1600940",
+    "submitted_from": date(2024, 1, 1),
+    "submitted_to": date(2024, 6, 30),
 }
 
 EMPTY = {name: None for name in FILTER_VALUES}
@@ -126,6 +130,19 @@ def test_class_type_accepts_several_values():
 def test_class_type_is_independent_of_the_commodity_rollup():
     where, _ = build(class_type="TABLE RED WINE")
     assert "ct_commodity" not in where
+
+
+def test_formula_is_an_upper_cased_prefix_with_wildcards_escaped():
+    where, params = build(formula=" sop_12 ")
+    assert "upper(formula) LIKE %s" in where
+    assert params == ["SOP\\_12%"]
+
+
+def test_submitted_dates_bound_the_application_date():
+    where, params = build(submitted_from=date(2024, 1, 1), submitted_to=date(2024, 6, 30))
+    assert "application_date >= %s" in where
+    assert "application_date <= %s" in where
+    assert params == [date(2024, 1, 1), date(2024, 6, 30)]
 
 
 def test_received_by_resolves_a_description_to_the_indexed_code():

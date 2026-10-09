@@ -55,6 +55,10 @@ const FILTER_KEYS = [
   'status',
   'dateFrom',
   'dateTo',
+  'submittedFrom',
+  'submittedTo',
+  'appellation',
+  'formula',
 ];
 
 // Free-text fields whose terms can plausibly appear on the label artwork, in
@@ -499,8 +503,12 @@ const CHIP_LABELS = {
   source: 'Source',
   origin: 'Origin',
   status: 'Status',
-  dateFrom: 'From',
-  dateTo: 'To',
+  dateFrom: 'Approved from',
+  dateTo: 'Approved to',
+  submittedFrom: 'Submitted from',
+  submittedTo: 'Submitted to',
+  appellation: 'Appellation',
+  formula: 'Formula',
 };
 
 function ActiveChips({ criteria, onClearKey }) {

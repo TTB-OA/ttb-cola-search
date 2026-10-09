@@ -38,6 +38,10 @@ const EMPTY = {
   status: 'Approved',
   dateFrom: '',
   dateTo: '',
+  submittedFrom: '',
+  submittedTo: '',
+  appellation: '',
+  formula: '',
   mode: 'text',
   image: null,
   description: '',
@@ -68,6 +72,10 @@ const PASSTHROUGH_KEYS = [
   'status',
   'dateFrom',
   'dateTo',
+  'submittedFrom',
+  'submittedTo',
+  'appellation',
+  'formula',
 ];
 
 // Params that repeat once per value; `toQuery` turns the array back into that.
@@ -195,6 +203,19 @@ function MultiPick({ values, onChange, vocabulary, placeholder, ariaLabel, empty
   );
 }
 
+function DateRange({ label, from, to, onFrom, onTo }) {
+  return (
+    <div className="field adv-wide">
+      <label>{label}</label>
+      <div className="date-range">
+        <input type="date" className="input" aria-label={`${label} from`} value={from} max={to || undefined} onChange={(e) => onFrom(e.target.value)} />
+        <span className="muted">to</span>
+        <input type="date" className="input" aria-label={`${label} to`} value={to} min={from || undefined} onChange={(e) => onTo(e.target.value)} />
+      </div>
+    </div>
+  );
+}
+
 function AdvancedFields({ draft, set, refData }) {
   const sources = refData.sources || [];
   const domestic = refData.domesticOrigins || [];
@@ -314,7 +335,7 @@ function AdvancedFields({ draft, set, refData }) {
           ))}
         </select>
       </div>
-      <div className="field">
+      <div className="field adv-wide">
         <label>Origin — state or country</label>
         <select className="select" value={draft.origin} onChange={(e) => set('origin', e.target.value)}>
           <option value="">Any origin</option>
@@ -349,14 +370,20 @@ function AdvancedFields({ draft, set, refData }) {
           ))}
         </select>
       </div>
-      <div className="field" style={{ gridColumn: 'span 1' }}>
-        <label>Approval date — from</label>
-        <input type="date" className="input" value={draft.dateFrom} onChange={(e) => set('dateFrom', e.target.value)} />
-      </div>
-      <div className="field">
-        <label>Approval date — to</label>
-        <input type="date" className="input" value={draft.dateTo} onChange={(e) => set('dateTo', e.target.value)} />
-      </div>
+      <DateRange
+        label="Approval date"
+        from={draft.dateFrom}
+        to={draft.dateTo}
+        onFrom={(v) => set('dateFrom', v)}
+        onTo={(v) => set('dateTo', v)}
+      />
+      <DateRange
+        label="Submitted date"
+        from={draft.submittedFrom}
+        to={draft.submittedTo}
+        onFrom={(v) => set('submittedFrom', v)}
+        onTo={(v) => set('submittedTo', v)}
+      />
 
       <div className="field adv-span">
         <div className="adv-subhead">Applicant, permit &amp; submitter</div>
@@ -424,6 +451,26 @@ function AdvancedFields({ draft, set, refData }) {
         />
       </div>
       <div className="field">
+        <label>Wine appellation</label>
+        <div className="hint">Item 11 on the form, if on the label</div>
+        <input
+          className="input"
+          placeholder="e.g. Willamette Valley"
+          value={draft.appellation}
+          onChange={(e) => set('appellation', e.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>Formula</label>
+        <div className="hint">Formula or SOP number (item 9) — matches the start</div>
+        <input
+          className="input mono"
+          placeholder="e.g. 1600940"
+          value={draft.formula}
+          onChange={(e) => set('formula', e.target.value)}
+        />
+      </div>
+      <div className="field">
         <label>Qualification text</label>
         <div className="hint">Conditions recorded on the approval</div>
         <input
@@ -433,7 +480,7 @@ function AdvancedFields({ draft, set, refData }) {
           onChange={(e) => set('qualification', e.target.value)}
         />
       </div>
-      <div className="field">
+      <div className="field adv-wide">
         <label>Text on the label</label>
         <div className="hint">Limits results to text recognized on the label artwork</div>
         <input

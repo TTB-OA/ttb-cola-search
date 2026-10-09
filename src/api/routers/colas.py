@@ -265,6 +265,8 @@ _ANCHOR_FILTERS = (
     "varietal",
     "label_text",
     "class_type",
+    "appellation",
+    "formula",
 )
 
 
@@ -316,6 +318,10 @@ def _build_filters(
     class_type: str | list[str] | None = None,
     received_by: str | None = None,
     application_type: str | None = None,
+    appellation: str | None = None,
+    formula: str | None = None,
+    submitted_from: date | None = None,
+    submitted_to: date | None = None,
 ) -> tuple[str, list[Any]]:
     """WHERE clause for every filter except `q`, which resolves through a Source."""
     conditions: list[str] = []
@@ -399,6 +405,19 @@ def _build_filters(
         # expression; a LIKE '%...%' could not.
         conditions.append("string_to_array(application_type, %s) @> ARRAY[upper(%s)]")
         params.extend([APPLICATION_TYPE_SEP, application_type.strip()])
+    if appellation and appellation.strip():
+        conditions.append("appellation ILIKE %s")
+        params.append(f"%{appellation.strip()}%")
+    if formula and formula.strip():
+        # Prefix on the upper-cased value, matching cola_search_formula_upper_idx.
+        conditions.append("upper(formula) LIKE %s")
+        params.append(_prefix(_id_term(formula)))
+    if submitted_from:
+        conditions.append("application_date >= %s")
+        params.append(submitted_from)
+    if submitted_to:
+        conditions.append("application_date <= %s")
+        params.append(submitted_to)
     if source:
         conditions.append("ct_source = %s")
         params.append(SOURCE_CODE.get(source, source))
@@ -663,6 +682,26 @@ async def list_colas(
         ),
         examples=list(APPLICATION_TYPES),
     ),
+    appellation: str | None = Query(
+        default=None,
+        description="Wine appellation from item 11 of the form (partial match).",
+        examples=["Willamette Valley"],
+    ),
+    formula: str | None = Query(
+        default=None,
+        description="Formula or SOP number from item 9 of the form (prefix match, case-insensitive).",
+    ),
+    submitted_from: Annotated[
+        date | None,
+        Query(
+            alias="submittedFrom",
+            description="Date of application (form item 16) lower bound, `YYYY-MM-DD`.",
+        ),
+    ] = None,
+    submitted_to: Annotated[
+        date | None,
+        Query(alias="submittedTo", description="Date of application upper bound, `YYYY-MM-DD`."),
+    ] = None,
     source: str | None = None,
     origin: str | None = None,
     status: str | None = None,
@@ -740,6 +779,10 @@ async def list_colas(
         class_type=class_type,
         received_by=received_by,
         application_type=application_type,
+        appellation=appellation,
+        formula=formula,
+        submitted_from=submitted_from,
+        submitted_to=submitted_to,
     )
     term = (q or "").strip()
     where, where_params = _build_filters(**filters)

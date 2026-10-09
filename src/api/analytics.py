@@ -64,6 +64,10 @@ FILTER_KEYS = (
     "status",
     "dateFrom",
     "dateTo",
+    "appellation",
+    "formula",
+    "submittedFrom",
+    "submittedTo",
 )
 
 # Closed vocabularies, safe to record verbatim.
