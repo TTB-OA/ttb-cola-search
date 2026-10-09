@@ -13,6 +13,8 @@ import pytest
 from src.api.mappers import (
     IMAGE_TYPE_RANK_SQL,
     SEARCH_TABLE,
+    STRIP_ASPECT_RATIO,
+    STRIP_FRONT_SCORE_GAP,
     detail_from_rows,
     face_rank,
     hero_first_sql,
@@ -92,6 +94,20 @@ def _simulate_sort(
     with_scores: bool = True,
 ) -> list[dict]:
     """Python simulation of `image_display_order_sql` sorting semantics."""
+    by_name = {img["file_name"]: img for img in images}
+    best = by_name.get(hero_file, {}).get("visual_interest_score")
+
+    def tier(img, tr, is_wine):
+        if is_wine:
+            return 0
+        w, h = img.get("width_px"), img.get("height_px")
+        if tr == 0 and w and h and max(w, h) >= STRIP_ASPECT_RATIO * min(w, h):
+            own = img.get("visual_interest_score")
+            if own and best is not None and best - own >= STRIP_FRONT_SCORE_GAP:
+                return 1
+            return 0
+        return tr
+
     def sort_key(img):
         fn = img["file_name"]
         tr = face_rank(image_face(img.get("img_type")))
@@ -99,11 +115,10 @@ def _simulate_sort(
         score = img.get("visual_interest_score")
         score_key = -score if score is not None else float("inf")
         is_wine = (commodity or "").lower() == "wine"
-        non_wine_tr = 0 if is_wine else tr
-        wine_tr = tr if is_wine else 0
+        t = tier(img, tr, is_wine)
         if with_scores:
-            return (non_wine_tr, is_hero, score_key, wine_tr, fn)
-        return (non_wine_tr, is_hero, wine_tr, fn)
+            return (t, is_hero, score_key, tr, fn)
+        return (t, is_hero, tr, fn)
 
     return sorted(images, key=sort_key)
 
@@ -165,6 +180,82 @@ def test_unknown_commodity_defaults_to_type_rank_first():
     assert ordered_unknown[0]["file_name"] == "front.jpg"
 
 
+# Real COLAs from prod: (cola_id, commodity, hero file, images, expected lead).
+DISPLAY_CASES = [
+    pytest.param(
+        "26266001000201", "distilled_spirits", "back correct 58 27.jpg",
+        [
+            {"file_name": "brand correct 14 51.jpg", "img_type": "Brand (front) or keg collar",
+             "width_px": 195, "height_px": 821, "visual_interest_score": 25.37},
+            {"file_name": "back correct 58 27.jpg", "img_type": "Back",
+             "width_px": 1739, "height_px": 784, "visual_interest_score": 62.55},
+        ],
+        "back correct 58 27.jpg",
+        id="smith-wesson-strip-front-yields-to-logo-back",
+    ),
+    pytest.param(
+        "08074001000126", "beer", "bl16bkBowl11st.jpg",
+        [
+            {"file_name": "bl16nkBowl11st.jpg", "img_type": "Brand (front) or keg collar",
+             "width_px": 760, "height_px": 122, "visual_interest_score": 0.0},
+            {"file_name": "bl16bkBowl11st.jpg", "img_type": "Back",
+             "width_px": 334, "height_px": 209, "visual_interest_score": 70.1},
+        ],
+        "bl16nkBowl11st.jpg",
+        id="bud-light-unscored-strip-front-stays",
+    ),
+    pytest.param(
+        "16320001000093", "distilled_spirits", "BK563567B.jpg",
+        [
+            {"file_name": "JBMasterySingleBarrelACL.jpg", "img_type": "Brand (front) or keg collar",
+             "width_px": 1152, "height_px": 648, "visual_interest_score": 69.71},
+            {"file_name": "BK563567B.jpg", "img_type": "Back",
+             "width_px": 650, "height_px": 394, "visual_interest_score": 70.05},
+        ],
+        "JBMasterySingleBarrelACL.jpg",
+        id="jim-beam-narrow-score-gap-front-stays",
+    ),
+    pytest.param(
+        "12206001000536", "beer", "OSA 507 oz Back.jpg",
+        [
+            {"file_name": "Zymaster Mag Face.jpg", "img_type": "Brand (front) or keg collar",
+             "width_px": 809, "height_px": 601, "visual_interest_score": 31.75},
+            {"file_name": "OSA 507 oz Back.jpg", "img_type": "Back",
+             "width_px": 528, "height_px": 423, "visual_interest_score": 75.38},
+        ],
+        "Zymaster Mag Face.jpg",
+        id="zymaster-square-front-stays-despite-gap",
+    ),
+    pytest.param(
+        "14125001000054", "distilled_spirits", "Ivanabitch Cap.jpg",
+        [
+            {"file_name": "DSS_750ml Coconut_front.jpg", "img_type": "Brand (front) or keg collar",
+             "width_px": 540, "height_px": 2200, "visual_interest_score": 62.07},
+            {"file_name": "DSS_750ml Coconut_back.jpg", "img_type": "Back",
+             "width_px": 543, "height_px": 2200, "visual_interest_score": 31.83},
+            {"file_name": "Ivanabitch Cap.jpg", "img_type": "Other",
+             "width_px": 369, "height_px": 369, "visual_interest_score": 100.0},
+        ],
+        "DSS_750ml Coconut_front.jpg",
+        id="ivanabitch-demoted-front-still-beats-weaker-back",
+    ),
+]
+
+
+@pytest.mark.parametrize("with_scores", [True, False], ids=["detail", "primary"])
+@pytest.mark.parametrize("cola_id,commodity,hero,images,expected", DISPLAY_CASES)
+def test_display_image_selection(cola_id, commodity, hero, images, expected, with_scores):
+    ordered = _simulate_sort(images, commodity=commodity, hero_file=hero, with_scores=with_scores)
+    assert ordered[0]["file_name"] == expected, cola_id
+
+
+def test_display_order_sql_carries_strip_front_guard():
+    for order in (image_display_order_sql("ci"), image_display_order_sql("ci", out=None)):
+        assert f"{STRIP_ASPECT_RATIO} * least(ci.width_px, ci.height_px)" in order
+        assert f">= {STRIP_FRONT_SCORE_GAP} THEN 1" in order
+        assert "image_visual_interest_best_score" in order
+    # The hot path has no `vi` join, so it reads its own score from the rollup.
+    assert "cola_search_detail sd" in image_display_order_sql("ci", out=None)
 def test_visual_interest_join_guards_a_non_array_rollup():
     """jsonb_array_elements raises on a scalar; NULL alone would be safe."""
     join = visual_interest_join_sql("ci")

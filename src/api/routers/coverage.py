@@ -80,9 +80,10 @@ SELECT (SELECT count(*) FROM {MAP_DIRTY_TABLE}) AS pending_count,
          WHERE oid = to_regclass('{MAP_TABLE}')) AS mapped_point_count
 """
 
-# A COLA is fully processed once the detail pass has run and every image it
-# actually stored has been both read by OCR and embedded. This is the per-record
-# form of the stage definitions behind cola_coverage_year.
+# A COLA is fully processed once the detail pass has run and every label image it
+# actually stored has been both read by OCR and embedded. Form scans are never
+# read or embedded, only their crops, so a scan just has to be extracted. This is
+# the per-record form of the stage definitions behind cola_coverage_year.
 _COMPLETE_PREDICATE = """--sql
     c.detail_scraped_on IS NOT NULL
     AND EXISTS (
@@ -90,21 +91,28 @@ _COMPLETE_PREDICATE = """--sql
          WHERE i.cola_id = c.cola_id
            AND i.download_status = 'SUCCESS'
            AND i.blob_name IS NOT NULL
+           AND i.image_role <> 'form_scan'
     )
     AND NOT EXISTS (
         SELECT 1 FROM cola_images i
          WHERE i.cola_id = c.cola_id
            AND i.download_status = 'SUCCESS'
            AND i.blob_name IS NOT NULL
-           AND (
-                i.image_feature_vector IS NULL
-                OR NOT EXISTS (
+           AND CASE WHEN i.image_role = 'form_scan'
+                THEN NOT EXISTS (
+                    SELECT 1 FROM cola_scan_extraction e
+                     WHERE e.cola_id = i.cola_id
+                       AND e.file_name = i.file_name
+                       AND e.extraction_status IN ('SUCCESS', 'NONE', 'UNSUPPORTED')
+                )
+                ELSE i.image_feature_vector IS NULL
+                  OR NOT EXISTS (
                     SELECT 1 FROM cola_image_analysis a
                      WHERE a.cola_id = i.cola_id
                        AND a.file_name = i.file_name
                        AND a.analysis_status IN ('SUCCESS', 'NONE')
-                )
-           )
+                  )
+           END
     )
 """
 

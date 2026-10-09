@@ -272,6 +272,37 @@ def hero_first_sql(alias: str, search_alias: str = "vi_hero") -> str:
     )
 
 
+# Non-wine labels lead with the brand/keg face regardless of score, except when
+# that face is a narrow text strip and another image is clearly the artwork
+# (e.g. a tall 195x821 mandatory-text strip filed as the brand label next to a
+# wide back label carrying only the logo). Both guards are needed: strip-shaped
+# fronts alone flip brand strips onto government-warning backs with near-equal
+# scores, and a score gap alone flips square fronts whose curved text inflates
+# the OCR density penalty. At aspect >= 3 the aspect sub-score is 0, so a strip
+# scoring 0 had no OCR/embedding signal at all and is never demoted.
+STRIP_ASPECT_RATIO = 3.0
+STRIP_FRONT_SCORE_GAP = 25.0
+
+
+def strip_front_sql(alias: str) -> str:
+    """Front image shaped like a narrow text strip."""
+    return (
+        f"greatest({alias}.width_px, {alias}.height_px) "
+        f">= {STRIP_ASPECT_RATIO} * least({alias}.width_px, {alias}.height_px)"
+    )
+
+
+def own_visual_interest_score_sql(alias: str) -> str:
+    """This image's score read straight from the detail rollup (one PK lookup)."""
+    return (
+        "(SELECT (e ->> 'visual_interest_score')::float8 "
+        f"FROM {DETAIL_TABLE} sd, jsonb_array_elements("
+        "CASE WHEN jsonb_typeof(sd.images) = 'array' THEN sd.images ELSE '[]'::jsonb END"
+        f") e WHERE sd.cola_id = {alias}.cola_id "
+        f"AND e ->> 'file_name' = {alias}.file_name LIMIT 1)"
+    )
+
+
 def image_display_order_sql(
     alias: str, search_alias: str = "vi_hero", out: str | None = "vi"
 ) -> str:
@@ -281,17 +312,28 @@ def image_display_order_sql(
     falling back to image type rank and file name.
     For non-wine (beer, distilled spirits, other), image type rank (Brand front/keg collar
     first, back second, other third) takes precedence, with ties broken by visual interest
-    hero, score, and file name.
+    hero, score, and file name. A strip-shaped front the hero beats by
+    STRIP_FRONT_SCORE_GAP drops to the back tier so the hero can lead.
     """
     type_rank = image_type_rank_sql(alias)
     is_wine = f"coalesce(lower({search_alias}.ct_commodity), '') = 'wine'"
-    non_wine_type_rank = f"CASE WHEN {is_wine} THEN 0 ELSE {type_rank} END"
-    wine_type_rank = f"CASE WHEN {is_wine} THEN {type_rank} ELSE 0 END"
+    own_score = f"{out}.visual_interest_score" if out else own_visual_interest_score_sql(alias)
+    # Nested CASE so the rollup lookup only runs for the rare strip-shaped front.
+    demoted = (
+        f"CASE WHEN ({own_score}) > 0 AND "
+        f"{search_alias}.image_visual_interest_best_score - ({own_score}) "
+        f">= {STRIP_FRONT_SCORE_GAP} THEN 1 ELSE 0 END"
+    )
+    tier = (
+        f"CASE WHEN {is_wine} THEN 0 "
+        f"WHEN {type_rank} = 0 AND {strip_front_sql(alias)} THEN {demoted} "
+        f"ELSE {type_rank} END"
+    )
 
-    keys = [non_wine_type_rank, hero_first_sql(alias, search_alias)]
+    keys = [tier, hero_first_sql(alias, search_alias)]
     if out:
         keys.append(f"{out}.visual_interest_score DESC NULLS LAST")
-    keys.append(wine_type_rank)
+    keys.append(type_rank)
     keys.append(f"{alias}.file_name")
     return ", ".join(keys)
 
