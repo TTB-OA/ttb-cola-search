@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -522,6 +523,18 @@ def ttb_signature_url(base: Mapping[str, Any]) -> str | None:
     return TTB_SIGNATURE_URL + quote(str(base.get("cola_id") or ""), safe="")
 
 
+def received_date_from_ttb_id(ttb_id: str | None) -> date | None:
+    """TTB IDs open with YYJJJ, the year and day-of-year TTB received the application."""
+    if not ttb_id or len(ttb_id) < 5 or not ttb_id[:5].isdigit():
+        return None
+    yy, day = int(ttb_id[:2]), int(ttb_id[2:5])
+    # The registry's earliest IDs are from 1979.
+    year = 1900 + yy if yy >= 70 else 2000 + yy
+    start = date(year, 1, 1)
+    received = start + timedelta(days=day - 1)
+    return received if day >= 1 and received.year == year else None
+
+
 def processing_from_row(base: Mapping[str, Any]) -> ProcessingStatus:
     """Which pipeline stages have actually run for this COLA.
 
@@ -611,6 +624,7 @@ def detail_from_rows(
         exemption_state=base.get("exemption_state"),
         resubmission_ttb_id=base.get("resubmission_ttb_id"),
         application_date=base.get("application_date"),
+        received_date=received_date_from_ttb_id(summary.ttb_id),
         issued_date=base.get("issued_date"),
         expiration_date=base.get("expiration_date"),
         for_sale_in=base.get("for_sale_in"),

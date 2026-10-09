@@ -29,6 +29,37 @@ async def main() -> None:
     print(dict(r))
     q = (await fetch_all("SELECT count(*) AS n FROM cola_search_dirty"))[0]
     print("dirty queue:", q["n"])
+    fill = (await fetch_all(
+        """--sql
+        SELECT count(*) AS n,
+               count(*) FILTER (WHERE form_scraped_on IS NULL) AS unread,
+               count(formula_num) AS formula, count(appellation) AS appellation,
+               count(applicant_phone) AS phone, count(applicant_email) AS email,
+               count(container_text) AS item15, count(printed_name) AS printed_name,
+               count(*) FILTER (WHERE ttb_signed) AS ttb_signed
+          FROM colas
+         WHERE completed_date >= '2025-01-01' AND received_code = 'ES'
+        """
+    ))[0]
+    print("colas ES 2025+:", dict(fill))
+    surf = (await fetch_all(
+        """--sql
+        SELECT count(*) AS n, count(printed_name) AS printed_name, count(formula) AS formula
+          FROM cola_search
+         WHERE completed_date >= '2025-01-01' AND received_code = 'ES'
+        """
+    ))[0]
+    print("cola_search ES 2025+:", dict(surf))
+    for r in await fetch_all(
+        """--sql
+        SELECT appellation, type_of_product, count(*) AS n
+          FROM colas
+         WHERE completed_date >= '2025-01-01' AND received_code = 'ES'
+           AND appellation IS NOT NULL
+         GROUP BY 1, 2 ORDER BY n DESC LIMIT 15
+        """
+    ):
+        print("  ", dict(r))
     await close_pool()
 
 

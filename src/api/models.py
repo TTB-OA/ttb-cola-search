@@ -136,6 +136,8 @@ class ColaDetail(ColaSummary):
     exemption_state: str | None = None
     resubmission_ttb_id: str | None = None
     application_date: date | None = None
+    # Derived from the TTB ID, not scraped: its YYJJJ prefix is the receipt date.
+    received_date: date | None = None
     issued_date: date | None = None
     expiration_date: date | None = None
     for_sale_in: str | None = None

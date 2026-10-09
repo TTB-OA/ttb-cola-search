@@ -749,6 +749,8 @@ export default function DetailPage() {
                   { label: 'Serial number', value: rec.serial, mono: true },
                   { label: 'Vendor code', value: rec.vendorCode, mono: true },
                   { label: 'Received as', value: rec.receivedDescription },
+                  { label: 'Date of application', value: rec.applicationDate ? fmtDate(rec.applicationDate) : null },
+                  { label: 'Date received', value: rec.receivedDate ? fmtDate(rec.receivedDate) : null },
                   { label: 'Date approved', value: fmtDate(rec.approvalDate) },
                 ]}
               />
