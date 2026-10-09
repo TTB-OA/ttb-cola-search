@@ -4,13 +4,14 @@ Serves aggregates read back out of Log Analytics: counts, rates, percentiles,
 and the most frequent search text and filter values. Sessions appear only as a
 pseudonymous id inside counts; no row is tied to a visitor.
 
-The endpoint is off unless ``analytics_dashboard_enabled`` is set, and returns
-404 (not 403) when off so a disabled deployment leaks nothing about its
-existence. Unlisted is not access control; see the README before exposing this
-on a production hostname.
+The endpoint is off unless ``analytics_dashboard_enabled`` and
+``analytics_dashboard_token`` are both set, and returns 404 (not 403) when off
+so a disabled deployment leaks nothing about its existence. When on, callers
+must send ``Authorization: Bearer <token>``.
 """
 from __future__ import annotations
 
+import hmac
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -281,13 +282,24 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
 @router.get("/analytics/dashboard", response_model=DashboardData)
 async def dashboard(request: Request, range: RangeKey = "30d") -> DashboardData:
     settings = get_settings()
-    if not settings.analytics_dashboard_enabled:
+    if not (settings.analytics_dashboard_enabled and settings.analytics_dashboard_token):
         raise HTTPException(status_code=404, detail="Not found.")
 
+    # Limit before the token check so guesses are throttled too.
     if _dashboard_limiter(settings).check(
         client_key(request, settings.trust_forwarded_for)
     ) is not None:
         raise HTTPException(status_code=429, detail="Too many requests.")
+
+    scheme, _, supplied = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not hmac.compare_digest(
+        supplied.strip().encode(), settings.analytics_dashboard_token.encode()
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Authorization required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     ttl = settings.analytics_dashboard_cache_seconds
     hit = insights.cached(range, ttl)

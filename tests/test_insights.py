@@ -16,6 +16,7 @@ from api.main import app  # noqa: E402
 from api.routers import insights as insights_router  # noqa: E402
 
 PATH = "/api/analytics/dashboard"
+TOKEN = "t0ken"
 
 
 @pytest.fixture(autouse=True)
@@ -31,13 +32,14 @@ def clean():
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, headers={"Authorization": f"Bearer {TOKEN}"})
 
 
 @pytest.fixture
 def enabled(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "analytics_dashboard_enabled", True, raising=False)
+    monkeypatch.setattr(settings, "analytics_dashboard_token", TOKEN, raising=False)
     monkeypatch.setattr(settings, "log_analytics_workspace_id", "w0rkspace", raising=False)
     return settings
 
@@ -70,6 +72,23 @@ def test_disabled_does_not_query_log_analytics(client, monkeypatch):
 
 def test_unknown_range_is_rejected(client, enabled):
     assert client.get(PATH, params={"range": "5y"}).status_code == 422
+
+
+def test_enabled_without_token_configured_returns_404(client, enabled, monkeypatch):
+    monkeypatch.setattr(enabled, "analytics_dashboard_token", "", raising=False)
+    assert client.get(PATH).status_code == 404
+
+
+@pytest.mark.parametrize("header", [None, "Bearer wrong", f"Basic {TOKEN}", TOKEN])
+def test_missing_or_wrong_token_returns_401(enabled, monkeypatch, header):
+    async def boom(*_args, **_kwargs):
+        raise AssertionError("queried Log Analytics without a valid token")
+
+    monkeypatch.setattr(insights, "run_panels", boom)
+    headers = {"Authorization": header} if header else {}
+    response = TestClient(app).get(PATH, headers=headers)
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_range_is_not_a_kql_injection_vector(client, enabled):

@@ -14,8 +14,8 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, signal } = {}) {
-  const opts = { method, signal, headers: {} };
+async function request(path, { method = 'GET', body, signal, headers = {} } = {}) {
+  const opts = { method, signal, headers: { ...headers } };
   const sid = clientSessionId();
   if (sid) opts.headers['X-Client-Session'] = sid;
   if (body instanceof FormData) {
@@ -98,9 +98,12 @@ export const api = {
   // rather than a response; the pmtiles reader fetches byte ranges from it.
   basemapUrl: () => `${BASE}/map/basemap`,
 
-  // Unlisted usage dashboard. 404s unless the deployment enables it.
-  analyticsDashboard: (params, signal) =>
-    request(`/analytics/dashboard${toQuery(params)}`, { signal }),
+  // Usage dashboard. 404s unless enabled; 401s without the access token.
+  analyticsDashboard: (params, token, signal) =>
+    request(`/analytics/dashboard${toQuery(params)}`, {
+      signal,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }),
 };
 
 export { ApiError };

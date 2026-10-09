@@ -63,6 +63,7 @@ jobs:
             -p postgresUser="${{ vars.PG_USER }}" \
             -p geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
             -p analyticsSalt="${{ secrets.ANALYTICS_SALT }}" \
+            -p analyticsDashboardToken="${{ secrets.ANALYTICS_DASHBOARD_TOKEN }}" \
             --only-show-errors
 
       - name: Show outputs

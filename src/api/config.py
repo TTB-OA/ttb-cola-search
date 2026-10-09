@@ -124,8 +124,9 @@ class Settings(BaseSettings):
     analytics_salt: str = ""
 
     # --- Usage dashboard ----------------------------------------------------
-    # The /analytics page is unlisted, not authenticated, so it stays opt-in.
     analytics_dashboard_enabled: bool = False
+    # Shared secret sent as `Authorization: Bearer <token>`. Empty == dashboard off.
+    analytics_dashboard_token: str = ""
     # Log Analytics workspace GUID (customerId). Not carried by the App Insights
     # connection string, so it is passed separately.
     log_analytics_workspace_id: str | None = None

@@ -89,8 +89,12 @@ param telemetrySamplingRatio string = '1.0'
 @secure()
 param analyticsSalt string = ''
 
-@description('Serve the unlisted /analytics usage dashboard. The endpoint has no authentication, so it is opt-in.')
+@description('Serve the /analytics usage dashboard. Also requires analyticsDashboardToken.')
 param analyticsDashboardEnabled bool = false
+
+@description('Shared access token for the /analytics dashboard. Empty keeps the dashboard off.')
+@secure()
+param analyticsDashboardToken string = ''
 
 param minReplicas int = 1
 param maxReplicas int = 3
@@ -226,6 +230,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             value: analyticsSalt
           }
         ],
+        empty(analyticsDashboardToken) ? [] : [
+          {
+            name: 'analytics-dashboard-token'
+            value: analyticsDashboardToken
+          }
+        ],
         empty(geminiApiKey) ? [] : [
           {
             name: 'gemini-api-key'
@@ -274,6 +284,9 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             ],
             empty(analyticsSalt) ? [] : [
               { name: 'ANALYTICS_SALT', secretRef: 'analytics-salt' }
+            ],
+            empty(analyticsDashboardToken) ? [] : [
+              { name: 'ANALYTICS_DASHBOARD_TOKEN', secretRef: 'analytics-dashboard-token' }
             ],
             empty(geminiApiKey) ? [] : [
               { name: 'GEMINI_API_KEY', secretRef: 'gemini-api-key' }

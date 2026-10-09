@@ -205,14 +205,73 @@ function TopColas({ rows }) {
   );
 }
 
+/* ---------- Access token prompt ---------- */
+const TOKEN_KEY = 'analyticsToken';
+
+function readToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveToken(token) {
+  try {
+    if (token) sessionStorage.setItem(TOKEN_KEY, token);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* storage blocked: token lives in state only */
+  }
+}
+
+function TokenForm({ rejected, onSubmit }) {
+  const [value, setValue] = useState('');
+  return (
+    <form
+      className="empty panel"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (value.trim()) onSubmit(value.trim());
+      }}
+    >
+      <h2>Sign in to view usage data</h2>
+      {rejected ? <p className="an-warn">That access token was not accepted.</p> : null}
+      <div className="field" style={{ maxWidth: 420, margin: '16px auto', textAlign: 'left' }}>
+        <label htmlFor="an-token">Access token</label>
+        <div className="input-group">
+          <input
+            id="an-token"
+            className="input"
+            type="password"
+            autoComplete="current-password"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+          <button type="submit" className="btn">
+            Continue
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 /* ---------- Page ---------- */
 export default function AnalyticsPage() {
   useDocumentTitle('Usage dashboard');
   const [range, setRange] = useState('30d');
+  const [token, setToken] = useState(readToken);
   const { data, loading, error } = useAsync(
-    (signal) => api.analyticsDashboard({ range }, signal),
-    [range]
+    (signal) => api.analyticsDashboard({ range }, token, signal),
+    [range, token]
   );
+  const unauthorized = error?.status === 401;
+
+  const submitToken = (value) => {
+    saveToken(value);
+    setToken(value);
+  };
 
   const totals = data?.totals;
   const panels = data?.panels || {};
@@ -242,6 +301,8 @@ export default function AnalyticsPage() {
             <div key={i} className="skel an-tile" style={{ height: 92 }} />
           ))}
         </div>
+      ) : unauthorized ? (
+        <TokenForm rejected={Boolean(token)} onSubmit={submitToken} />
       ) : error ? (
         <div className="empty panel">
           <h2>Usage data is unavailable</h2>

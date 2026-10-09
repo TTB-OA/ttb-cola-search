@@ -158,7 +158,8 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
 | `ANALYTICS_CAPTURE_QUERY_TEXT` | `true` | records keyword/describe search text and free-text filter values; `false` keeps only length and term count |
 | `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
-| `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the unlisted `/analytics` page; see below before enabling |
+| `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the `/analytics` page; also needs `ANALYTICS_DASHBOARD_TOKEN` |
+| `ANALYTICS_DASHBOARD_TOKEN` | `""` | shared access token for the dashboard (`Authorization: Bearer`); treat as a secret |
 | `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
 | `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range |
 | `ANALYTICS_DASHBOARD_RATE_LIMIT` | `30` | dashboard requests per window, per client |
@@ -186,7 +187,7 @@ All routes are mounted under `/api`.
 | `POST` | `/search/image` | Reverse image search from an upload |
 | `GET` | `/search/describe` | Cross-modal search: a plain-language artwork description matched against label image embeddings |
 | `POST` | `/events` | Collects UI interaction events from the SPA; returns 204 |
-| `GET` | `/analytics/dashboard` | Aggregate usage numbers for the `/analytics` page; 404 unless enabled |
+| `GET` | `/analytics/dashboard` | Aggregate usage numbers for the `/analytics` page; 404 unless enabled, 401 without the token |
 
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `business`, `permit`, `permitName`, `permitState`, `permitCity`,
@@ -380,12 +381,16 @@ per endpoint (as a table or over time), and image-search
 volume. It reads Log Analytics directly; the application database is touched
 only to turn the top COLA ids into brand names.
 
-Enabling it takes three things:
+Enabling it takes four things:
 
 1. `ANALYTICS_DASHBOARD_ENABLED=true` (Bicep parameter `analyticsDashboardEnabled`).
-2. `LOG_ANALYTICS_WORKSPACE_ID` — Bicep passes `logs.properties.customerId`
+2. `ANALYTICS_DASHBOARD_TOKEN` — a long random string (Bicep parameter
+   `analyticsDashboardToken`, fed from the `ANALYTICS_DASHBOARD_TOKEN` repo
+   secret by `infra.yml`). The page prompts for it and keeps it in
+   `sessionStorage`; the API expects `Authorization: Bearer <token>`.
+3. `LOG_ANALYTICS_WORKSPACE_ID` — Bicep passes `logs.properties.customerId`
    automatically. This is the workspace GUID, not the ARM resource id.
-3. A **Log Analytics Reader** grant for the app's managed identity. There are no
+4. A **Log Analytics Reader** grant for the app's managed identity. There are no
    role assignments in `infra/main.bicep`, so this is a manual step:
 
    ```bash
@@ -399,13 +404,11 @@ Enabling it takes three things:
 
 Things worth knowing before you turn it on:
 
-- **Unlisted is not access control.** The page is linked only from the footer
-  and absent from the sitemap, and `GET /api/analytics/dashboard` is reachable
-  by anyone. It returns aggregates plus the most frequent search text and filter
-  values (which can include whatever visitors typed) — no visitor-level data.
-  If that is not acceptable, put Container Apps EasyAuth in front of the app.
-  Disabled deployments return **404**, not 403,
-  so they do not advertise the feature.
+- **Access is one shared token.** Without a valid `Bearer` token the API returns
+  **401** (wrong guesses count against the dashboard rate limit). Rotate the
+  secret to revoke everyone. For per-user sign-in, put Container Apps EasyAuth in
+  front instead. Disabled deployments (or no token configured) return **404**,
+  not 403, so they do not advertise the feature.
 - **History is bounded by retention.** `infra/main.bicep` extends `AppEvents`,
   `AppRequests` and `AppDependencies` to `appInsightsRetentionDays` (90 by
   default). For workspace-based Application Insights the *table* retention wins,
