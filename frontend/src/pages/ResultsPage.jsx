@@ -115,52 +115,32 @@ function FacetGroup({ title, buckets, selected, onSelect }) {
   );
 }
 
-/* ---------- multi-select facet ---------- */
-const FACET_MULTI_SHOWN = 6;
-
-function FacetMulti({ title, buckets, selected, onToggle }) {
-  const [more, setMore] = useState(false);
-  const list = buckets || [];
-  // Selected values stay listed even once the narrowed set no longer counts them.
-  const missing = selected.filter((v) => !list.some((b) => b.value === v)).map((v) => ({ value: v, count: 0 }));
-  const all = [...missing, ...list];
-  if (!all.length) return null;
-  const shown = more ? all : all.slice(0, Math.max(FACET_MULTI_SHOWN, missing.length));
-  return (
-    <div className="facet">
-      <div className="facet-title">{title}</div>
-      {shown.map((b) => (
-        <label className="checkrow" key={b.value}>
-          <input type="checkbox" checked={selected.includes(b.value)} onChange={() => onToggle(b.value)} />
-          <span>{b.value}</span>
-          {b.count > 0 && <span className="count">{b.count}</span>}
-        </label>
-      ))}
-      {all.length > shown.length || more ? (
-        <button className="linkbtn" style={{ fontSize: 13, marginTop: 4 }} onClick={() => setMore(!more)}>
-          {more ? 'Show fewer' : `Show ${all.length - shown.length} more`}
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
 /* ---------- facet pick list ---------- */
 // Origin and permit state can each return 50+ buckets, too many for checkboxes
 // in a 250px rail.
-function FacetSelect({ title, buckets, selected, allLabel, onChange }) {
+const MULTI_PICKED = '__multi__';
+
+// `multiCount` > 1 means several values arrived from the search form, which a
+// single-value select can't show; picking any option replaces them.
+function FacetSelect({ title, buckets, selected, multiCount = 0, allLabel, onChange }) {
   const list = buckets || [];
-  if (!list.length && !selected) return null;
+  if (!list.length && !selected && !multiCount) return null;
+  const sorted = [...list].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
   // A selected value can drop out of the buckets once other filters narrow the
   // set; keep it listed so the control never misreports itself as unfiltered.
-  const options = selected && !list.some((b) => b.value === selected) ? [{ value: selected, count: 0 }, ...list] : list;
-  const sorted = [...options].sort((a, b) => a.value.localeCompare(b.value));
+  const options = selected && !list.some((b) => b.value === selected) ? [{ value: selected, count: 0 }, ...sorted] : sorted;
+  const value = multiCount > 1 ? MULTI_PICKED : selected || '';
   return (
     <div className="facet">
       <div className="facet-title">{title}</div>
-      <select className="select facet-select" aria-label={title} value={selected || ''} onChange={(e) => onChange(e.target.value)}>
+      <select className="select facet-select" aria-label={title} value={value} onChange={(e) => onChange(e.target.value)}>
         <option value="">{allLabel}</option>
-        {sorted.map((b) => (
+        {multiCount > 1 && (
+          <option value={MULTI_PICKED} disabled>
+            {multiCount} selected
+          </option>
+        )}
+        {options.map((b) => (
           <option key={b.value} value={b.value}>
             {b.count ? `${b.value} (${b.count.toLocaleString()})` : b.value}
           </option>
@@ -717,17 +697,6 @@ export default function ResultsPage() {
     });
   }
 
-  function toggleMultiFacet(group, value) {
-    patchParams((p) => {
-      const key = FACET_PARAM[group];
-      const cur = p[key] || [];
-      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
-      if (next.length) p[key] = next;
-      else delete p[key];
-      delete p.page;
-    });
-  }
-
   // Removes one value of a repeatable filter, or the whole filter otherwise.
   function clearKey(k, value) {
     patchParams((p) => {
@@ -759,6 +728,7 @@ export default function ResultsPage() {
   }
 
   const activeFacet = (group) => criteria[FACET_PARAM[group]] || null;
+  const classTypes = criteria.classType || [];
   const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
   const View = { gallery: GalleryView, wall: WallView, list: ListView }[view] || TableView;
   // Carry the search term so the detail page can highlight matching label text.
@@ -875,11 +845,13 @@ export default function ResultsPage() {
                   allLabel="All permit states"
                   onChange={(v) => setFacet('permitState', v)}
                 />
-                <FacetMulti
+                <FacetSelect
                   title="Class / Type"
                   buckets={facets.classType}
-                  selected={criteria.classType || []}
-                  onToggle={(v) => toggleMultiFacet('classType', v)}
+                  selected={classTypes.length === 1 ? classTypes[0] : null}
+                  multiCount={classTypes.length}
+                  allLabel="All class/types"
+                  onChange={(v) => setFacet('classType', v)}
                 />
                 <FacetSelect
                   title="Brand"
