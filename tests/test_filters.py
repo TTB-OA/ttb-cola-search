@@ -385,3 +385,38 @@ def test_label_text_only_materialises_a_set_under_the_count_cap(
     assert response.status_code == 200
     (rows_sql,) = statements
     assert (f"{FILTERED_ALIAS} AS MATERIALIZED" in rows_sql) is materialised
+
+
+# --- Facets ------------------------------------------------------------------
+
+
+def test_facets_include_class_type_and_brand(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.api.routers import colas as colas_router
+
+    async def fake_fetch_all(sql, params=None, **kwargs):
+        assert sql.count("%s") == len(params)
+        if "'total' AS dim" not in sql:
+            return []
+        return [
+            {"dim": "total", "value": None, "count": 7},
+            {"dim": "classType", "value": "TABLE RED WINE", "count": 5},
+            {"dim": "classType", "value": "TABLE WHITE WINE", "count": 2},
+            {"dim": "brand", "value": "Cedar Hollow", "count": 4},
+            {"dim": "brand", "value": " ", "count": 3},
+        ]
+
+    monkeypatch.setattr(colas_router, "fetch_all", fake_fetch_all)
+    response = TestClient(app).get(
+        "/api/colas", params={"brand": "cedar", "classType": ["TABLE RED WINE", "TABLE WHITE WINE"]}
+    )
+
+    assert response.status_code == 200
+    facets = response.json()["facets"]
+    assert facets["classType"] == [
+        {"value": "TABLE RED WINE", "count": 5},
+        {"value": "TABLE WHITE WINE", "count": 2},
+    ]
+    assert facets["brand"] == [{"value": "Cedar Hollow", "count": 4}]

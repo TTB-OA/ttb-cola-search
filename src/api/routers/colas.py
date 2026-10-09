@@ -42,6 +42,10 @@ router = APIRouter(tags=["colas"])
 # Exact totals stop here; past the cap the response reports a floor instead.
 COUNT_CAP = 10_000
 
+# High-cardinality facets return only their largest buckets.
+_CLASS_TYPE_BUCKETS = 30
+_BRAND_BUCKETS = 30
+
 # cola_id breaks ties so LIMIT/OFFSET paging stays stable, and lines the sort up
 # with the composite indexes on cola_search. Qualified because a keyword search
 # joins a second relation that also carries cola_id.
@@ -441,7 +445,9 @@ async def _count_and_facets(
     """
     settings = get_settings()
     with_sql, from_sql, source_params = compose(sources)
-    columns = "ct_commodity, ct_source, origin, status, primary_permit_state_addr"
+    columns = (
+        "ct_commodity, ct_source, origin, status, primary_permit_state_addr, class_type, brand_name"
+    )
     sql = f"""--sql
         {with_sql}{', ' if with_sql else 'WITH '}m AS (
           SELECT {columns} FROM {from_sql} {where} LIMIT %s
@@ -455,11 +461,18 @@ async def _count_and_facets(
         UNION ALL SELECT 'origin', origin, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'status', status, COUNT(*) FROM m GROUP BY 1, 2
         UNION ALL SELECT 'permitState', primary_permit_state_addr, COUNT(*) FROM m GROUP BY 1, 2
+        UNION ALL (SELECT 'classType', class_type, COUNT(*) FROM m
+                   WHERE class_type IS NOT NULL GROUP BY 1, 2 ORDER BY 3 DESC LIMIT %s)
+        UNION ALL (SELECT 'brand', max(brand_name), COUNT(*) FROM m
+                   WHERE brand_name IS NOT NULL GROUP BY 1, upper(brand_name) ORDER BY 3 DESC LIMIT %s)
         """
+    params = [*source_params, *where_params, COUNT_CAP + 1]
+    if want_facets:
+        params += [_CLASS_TYPE_BUCKETS, _BRAND_BUCKETS]
     try:
         rows = await fetch_all(
             sql,
-            [*source_params, *where_params, COUNT_CAP + 1],
+            params,
             work_mem=settings.search_work_mem,
             statement_timeout_ms=settings.search_count_timeout_ms,
             prepare=False,
@@ -505,6 +518,16 @@ async def _count_and_facets(
             FacetBucket(value=r["value"], count=r["count"])
             for r in bucket("permitState")
             if r["value"] and r["value"].strip()
+        ],
+        class_type=[
+            FacetBucket(value=r["value"], count=r["count"])
+            for r in bucket("classType")
+            if r["value"].strip()
+        ],
+        brand=[
+            FacetBucket(value=r["value"], count=r["count"])
+            for r in bucket("brand")
+            if r["value"].strip()
         ],
     )
 

@@ -61,13 +61,15 @@ const FILTER_KEYS = [
 // the order the detail page should prefer them when no broad `q` was given.
 const HIGHLIGHT_KEYS = ['q', 'labelText', 'brand', 'fanciful', 'varietal', 'applicant', 'business'];
 
-// Map a facet group name to the single-value URL/API param it controls.
+// Map a facet group name to the URL/API param it controls.
 const FACET_PARAM = {
   commodity: 'commodity',
   source: 'source',
   origin: 'origin',
   status: 'status',
   permitState: 'permitState',
+  classType: 'classType',
+  brand: 'brand',
 };
 
 // Params that may repeat; they come out of the URL as arrays.
@@ -105,6 +107,36 @@ function FacetGroup({ title, buckets, selected, onSelect }) {
           <span className="count">{b.count}</span>
         </label>
       ))}
+    </div>
+  );
+}
+
+/* ---------- multi-select facet ---------- */
+const FACET_MULTI_SHOWN = 6;
+
+function FacetMulti({ title, buckets, selected, onToggle }) {
+  const [more, setMore] = useState(false);
+  const list = buckets || [];
+  // Selected values stay listed even once the narrowed set no longer counts them.
+  const missing = selected.filter((v) => !list.some((b) => b.value === v)).map((v) => ({ value: v, count: 0 }));
+  const all = [...missing, ...list];
+  if (!all.length) return null;
+  const shown = more ? all : all.slice(0, Math.max(FACET_MULTI_SHOWN, missing.length));
+  return (
+    <div className="facet">
+      <div className="facet-title">{title}</div>
+      {shown.map((b) => (
+        <label className="checkrow" key={b.value}>
+          <input type="checkbox" checked={selected.includes(b.value)} onChange={() => onToggle(b.value)} />
+          <span>{b.value}</span>
+          {b.count > 0 && <span className="count">{b.count}</span>}
+        </label>
+      ))}
+      {all.length > shown.length || more ? (
+        <button className="linkbtn" style={{ fontSize: 13, marginTop: 4 }} onClick={() => setMore(!more)}>
+          {more ? 'Show fewer' : `Show ${all.length - shown.length} more`}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -677,6 +709,17 @@ export default function ResultsPage() {
     });
   }
 
+  function toggleMultiFacet(group, value) {
+    patchParams((p) => {
+      const key = FACET_PARAM[group];
+      const cur = p[key] || [];
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+      if (next.length) p[key] = next;
+      else delete p[key];
+      delete p.page;
+    });
+  }
+
   // Removes one value of a repeatable filter, or the whole filter otherwise.
   function clearKey(k, value) {
     patchParams((p) => {
@@ -823,6 +866,19 @@ export default function ResultsPage() {
                   selected={activeFacet('permitState')}
                   allLabel="All permit states"
                   onChange={(v) => setFacet('permitState', v)}
+                />
+                <FacetMulti
+                  title="Class / Type"
+                  buckets={facets.classType}
+                  selected={criteria.classType || []}
+                  onToggle={(v) => toggleMultiFacet('classType', v)}
+                />
+                <FacetSelect
+                  title="Brand"
+                  buckets={facets.brand}
+                  selected={activeFacet('brand')}
+                  allLabel="All brands"
+                  onChange={(v) => setFacet('brand', v)}
                 />
               </>
             ) : data ? (

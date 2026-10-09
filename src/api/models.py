@@ -180,6 +180,9 @@ class Facets(ApiModel):
     origin: list[FacetBucket] = []
     status: list[FacetBucket] = []
     permit_state: list[FacetBucket] = []
+    # Top buckets only; the long tail is left to the search form.
+    class_type: list[FacetBucket] = []
+    brand: list[FacetBucket] = []
 
 
 class SearchResponse(ApiModel):
