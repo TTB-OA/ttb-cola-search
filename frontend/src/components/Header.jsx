@@ -22,17 +22,11 @@ export default function Header() {
             Search
           </NavLink>
           <NavLink to="/map" className={({ isActive }) => `map-nav-link${isActive ? ' active' : ''}`} data-tour="map-link">
-            Map <span className="new-badge">New!</span>
+            Map
           </NavLink>
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')} data-tour="coverage-link">
             Coverage
           </NavLink>
-          <NavLink to="/analytics" className={({ isActive }) => (isActive ? 'active' : '')}>
-            Analytics
-          </NavLink>
-          <a href="/docs" target="_blank" rel="noopener noreferrer">
-            API
-          </a>
           <button type="button" className="nav-tour" data-tour="tour-button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>
@@ -45,12 +39,6 @@ export default function Header() {
           <NavLink to="/coverage" className={({ isActive }) => (isActive ? 'active' : '')}>
             <Icon name="grid" size={14} /> Coverage
           </NavLink>
-          <NavLink to="/analytics" className={({ isActive }) => (isActive ? 'active' : '')}>
-            <Icon name="table" size={14} /> Analytics
-          </NavLink>
-          <a href="/docs" target="_blank" rel="noopener noreferrer">
-            <Icon name="external" size={14} /> API
-          </a>
           <button type="button" onClick={start}>
             <Icon name="info" size={14} /> Tour
           </button>

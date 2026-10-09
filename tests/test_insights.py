@@ -105,11 +105,20 @@ def stub_panels(monkeypatch):
             "filter_usage": [{"filter": "commodity", "count_": 60}],
             "paging_depth": [{"page": "1", "count_": 90}],
             "sort_usage": [{"sort": "relevance", "count_": 80}],
+            "top_queries": [{"query": "napa cabernet", "count_": 7}],
+            "zero_result_queries": [{"query": "zzzz", "count_": 2}],
+            "filter_values": [{"filter": "brand", "value": "acme", "count_": 4}],
+            "describe_queries": [{"query": "red fox", "count_": 3}],
             "top_colas": [{"colaId": "123", "count_": 9}],
             "commodity_usage": [{"commodity": "Wine", "count_": 50}],
             "origin_usage": [{"origin": "California", "count_": 20}],
             "latency": [
                 {"endpoint": "GET /api/colas", "requests": 100, "p50": 80.0, "p95": 420.0, "p99": 900.0}
+            ],
+            "latency_over_time": [
+                {"TimeGenerated": "2026-01-01T00:00:00Z", "endpoint": "GET /api/colas", "requests": 60, "p50": 80.0, "p95": 400.0},
+                {"TimeGenerated": "2026-01-01T00:00:00Z", "endpoint": "GET /api/map/points", "requests": 90, "p50": 300.0, "p95": 1900.0},
+                {"TimeGenerated": "2026-01-02T00:00:00Z", "endpoint": "GET /api/colas", "requests": 50, "p50": 70.0, "p95": 350.0},
             ],
             "reliability": [{"TimeGenerated": "2026-01-01T00:00:00Z", "total": 200, "failed": 4}],
             "status_codes": [{"code": "504", "count_": 4}],
@@ -150,6 +159,23 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
     assert panels["latency"][0]["endpoint"] == "GET /api/colas"
     assert panels["usageOverTime"][0]["values"]["searches"] == 100
     assert panels["imageSearchOverTime"][0]["values"]["abandoned"] == 1
+    assert panels["topQueries"] == [{"label": "napa cabernet", "count": 7}]
+    assert panels["zeroResultQueries"] == [{"label": "zzzz", "count": 2}]
+    assert panels["filterValues"] == [{"filter": "brand", "value": "acme", "count": 4}]
+    assert panels["describeQueries"] == [{"label": "red fox", "count": 3}]
+
+
+def test_latency_over_time_is_pivoted_by_endpoint(client, enabled, stub_panels):
+    series = client.get(PATH).json()["panels"]["latencyOverTime"]
+
+    # Busiest first: map has 90 requests, colas 110 across two buckets.
+    assert series["endpoints"] == ["GET /api/colas", "GET /api/map/points"]
+    assert [p["values"] for p in series["p95"]] == [
+        {"GET /api/colas": 400.0, "GET /api/map/points": 1900.0},
+        # No map requests in the second bucket: absent, not zero.
+        {"GET /api/colas": 350.0},
+    ]
+    assert series["p50"][1]["values"] == {"GET /api/colas": 70.0}
 
 
 def test_top_colas_survive_a_database_failure(client, enabled, stub_panels):
@@ -226,11 +252,12 @@ def test_every_range_has_a_bucket_and_lookback():
     assert insights.DEFAULT_RANGE in insights.RANGES
 
 
-def test_queries_never_expose_raw_search_text():
-    """capture_query_text is opt-in for KQL; it must never reach the page."""
-    for bucket in insights._BUCKETS.values():
-        for name, kql in insights._queries(bucket).items():
-            assert "query_text" not in kql, name
+def test_query_text_panels_read_the_captured_property():
+    queries = insights._queries("86400s")
+    for name in ("top_queries", "zero_result_queries", "describe_queries"):
+        assert "Properties.query_text" in queries[name], name
+    assert '"brand"' in queries["filter_values"]
+    assert '"dateFrom"' not in queries["filter_values"]
 
 
 def test_queries_contain_no_format_placeholders():

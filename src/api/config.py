@@ -116,9 +116,9 @@ class Settings(BaseSettings):
     applicationinsights_connection_string: str | None = None
     telemetry_enabled: bool = True
     telemetry_sampling_ratio: float = 1.0
-    # Free-text search input is user-supplied content on a public site; only
-    # derived attributes (length, term count) are recorded unless this is on.
-    analytics_capture_query_text: bool = False
+    # Records the raw text of keyword/describe searches and free-text filter
+    # values on search events. Off: only length and term count are kept.
+    analytics_capture_query_text: bool = True
     # Salt for hashing the client address when no client-supplied session id is
     # present. Rotate to break linkability across deployments.
     analytics_salt: str = ""

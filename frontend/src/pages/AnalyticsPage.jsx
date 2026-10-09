@@ -1,5 +1,4 @@
-// Unlisted usage dashboard. Not linked from the header on purpose — see the
-// README. Everything shown here is aggregate: counts, rates and percentiles.
+// Unlisted usage dashboard, linked only from the footer — see the README.
 
 import { useState } from 'react';
 import BarList from '../components/charts/BarList.jsx';
@@ -22,6 +21,7 @@ const FILTER_LABELS = {
   brand: 'Brand',
   fanciful: 'Fanciful name',
   applicant: 'Applicant',
+  business: 'Business',
   permit: 'Permit number',
   permitName: 'Permit name',
   permitState: 'Permit state',
@@ -37,19 +37,57 @@ const FILTER_LABELS = {
   status: 'Status',
   dateFrom: 'Date from',
   dateTo: 'Date to',
+  appellation: 'Appellation',
+  formula: 'Formula',
+  submittedFrom: 'Submitted from',
+  submittedTo: 'Submitted to',
 };
+
+const LATENCY_COLORS = [
+  'var(--accent)',
+  'var(--mint)',
+  'var(--green)',
+  'var(--gold-dark)',
+  'var(--red)',
+  'var(--base-dark)',
+];
 
 const num = (n) => Number(n || 0).toLocaleString();
 const pct = (n) => `${Number(n || 0).toFixed(1)}%`;
 const ms = (n) => `${Math.round(Number(n || 0))} ms`;
 
 /* ---------- Card ---------- */
-function Card({ title, children }) {
+function Card({ title, actions, children }) {
   return (
     <section className="an-card panel">
-      <h2>{title}</h2>
+      {actions ? (
+        <div className="an-card-head">
+          <h2>{title}</h2>
+          {actions}
+        </div>
+      ) : (
+        <h2>{title}</h2>
+      )}
       {children}
     </section>
+  );
+}
+
+function Seg({ label, options, value, onChange }) {
+  return (
+    <div className="seg" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          className={value === o.key ? 'active' : ''}
+          aria-pressed={value === o.key}
+          onClick={() => onChange(o.key)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -79,6 +117,59 @@ function LatencyTable({ rows }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/* ---------- Latency card: table or per-endpoint series ---------- */
+function LatencyCard({ rows, overTime }) {
+  const [view, setView] = useState('table');
+  const [metric, setMetric] = useState('p95');
+  const series = (overTime?.endpoints || []).map((endpoint, i) => ({
+    key: endpoint,
+    label: endpoint,
+    color: LATENCY_COLORS[i % LATENCY_COLORS.length],
+  }));
+
+  return (
+    <Card
+      title="Response time by endpoint"
+      actions={
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {view === 'chart' ? (
+            <Seg
+              label="Percentile"
+              value={metric}
+              onChange={setMetric}
+              options={[
+                { key: 'p50', label: 'p50' },
+                { key: 'p95', label: 'p95' },
+              ]}
+            />
+          ) : null}
+          <Seg
+            label="View"
+            value={view}
+            onChange={setView}
+            options={[
+              { key: 'table', label: 'Table' },
+              { key: 'chart', label: 'Over time' },
+            ]}
+          />
+        </div>
+      }
+    >
+      {view === 'table' ? (
+        <LatencyTable rows={rows} />
+      ) : (
+        <TimeSeries
+          label={`${metric} response time per endpoint over time, in milliseconds`}
+          points={overTime?.[metric]}
+          series={series}
+          format={ms}
+          toggleable
+        />
+      )}
+    </Card>
   );
 }
 
@@ -130,13 +221,7 @@ export default function AnalyticsPage() {
   return (
     <div className="wrap an-page">
       <div className="an-head">
-        <div>
-          <h1>Usage dashboard</h1>
-          <p className="an-caption">
-            Aggregate, de-identified usage of this site. No personal information is
-            collected or shown.
-          </p>
-        </div>
+        <h1>Usage dashboard</h1>
         <div className="seg" role="group" aria-label="Time range">
           {RANGES.map((r) => (
             <button
@@ -235,6 +320,28 @@ export default function AnalyticsPage() {
               <BarList items={panels.sortUsage} color="var(--mint)" />
             </Card>
 
+            <Card title="Top keyword searches">
+              <BarList items={panels.topQueries} />
+            </Card>
+
+            <Card title="Keyword searches with no results">
+              <BarList items={panels.zeroResultQueries} color="var(--red)" />
+            </Card>
+
+            <Card title="Top filter values">
+              <BarList
+                items={(panels.filterValues || []).map((r) => ({
+                  label: `${FILTER_LABELS[r.filter] || r.filter}: ${r.value}`,
+                  count: r.count,
+                }))}
+                color="var(--mint)"
+              />
+            </Card>
+
+            <Card title="Top artwork descriptions">
+              <BarList items={panels.describeQueries} color="var(--gold-dark)" />
+            </Card>
+
             <Card title="Most-viewed records">
               <TopColas rows={panels.topColas} />
             </Card>
@@ -247,9 +354,7 @@ export default function AnalyticsPage() {
               <BarList items={panels.originUsage} color="var(--green)" />
             </Card>
 
-            <Card title="Response time by endpoint">
-              <LatencyTable rows={panels.latency} />
-            </Card>
+            <LatencyCard rows={panels.latency} overTime={panels.latencyOverTime} />
 
             <Card title="Request failures">
               <TimeSeries

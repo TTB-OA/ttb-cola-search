@@ -55,17 +55,34 @@ function formatters(points) {
 
 const fmtValue = (v) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-export default function TimeSeries({ points, series, label }) {
+// A key missing from a point is a gap (nothing measured), not a zero.
+const valueOf = (p, key) => {
+  const v = p.values?.[key];
+  return v === undefined || v === null ? null : Number(v);
+};
+
+export default function TimeSeries({ points, series, label, format = fmtValue, toggleable = false }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
+  const [hidden, setHidden] = useState(() => new Set());
 
   if (!points || points.length === 0) {
     return <p className="muted an-note">No data for this range yet.</p>;
   }
 
+  const shown = series.filter((s) => !hidden.has(s.key));
+  const toggle = (key) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+
   const max = niceMax(
     Math.max(
-      ...points.map((p) => Math.max(...series.map((s) => Number(p.values?.[s.key] ?? 0))))
+      0,
+      ...points.flatMap((p) => shown.map((s) => valueOf(p, s.key) ?? 0))
     )
   );
   const innerW = W - PAD.left - PAD.right;
@@ -76,8 +93,31 @@ export default function TimeSeries({ points, series, label }) {
   const x = (i) => PAD.left + i * stepX;
   const y = (v) => PAD.top + innerH - (Number(v) / max) * innerH;
 
-  const path = (key) =>
-    points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(p.values?.[key] ?? 0)}`).join(' ');
+  const path = (key) => {
+    let pen = 'M';
+    let d = '';
+    points.forEach((p, i) => {
+      const v = valueOf(p, key);
+      if (v === null) {
+        pen = 'M';
+        return;
+      }
+      d += `${pen}${x(i)},${y(v)} `;
+      pen = 'L';
+    });
+    return d.trim();
+  };
+
+  // Points with no neighbour on either side produce no stroked segment.
+  const isolated = (key) =>
+    points
+      .map((p, i) => i)
+      .filter(
+        (i) =>
+          valueOf(points[i], key) !== null &&
+          (i === 0 || valueOf(points[i - 1], key) === null) &&
+          (i === points.length - 1 || valueOf(points[i + 1], key) === null)
+      );
 
   const ticks = [0, max / 2, max];
   // Cap the axis at a handful of labels so they never collide.
@@ -150,20 +190,20 @@ export default function TimeSeries({ points, series, label }) {
             </text>
           ) : null
         )}
-        {series.map((s) => (
+        {shown.map((s) => (
           <path key={s.key} className="an-line" d={path(s.key)} stroke={s.color} fill="none" />
         ))}
-        {/* A lone bucket produces a path with no segment to stroke, so mark it. */}
-        {points.length === 1 &&
-          series.map((s) => (
+        {shown.flatMap((s) =>
+          isolated(s.key).map((i) => (
             <circle
-              key={s.key}
-              cx={x(0)}
-              cy={y(points[0].values?.[s.key] ?? 0)}
+              key={`${s.key}-${i}`}
+              cx={x(i)}
+              cy={y(valueOf(points[i], s.key))}
               r="3"
               fill={s.color}
             />
-          ))}
+          ))
+        )}
         {active ? (
           <g pointerEvents="none">
             <line
@@ -173,16 +213,18 @@ export default function TimeSeries({ points, series, label }) {
               y1={PAD.top}
               y2={PAD.top + innerH}
             />
-            {series.map((s) => (
-              <circle
-                key={s.key}
-                className="an-dot"
-                cx={x(hover)}
-                cy={y(active.values?.[s.key] ?? 0)}
-                r="3.5"
-                fill={s.color}
-              />
-            ))}
+            {shown.map((s) =>
+              valueOf(active, s.key) === null ? null : (
+                <circle
+                  key={s.key}
+                  className="an-dot"
+                  cx={x(hover)}
+                  cy={y(valueOf(active, s.key))}
+                  r="3.5"
+                  fill={s.color}
+                />
+              )
+            )}
           </g>
         ) : null}
       </svg>
@@ -193,11 +235,13 @@ export default function TimeSeries({ points, series, label }) {
           style={{ left: `${tipAt * 100}%`, transform: `translateX(${tipShift})` }}
         >
           <div className="an-tip-when">{fullLabel(active.t)}</div>
-          {series.map((s) => (
+          {shown.map((s) => (
             <div key={s.key} className="an-tip-row">
               <span className="an-swatch" style={{ background: s.color }} />
               {s.label}
-              <span className="an-tip-val">{fmtValue(active.values?.[s.key] ?? 0)}</span>
+              <span className="an-tip-val">
+                {valueOf(active, s.key) === null ? '—' : format(valueOf(active, s.key))}
+              </span>
             </div>
           ))}
         </div>
@@ -205,8 +249,23 @@ export default function TimeSeries({ points, series, label }) {
       <ul className="an-legend">
         {series.map((s) => (
           <li key={s.key}>
-            <span className="an-swatch" style={{ background: s.color }} />
-            {s.label}
+            {toggleable ? (
+              <button
+                type="button"
+                className={`an-legend-toggle${hidden.has(s.key) ? ' off' : ''}`}
+                aria-pressed={!hidden.has(s.key)}
+                onClick={() => toggle(s.key)}
+                title={s.label}
+              >
+                <span className="an-swatch" style={{ background: s.color }} />
+                {s.label}
+              </button>
+            ) : (
+              <>
+                <span className="an-swatch" style={{ background: s.color }} />
+                {s.label}
+              </>
+            )}
           </li>
         ))}
       </ul>

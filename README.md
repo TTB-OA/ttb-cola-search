@@ -156,7 +156,7 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | unset | unset disables all export; Bicep injects it in Azure |
 | `TELEMETRY_ENABLED` | `true` | master switch |
 | `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
-| `ANALYTICS_CAPTURE_QUERY_TEXT` | `false` | records raw `q` text when on — needs privacy sign-off |
+| `ANALYTICS_CAPTURE_QUERY_TEXT` | `true` | records keyword/describe search text and free-text filter values; `false` keeps only length and term count |
 | `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
 | `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the unlisted `/analytics` page; see below before enabling |
 | `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
@@ -338,25 +338,26 @@ vendor as a side effect of the routing scheme.
 | `frontend/src/pages/AnalyticsPage.jsx` | The unlisted `/analytics` page |
 
 Server-derived events (`search_performed`, `detail_viewed`, `similar_requested`,
-`image_search_performed`) need no client cooperation, so they survive ad
+`image_search_performed`, `describe_search_performed`) need no client
+cooperation, so they survive ad
 blockers. Client events cover only interactions that produce no request —
 opening the advanced panel, switching label faces, or following the outbound
 COLA download link.
 
 **What is recorded**
 
-- Which filters were used, as *names* (`filters_used=brand,commodity`), plus the
-  filter count, sort, page, page size, and result total.
-- Values only for closed vocabularies (`commodity`, `source`, `origin`,
-  `status`) — these are drawn from a fixed reference list.
-- For free text: `has_query`, `query_length`, and `term_count` — the shape of the
-  query, not its content.
+- Which filters were used (`filters_used=brand,commodity`), plus the filter
+  count, sort, page, page size, and result total.
+- Values for closed vocabularies (`commodity`, `source`, `origin`, `status`).
+- While `ANALYTICS_CAPTURE_QUERY_TEXT` is on (the default): the keyword text
+  (`query_text`), the artwork description on describe searches, and every
+  free-text filter value under its parameter name (`brand`, `applicant`,
+  `permit`, `labelText`, ...), each capped at 200 characters. With it off, only
+  `has_query`, `query_length`, and `term_count` are kept.
 - Latency, status code, and a session identifier.
 
 **What is not recorded**
 
-- The text typed into `q` or any other free-text field, unless
-  `ANALYTICS_CAPTURE_QUERY_TEXT` is explicitly enabled.
 - IP addresses. `DisableIpMasking` is left off in Bicep, so Azure masks them.
 - Anything durable about a visitor. The session id comes from `sessionStorage`
   and dies with the tab; when the SPA cannot supply one, the fallback is a
@@ -373,7 +374,9 @@ the search funnel, zero-result rate, filter popularity, and latency percentiles.
 
 Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
 aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
-and sort popularity, most-viewed records, latency percentiles, and image-search
+and sort popularity, top keyword searches (overall and with no results), top
+filter values and artwork descriptions, most-viewed records, latency percentiles
+per endpoint (as a table or over time), and image-search
 volume. It reads Log Analytics directly; the application database is touched
 only to turn the top COLA ids into brand names.
 
@@ -396,11 +399,12 @@ Enabling it takes three things:
 
 Things worth knowing before you turn it on:
 
-- **Unlisted is not access control.** The page is absent from the header and the
-  sitemap, but `GET /api/analytics/dashboard` is reachable by anyone who guesses
-  the URL. It returns aggregates only — no record-level or visitor-level data —
-  but if that is not acceptable, put Container Apps EasyAuth in front of the app
-  rather than relying on obscurity. Disabled deployments return **404**, not 403,
+- **Unlisted is not access control.** The page is linked only from the footer
+  and absent from the sitemap, and `GET /api/analytics/dashboard` is reachable
+  by anyone. It returns aggregates plus the most frequent search text and filter
+  values (which can include whatever visitors typed) — no visitor-level data.
+  If that is not acceptable, put Container Apps EasyAuth in front of the app.
+  Disabled deployments return **404**, not 403,
   so they do not advertise the feature.
 - **History is bounded by retention.** `infra/main.bicep` extends `AppEvents`,
   `AppRequests` and `AppDependencies` to `appInsightsRetentionDays` (90 by

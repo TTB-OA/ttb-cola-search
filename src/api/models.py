@@ -398,6 +398,21 @@ class LatencyRow(ApiModel):
     p99: float
 
 
+class LatencySeries(ApiModel):
+    """Per-endpoint percentiles over time. Point values are keyed by endpoint;
+    a key is absent for a bucket in which that endpoint saw no requests."""
+
+    endpoints: list[str] = []
+    p50: list[TimePoint] = []
+    p95: list[TimePoint] = []
+
+
+class FilterValueCount(ApiModel):
+    filter: str
+    value: str
+    count: int
+
+
 class TopCola(ApiModel):
     cola_id: str
     views: int
@@ -414,10 +429,15 @@ class DashboardPanels(ApiModel):
     filter_usage: list[NamedCount] | None = None
     paging_depth: list[NamedCount] | None = None
     sort_usage: list[NamedCount] | None = None
+    top_queries: list[NamedCount] | None = None
+    zero_result_queries: list[NamedCount] | None = None
+    filter_values: list[FilterValueCount] | None = None
+    describe_queries: list[NamedCount] | None = None
     top_colas: list[TopCola] | None = None
     commodity_usage: list[NamedCount] | None = None
     origin_usage: list[NamedCount] | None = None
     latency: list[LatencyRow] | None = None
+    latency_over_time: LatencySeries | None = None
     reliability: list[TimePoint] | None = None
     status_codes: list[NamedCount] | None = None
     image_search_over_time: list[TimePoint] | None = None

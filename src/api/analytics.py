@@ -4,9 +4,9 @@ Everything here is pure and synchronous so it can be unit tested without a
 server, a database, or an exporter. The only side-effecting function is
 :func:`emit`, which writes a structured log record that Azure Monitor picks up.
 
-Collection policy: record *which* filters a user reached for, never *what* they
-typed. Free-text values are reduced to length and term count unless
-``analytics_capture_query_text`` is explicitly enabled.
+Collection policy: record which filters a user reached for and, while
+``analytics_capture_query_text`` is on (the default), what they typed. With it
+off, free-text values are reduced to length and term count.
 """
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
     ("GET", "/colas/{cola_id}"): "detail_viewed",
     ("GET", "/colas/{cola_id}/similar"): "similar_requested",
     ("POST", "/search/image"): "image_search_performed",
+    ("GET", "/search/describe"): "describe_search_performed",
     ("GET", "/map/points"): "map_viewport_loaded",
     ("GET", "/map/area"): "map_area_summarized",
 }
@@ -41,8 +42,8 @@ EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
 def route_key(method: str, path: str) -> tuple[str, str]:
     return method, path.removeprefix(API_PREFIX)
 
-# Query params that represent a user-applied filter. Names are recorded, values
-# are not (except for the low-cardinality enums in FILTER_VALUE_KEYS).
+# Query params that represent a user-applied filter. Names are always recorded;
+# values only for FILTER_VALUE_KEYS unless free-text capture is on.
 FILTER_KEYS = (
     "q",
     "ttbId",
@@ -72,6 +73,12 @@ FILTER_KEYS = (
 
 # Closed vocabularies, safe to record verbatim.
 FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status")
+
+# User-typed filter values, recorded under their own param name when capture is
+# on. `q` is excluded: it is recorded as `query_text`.
+TEXT_FILTER_KEYS = tuple(k for k in FILTER_KEYS if k != "q" and k not in FILTER_VALUE_KEYS)
+
+_MAX_TEXT = 200
 
 # Map filters are a subset of the search ones plus the two map-only controls.
 MAP_FILTER_KEYS = (
@@ -119,10 +126,18 @@ def _int(params: Mapping[str, str], key: str, default: int) -> int:
         return default
 
 
+def _query_shape(q: str) -> dict[str, Any]:
+    return {
+        "has_query": bool(q),
+        "query_length": len(q),
+        "term_count": len(q.split()) if q else 0,
+    }
+
+
 def shape_search_event(
     params: Mapping[str, str], *, capture_query_text: bool = False
 ) -> dict[str, Any]:
-    """Attributes for a `GET /api/colas` call, with free text reduced away."""
+    """Attributes for a `GET /api/colas` call."""
     used = [k for k in FILTER_KEYS if (params.get(k) or "").strip()]
     q = (params.get("q") or "").strip()
 
@@ -133,16 +148,33 @@ def shape_search_event(
         "page": _int(params, "page", 1),
         "page_size": _int(params, "pageSize", 24),
         "facets_requested": (params.get("facets") or "true").lower() != "false",
-        "has_query": bool(q),
-        "query_length": len(q),
-        "term_count": len(q.split()) if q else 0,
+        **_query_shape(q),
     }
     for key in FILTER_VALUE_KEYS:
         value = (params.get(key) or "").strip()
         if value:
             attrs[key] = value[:64]
+    if capture_query_text:
+        if q:
+            attrs["query_text"] = q[:_MAX_TEXT]
+        for key in TEXT_FILTER_KEYS:
+            value = (params.get(key) or "").strip()
+            if value:
+                attrs[key] = value[:_MAX_TEXT]
+    return attrs
+
+
+def shape_describe_event(
+    params: Mapping[str, str], *, capture_query_text: bool = False
+) -> dict[str, Any]:
+    """Attributes for a `GET /api/search/describe` (text-to-image) call."""
+    q = (params.get("q") or "").strip()
+    attrs: dict[str, Any] = {"limit": _int(params, "limit", 48), **_query_shape(q)}
+    commodity = (params.get("commodity") or "").strip()
+    if commodity:
+        attrs["commodity"] = commodity[:64]
     if capture_query_text and q:
-        attrs["query_text"] = q[:200]
+        attrs["query_text"] = q[:_MAX_TEXT]
     return attrs
 
 

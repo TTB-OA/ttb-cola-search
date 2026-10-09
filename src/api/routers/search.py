@@ -387,6 +387,7 @@ async def search_by_description(
     commodity_code = COMMODITY_CODE.get(commodity) if commodity else None
     cached = cached_describe((commodity_code, limit, key))
     if cached is not None:
+        request.state.analytics = {"result_total": len(cached), "zero_results": not cached}
         return SearchResponse(items=cached, total=len(cached), page=1, page_size=limit)
     vector_literal = cached_query_vector(key)
 
@@ -416,6 +417,7 @@ async def search_by_description(
         min_candidates=_ANN_MIN_CANDIDATES_TEXT,
     )
     store_describe((commodity_code, limit, key), items)
+    request.state.analytics = {"result_total": len(items), "zero_results": not items}
     return SearchResponse(items=items, total=len(items), page=1, page_size=limit)
 
 

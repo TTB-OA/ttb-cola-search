@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import Icon from './Icon.jsx';
 
 export default function Footer() {
@@ -38,6 +39,13 @@ export default function Footer() {
             rel="noopener noreferrer"
           >
             COLA Resources <Icon name="external" size={14} />
+          </a>
+        </nav>
+        <nav className="foot-links">
+          <h4>This site</h4>
+          <Link to="/analytics">Analytics</Link>
+          <a href="/docs" target="_blank" rel="noopener noreferrer">
+            API <Icon name="external" size={14} />
           </a>
         </nav>
       </div>

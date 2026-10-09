@@ -20,6 +20,7 @@ from .analytics import (
     emit,
     route_key,
     session_id_from,
+    shape_describe_event,
     shape_detail_event,
     shape_image_search_event,
     shape_map_event,
@@ -155,6 +156,10 @@ def _record_event(
             )
         elif name == "detail_viewed":
             attrs |= shape_detail_event(request.scope.get("path_params") or {})
+        elif name == "describe_search_performed":
+            attrs |= shape_describe_event(
+                params, capture_query_text=settings.analytics_capture_query_text
+            )
         elif name == "similar_requested":
             attrs |= shape_similar_event(params)
         elif name == "image_search_performed":

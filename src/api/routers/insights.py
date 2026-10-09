@@ -1,8 +1,8 @@
 """Unlisted usage dashboard.
 
-Serves aggregate numbers only — counts, rates and percentiles read back out of
-Log Analytics. No row here identifies a person: the underlying events carry a
-pseudonymous session id and nothing else.
+Serves aggregates read back out of Log Analytics: counts, rates, percentiles,
+and the most frequent search text and filter values. Sessions appear only as a
+pseudonymous id inside counts; no row is tied to a visitor.
 
 The endpoint is off unless ``analytics_dashboard_enabled`` is set, and returns
 404 (not 403) when off so a disabled deployment leaks nothing about its
@@ -25,7 +25,9 @@ from ..models import (
     DashboardData,
     DashboardPanels,
     DashboardTotals,
+    FilterValueCount,
     LatencyRow,
+    LatencySeries,
     NamedCount,
     TimePoint,
     TopCola,
@@ -61,13 +63,55 @@ def _num(value: Any) -> float:
         return 0.0
 
 
-def _counts(rows: list[dict[str, Any]], key: str) -> list[NamedCount]:
+def _counts(rows: list[dict[str, Any]], key: str, width: int = 64) -> list[NamedCount]:
     out = []
     for row in rows:
         label = str(row.get(key) or "").strip()
         if label:
-            out.append(NamedCount(label=label[:64], count=int(row.get("count_") or 0)))
+            out.append(NamedCount(label=label[:width], count=int(row.get("count_") or 0)))
     return out
+
+
+def _filter_values(rows: list[dict[str, Any]]) -> list[FilterValueCount]:
+    out = []
+    for row in rows:
+        name = str(row.get("filter") or "").strip()
+        value = str(row.get("value") or "").strip()
+        if name and value:
+            out.append(
+                FilterValueCount(
+                    filter=name[:40], value=value[:120], count=int(row.get("count_") or 0)
+                )
+            )
+    return out
+
+
+def _latency_series(rows: list[dict[str, Any]]) -> LatencySeries:
+    """Pivot (bucket, endpoint) rows into one point per bucket per percentile.
+
+    Endpoints missing from a bucket stay absent rather than zero: no requests is
+    not a fast response.
+    """
+    volume: dict[str, int] = {}
+    p50: dict[datetime, dict[str, float]] = {}
+    p95: dict[datetime, dict[str, float]] = {}
+    for row in rows:
+        when = _moment(row.get("TimeGenerated"))
+        endpoint = str(row.get("endpoint") or "").strip()[:80]
+        if when is None or not endpoint:
+            continue
+        volume[endpoint] = volume.get(endpoint, 0) + int(row.get("requests") or 0)
+        p50.setdefault(when, {})[endpoint] = _num(row.get("p50"))
+        p95.setdefault(when, {})[endpoint] = _num(row.get("p95"))
+
+    def points(by_t: dict[datetime, dict[str, float]]) -> list[TimePoint]:
+        return [TimePoint(t=t, values=v) for t, v in sorted(by_t.items())]
+
+    return LatencySeries(
+        endpoints=sorted(volume, key=lambda e: -volume[e]),
+        p50=points(p50),
+        p95=points(p95),
+    )
 
 
 def _moment(value: Any) -> datetime | None:
@@ -186,6 +230,10 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
         filter_usage=_counts(panels.get("filter_usage") or [], "filter"),
         paging_depth=_counts(panels.get("paging_depth") or [], "page"),
         sort_usage=_counts(panels.get("sort_usage") or [], "sort"),
+        top_queries=_counts(panels.get("top_queries") or [], "query", 200),
+        zero_result_queries=_counts(panels.get("zero_result_queries") or [], "query", 200),
+        filter_values=_filter_values(panels.get("filter_values") or []),
+        describe_queries=_counts(panels.get("describe_queries") or [], "query", 200),
         top_colas=await _enrich_colas(panels.get("top_colas") or []),
         commodity_usage=_counts(panels.get("commodity_usage") or [], "commodity"),
         origin_usage=_counts(panels.get("origin_usage") or [], "origin"),
@@ -199,6 +247,7 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
             )
             for r in latency_rows
         ],
+        latency_over_time=_latency_series(panels.get("latency_over_time") or []),
         reliability=_series(panels.get("reliability") or [], ("total", "failed"), step),
         status_codes=_counts(panels.get("status_codes") or [], "code"),
         image_search_over_time=_series(

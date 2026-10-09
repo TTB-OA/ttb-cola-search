@@ -4,9 +4,6 @@ The KQL below is fixed at import time. Nothing a caller supplies is ever
 interpolated into a query: the only knob is the time range, which is resolved
 through :data:`RANGES` into a ``timedelta``. That is the injection boundary for
 this module, and it is deliberately the only one.
-
-Raw search text is never projected, even when ``analytics_capture_query_text``
-is enabled, so turning that setting on cannot leak user input into the page.
 """
 from __future__ import annotations
 
@@ -16,6 +13,7 @@ import time
 from datetime import timedelta
 from typing import Any
 
+from .analytics import TEXT_FILTER_KEYS
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -45,6 +43,14 @@ _BUCKETS: dict[str, str] = {
 }
 
 _SERVER_EVENTS = '"search_performed", "detail_viewed", "similar_requested", "image_search_performed"'
+
+# Dates are ranges, not something worth ranking.
+_RANKED_FILTERS = ", ".join(
+    f'"{k}"' for k in TEXT_FILTER_KEYS if not k.endswith(("From", "To"))
+)
+
+# Endpoints charted over time; more lines than this stop being readable.
+LATENCY_SERIES_LIMIT = 6
 
 
 def _queries(bucket: str) -> dict[str, str]:
@@ -102,6 +108,40 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize count() by sort = tostring(Properties.sort)
             | top 10 by count_ desc
         """,
+        # Page 1 only: paging through one query should count it once.
+        "top_queries": """
+            AppEvents
+            | where Name == "search_performed" and toint(Properties.page) == 1
+            | extend query = tolower(tostring(Properties.query_text))
+            | where isnotempty(query)
+            | summarize count() by query
+            | top 15 by count_ desc
+        """,
+        "zero_result_queries": """
+            AppEvents
+            | where Name == "search_performed" and tobool(Properties.zero_results)
+            | extend query = tolower(tostring(Properties.query_text))
+            | where isnotempty(query)
+            | summarize count() by query
+            | top 15 by count_ desc
+        """,
+        "filter_values": f"""
+            AppEvents
+            | where Name == "search_performed" and toint(Properties.page) == 1
+            | mv-expand filter = dynamic([{_RANKED_FILTERS}]) to typeof(string)
+            | extend value = tolower(tostring(Properties[filter]))
+            | where isnotempty(value)
+            | summarize count() by filter, value
+            | top 15 by count_ desc
+        """,
+        "describe_queries": """
+            AppEvents
+            | where Name == "describe_search_performed"
+            | extend query = tolower(tostring(Properties.query_text))
+            | where isnotempty(query)
+            | summarize count() by query
+            | top 15 by count_ desc
+        """,
         # --- Content insights -----------------------------------------------
         "top_colas": """
             AppEvents
@@ -137,6 +177,21 @@ def _queries(bucket: str) -> dict[str, str]:
                 p99 = percentile(DurationMs, 99)
               by endpoint = Name
             | top 12 by p95 desc
+        """,
+        "latency_over_time": f"""
+            let busiest = AppRequests
+                | where Name contains " /api/" and Name != "POST /api/events"
+                | summarize n = count() by Name
+                | top {LATENCY_SERIES_LIMIT} by n desc
+                | project Name;
+            AppRequests
+            | where Name in (busiest)
+            | summarize
+                requests = count(),
+                p50 = percentile(DurationMs, 50),
+                p95 = percentile(DurationMs, 95)
+              by bin(TimeGenerated, {bucket}), endpoint = Name
+            | order by TimeGenerated asc
         """,
         "reliability": f"""
             AppRequests

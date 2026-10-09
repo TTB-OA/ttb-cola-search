@@ -9,6 +9,7 @@ from src.api.analytics import (
     hash_identifier,
     route_key,
     session_id_from,
+    shape_describe_event,
     shape_detail_event,
     shape_image_search_event,
     shape_search_event,
@@ -25,7 +26,7 @@ class FakeRequest:
         self.client = type("C", (), {"host": host})()
 
 
-def test_search_event_records_filter_names_not_values():
+def test_search_event_records_filter_names_not_values_when_capture_is_off():
     attrs = shape_search_event(
         {"q": "napa cabernet", "brand": "Acme", "labelText": "sulfites", "commodity": "wine"}
     )
@@ -33,6 +34,44 @@ def test_search_event_records_filter_names_not_values():
     assert attrs["filter_count"] == 4
     assert "Acme" not in str(attrs)
     assert "sulfites" not in str(attrs)
+
+
+def test_search_event_records_free_text_values_when_capture_is_on():
+    attrs = shape_search_event(
+        {"q": " napa cabernet ", "brand": "Acme", "labelText": "sulfites", "permit": "  "},
+        capture_query_text=True,
+    )
+    assert attrs["query_text"] == "napa cabernet"
+    assert attrs["brand"] == "Acme"
+    assert attrs["labelText"] == "sulfites"
+    assert "permit" not in attrs
+    assert "q" not in attrs
+
+
+def test_captured_text_is_bounded():
+    attrs = shape_search_event({"q": "x" * 500, "brand": "y" * 500}, capture_query_text=True)
+    assert len(attrs["query_text"]) == 200
+    assert len(attrs["brand"]) == 200
+
+
+def test_describe_event_shape():
+    params = {"q": "red fox on a hill", "commodity": "wine", "limit": "24"}
+    assert shape_describe_event(params) == {
+        "limit": 24,
+        "has_query": True,
+        "query_length": 17,
+        "term_count": 5,
+        "commodity": "wine",
+    }
+    assert shape_describe_event(params, capture_query_text=True)["query_text"] == (
+        "red fox on a hill"
+    )
+
+
+def test_describe_route_is_a_product_event():
+    assert EVENT_BY_ROUTE[route_key("GET", "/api/search/describe")] == (
+        "describe_search_performed"
+    )
 
 
 def test_search_event_reduces_free_text_to_derived_attributes():
