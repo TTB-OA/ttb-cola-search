@@ -11,7 +11,12 @@ from ..blob import read_blob
 from ..config import get_settings
 from ..db import fetch_all
 from ..forms.f510031 import LabelImage, render_f510031
-from ..mappers import image_display_order_sql, image_face, visual_interest_join_sql
+from ..mappers import (
+    image_display_order_sql,
+    image_face,
+    visible_image_sql,
+    visual_interest_join_sql,
+)
 from ..ratelimit import SlidingWindowLimiter, client_key
 from .colas import load_detail
 
@@ -43,6 +48,7 @@ async def _label_images(cola_id: str) -> list[LabelImage]:
         "FROM cola_images ci "
         f"{visual_interest_join_sql('ci')} "
         "WHERE ci.cola_id = %s AND ci.blob_name IS NOT NULL "
+        f"AND {visible_image_sql('ci')} "
         f"ORDER BY {image_display_order_sql('ci')} LIMIT %s",
         [cola_id, MAX_FORM_IMAGES],
     )

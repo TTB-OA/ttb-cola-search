@@ -178,6 +178,18 @@ def image_face(img_type: str | None) -> str:
     return (img_type or "other").strip().lower()
 
 
+# A paper COLA's scan of the whole form stays visible only until scan_extract has
+# cut its labels out into rows of their own (source_file_name points back at the
+# sheet); after that the crops stand in for it. Written to stay true for a LEFT
+# JOIN miss, where image_role is NULL.
+def visible_image_sql(alias: str) -> str:
+    return (
+        f"({alias}.image_role <> 'form_scan' OR NOT EXISTS ("
+        f"SELECT 1 FROM cola_images cut WHERE cut.cola_id = {alias}.cola_id "
+        f"AND cut.source_file_name = {alias}.file_name AND cut.blob_name IS NOT NULL))"
+    )
+
+
 # Fallback display order for label artwork: the brand/keg-collar face first, then
 # the back, then everything else. cola_images.img_type stores "Brand (front) or keg
 # collar" as a single value, so these match on substrings rather than equality. strpos

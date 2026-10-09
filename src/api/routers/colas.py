@@ -31,6 +31,7 @@ from ..mappers import (
     select_columns,
     source_label,
     summary_from_row,
+    visible_image_sql,
     visual_interest_join_sql,
 )
 from ..models import ColaDetail, FacetBucket, Facets, SearchResponse
@@ -904,7 +905,7 @@ async def load_detail(cola_id: str) -> ColaDetail:
         "vi.visual_interest_score, vi.visual_interest_rank "
         "FROM cola_images ci "
         f"{visual_interest_join_sql('ci')} "
-        "WHERE ci.cola_id = %s "
+        f"WHERE ci.cola_id = %s AND {visible_image_sql('ci')} "
         f"ORDER BY {image_display_order_sql('ci')}",
         [cola_id],
     )
@@ -913,7 +914,7 @@ async def load_detail(cola_id: str) -> ColaDetail:
         "i.bounding_box, i.analysis_model, img.img_type, img.width_px, img.height_px "
         "FROM image_analysis_items i "
         "LEFT JOIN cola_images img ON img.cola_id = i.cola_id AND img.file_name = i.file_name "
-        "WHERE i.cola_id = %s ORDER BY i.id",
+        f"WHERE i.cola_id = %s AND {visible_image_sql('img')} ORDER BY i.id",
         [cola_id],
     )
     locations, geo_status = await _geocoding(cola_id)
