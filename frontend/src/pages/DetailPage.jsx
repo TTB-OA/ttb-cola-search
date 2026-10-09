@@ -170,7 +170,7 @@ function isBlank(value) {
 
 // Fields with nothing behind them are dropped rather than shown as an em dash,
 // and a section that ends up with no fields at all disappears with them.
-function FieldSection({ title, fields = [], children }) {
+function FieldSection({ title, fields = [], hl, children }) {
   const shown = fields.filter((f) => f && !isBlank(f.value));
   if (!shown.length && !children) return null;
   return (
@@ -181,7 +181,9 @@ function FieldSection({ title, fields = [], children }) {
           {shown.map((f) => (
             <div className="d-field" key={f.label}>
               <div className="d-label">{f.label}</div>
-              <div className={'d-value' + (f.mono ? ' mono' : '')}>{f.value}</div>
+              <div className={'d-value' + (f.mono ? ' mono' : '')}>
+                {hl && typeof f.value === 'string' ? <Highlight text={f.value} q={hl} /> : f.value}
+              </div>
             </div>
           ))}
         </div>
@@ -445,6 +447,7 @@ export default function DetailPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const q = (searchParams.get('q') || '').trim().toLowerCase();
+  const hl = (searchParams.get('q') || '').trim();
 
   const detailState = useAsync((signal) => api.getCola(id, signal), [id], { cacheKey: `cola:${id}` });
   const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id], {
@@ -612,9 +615,9 @@ export default function DetailPage() {
               <CatTag rec={rec} />
               <StatusBadge status={rec.status} />
             </div>
-            <h1 style={{ fontSize: 30 }}>{rec.brand}</h1>
+            <h1 style={{ fontSize: 30 }}><Highlight text={rec.brand} q={hl} /></h1>
             <div className="serif" style={{ fontSize: 18, fontStyle: 'italic', color: 'var(--base-darker)' }}>
-              {rec.fanciful}
+              <Highlight text={rec.fanciful} q={hl} />
             </div>
             <div className="row gap-16 wrap-flex" style={{ marginTop: 12 }}>
               <span className="mono d-ttb">TTB ID {rec.ttbId}</span>
@@ -689,6 +692,7 @@ export default function DetailPage() {
             <div className="panel d-panel" data-tour="detail-fields">
               <FieldSection
                 title="Label identity"
+                hl={hl}
                 fields={[
                   { label: 'Brand name', value: rec.brand },
                   { label: 'Fanciful name', value: rec.fanciful },
@@ -700,6 +704,7 @@ export default function DetailPage() {
 
               <FieldSection
                 title="Origin & status"
+                hl={hl}
                 fields={[
                   { label: 'Source', value: rec.originGroup },
                   {
@@ -722,6 +727,7 @@ export default function DetailPage() {
 
               <FieldSection
                 title="Application & permit"
+                hl={hl}
                 fields={[
                   { label: 'Applicant / business', value: rec.applicant },
                   // The form's own 8a answer when scraped; otherwise the permit
@@ -749,6 +755,7 @@ export default function DetailPage() {
 
               <FieldSection
                 title="Submitter"
+                hl={hl}
                 fields={[
                   { label: 'Name', value: rec.submitter },
                   { label: 'Printed name on form', value: rec.printedName !== rec.submitter ? rec.printedName : null },
@@ -781,13 +788,13 @@ export default function DetailPage() {
                       <div className="d-permit" key={p.permitId || i}>
                         <div className="row gap-8" style={{ alignItems: 'baseline' }}>
                           <span className="mono" style={{ fontWeight: 700 }}>
-                            {p.permitId || '—'}
+                            {p.permitId ? <Highlight text={p.permitId} q={hl} /> : '—'}
                           </span>
                           {p.primary && <span className="chip static">Primary</span>}
                         </div>
-                        <div style={{ fontWeight: 600 }}>{p.name}</div>
+                        <div style={{ fontWeight: 600 }}><Highlight text={p.name} q={hl} /></div>
                         <div className="muted" style={{ fontSize: 13 }}>
-                          {permitAddress(p) || '—'}
+                          {permitAddress(p) ? <Highlight text={permitAddress(p)} q={hl} /> : '—'}
                         </div>
                         {p.permitId && (
                           <a
@@ -813,7 +820,7 @@ export default function DetailPage() {
                   <ul className="d-qual-list">
                     {rec.qualificationItems.map((qi, i) => (
                       <li key={qi.id ?? i}>
-                        {qi.text}
+                        <Highlight text={qi.text} q={hl} />
                         {qi.comment && <div className="muted" style={{ fontSize: 13 }}>{qi.comment}</div>}
                       </li>
                     ))}
@@ -823,7 +830,7 @@ export default function DetailPage() {
                 rec.qualifications && (
                   <>
                     <h3 className="d-section">Qualifications</h3>
-                    <div className="d-qual">{rec.qualifications}</div>
+                    <div className="d-qual"><Highlight text={rec.qualifications} q={hl} /></div>
                   </>
                 )
               )}
