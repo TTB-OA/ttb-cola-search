@@ -309,7 +309,7 @@ function useRenderedImageRect(stageRef, src) {
 const BBOX_BORDER = 2;
 const BBOX_OUTSET = BBOX_BORDER + 1;
 
-function BoundingBox({ item, stageRef, src }) {
+function BoundingBox({ item, stageRef, src, isQueryMatch, onClear }) {
   const rect = useRenderedImageRect(stageRef, src);
   if (!rect) return null;
   const b = item.box;
@@ -321,10 +321,30 @@ function BoundingBox({ item, stageRef, src }) {
   };
   return (
     <div className="bbox" style={style}>
-      <span className="bbox-tag">
-        {String(item.type || '').replace(/_/g, ' ')}
-        {item.conf != null ? ` · ${Math.round(item.conf * 100)}%` : ''}
-      </span>
+      {isQueryMatch ? (
+        <span className="bbox-tag">
+          Query text
+          {onClear && (
+            <button
+              type="button"
+              className="bbox-clear"
+              aria-label="Clear highlight"
+              title="Clear highlight"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClear();
+              }}
+            >
+              <Icon name="close" size={11} />
+            </button>
+          )}
+        </span>
+      ) : (
+        <span className="bbox-tag">
+          {String(item.type || '').replace(/_/g, ' ')}
+          {item.conf != null ? ` · ${Math.round(item.conf * 100)}%` : ''}
+        </span>
+      )}
     </div>
   );
 }
@@ -333,7 +353,7 @@ function BoundingBox({ item, stageRef, src }) {
 // that pans with the cursor.
 const LB_ZOOM = 2.6;
 
-function Lightbox({ rec, views, file, setFile, hlItem, onClose }) {
+function Lightbox({ rec, views, file, setFile, hlItem, hlIsMatch, onClearHl, onClose }) {
   const [zoom, setZoom] = useState(null);
   const idx = Math.max(0, views.findIndex((v) => v.img.fileName === file));
   const step = (delta) => {
@@ -391,7 +411,7 @@ function Lightbox({ rec, views, file, setFile, hlItem, onClose }) {
           >
             <LabelThumb rec={rec} src={cur && cur.url} />
             {hlItem && cur && hlItem.file === cur.fileName && hasBox(hlItem) && (
-              <BoundingBox item={hlItem} stageRef={stageRef} src={cur.url} />
+              <BoundingBox item={hlItem} stageRef={stageRef} src={cur.url} isQueryMatch={hlIsMatch} onClear={onClearHl} />
             )}
           </div>
           <div className="lb-cap">
@@ -566,6 +586,7 @@ export default function DetailPage() {
   const activeView = views.find((v) => v.img.fileName === activeFile) || views[0];
   const currentImage = activeView && activeView.img;
   const showBox = !!(hlItem && currentImage && hlItem.file === currentImage.fileName && hasBox(hlItem));
+  const hlIsMatch = !!(q && hlItem && (hlItem.text || '').toLowerCase().includes(q));
   const onOpen = (rid) =>
     navigate(`/cola/${encodeURIComponent(rid)}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
   const memberPermit = rec.permitId || rec.permit;
@@ -630,7 +651,13 @@ export default function DetailPage() {
                 <div className="lv-stage" ref={mainStageRef} style={{ maxWidth: 360, margin: '0 auto', position: 'relative' }}>
                   <LabelThumb rec={rec} src={currentImage && currentImage.url} style={{ aspectRatio: '4/5' }} />
                   {showBox && (
-                    <BoundingBox item={hlItem} stageRef={mainStageRef} src={currentImage.url} />
+                    <BoundingBox
+                      item={hlItem}
+                      stageRef={mainStageRef}
+                      src={currentImage.url}
+                      isQueryMatch={hlIsMatch}
+                      onClear={() => setHlItem(null)}
+                    />
                   )}
                   <button className="lv-expand" onClick={() => { track('lightbox_opened', { face: activeView && activeView.face }); setLightbox(true); }} title="View full size" aria-label="View full size">
                     <Icon name="expand" size={16} /> Full size
@@ -943,6 +970,8 @@ export default function DetailPage() {
           file={currentImage && currentImage.fileName}
           setFile={setActiveFile}
           hlItem={hlItem}
+          hlIsMatch={hlIsMatch}
+          onClearHl={() => setHlItem(null)}
           onClose={() => setLightbox(false)}
         />
       )}

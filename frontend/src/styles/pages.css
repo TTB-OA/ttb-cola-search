@@ -233,7 +233,9 @@ section > .d-notice { margin-bottom: 0; }
 /* ---------- bounding-box highlight + OCR list ---------- */
 .bbox { position: absolute; border: 2px solid var(--gold-dark); background: rgba(255,190,46,.18); border-radius: 2px; box-shadow: 0 0 0 2000px rgba(27,27,27,.18); pointer-events: none; animation: bboxIn .25s ease; }
 @keyframes bboxIn { from { opacity: 0; transform: scale(1.06); } }
-.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: var(--on-warm); font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
+.bbox-tag { position: absolute; top: -22px; left: -2px; background: var(--gold-dark); color: var(--on-warm); font-family: var(--font-sans); font-size: 10.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; }
+.bbox-clear { pointer-events: auto; display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-right: -3px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: inherit; cursor: pointer; }
+.bbox-clear:hover, .bbox-clear:focus-visible { background: rgba(0,0,0,.18); }
 .lv-stage { overflow: visible; }
 .lv-main { overflow: hidden; position: relative; }
 .ocr-matchnote { display: flex; align-items: flex-start; gap: 7px; background: #fef5e7; border-left: 3px solid var(--gold-dark); color: #6b4a00; font-size: 12.5px; font-weight: 600; padding: 8px 10px; border-radius: var(--radius); margin: 8px 0 4px; }
