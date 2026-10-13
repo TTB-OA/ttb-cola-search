@@ -17,6 +17,8 @@ from api.routers import map as map_router  # noqa: E402
 POINTS = "/api/map/points"
 AREA = "/api/map/area"
 VIEWPORT = {"west": -125, "south": 32, "east": -114, "north": 42}
+# Past WORLD_GRID_MAX_ZOOM heat mode queries the viewport itself.
+CLOSE = {**VIEWPORT, "zoom": 8}
 
 
 @pytest.fixture(autouse=True)
@@ -35,11 +37,11 @@ def stub(monkeypatch, rows=(), one=None) -> list[tuple[str, list]]:
     """Replace the database reads; returns the (query, params) pairs issued."""
     calls: list[tuple[str, list]] = []
 
-    async def fake_fetch_all(query, params=None):
+    async def fake_fetch_all(query, params=None, **_kwargs):
         calls.append((query, list(params or [])))
         return list(rows(query) if callable(rows) else rows)
 
-    async def fake_fetch_one(query, params=None):
+    async def fake_fetch_one(query, params=None, **_kwargs):
         calls.append((query, list(params or [])))
         return one
 
@@ -82,16 +84,16 @@ def _point(cola_id: str, **overrides):
 def test_bins_are_returned_at_the_centre_of_their_cell(client, monkeypatch):
     """A bin drawn at the cell corner would sit south-west of its own records."""
     stub(monkeypatch, [_bin(0, 0, 3)])
-    body = client.get(POINTS, params={**VIEWPORT, "zoom": 0}).json()
+    body = client.get(POINTS, params=CLOSE).json()
 
-    cell = map_router._cell_size(0)
-    assert body["bins"][0]["lng"] == pytest.approx(cell / 2)
-    assert body["bins"][0]["lat"] == pytest.approx(cell / 2)
+    cell = map_router._cell_size(8)
+    assert body["bins"][0]["lng"] == pytest.approx(cell / 2, abs=1e-6)
+    assert body["bins"][0]["lat"] == pytest.approx(cell / 2, abs=1e-6)
 
 
 def test_the_total_counts_records_not_bins(client, monkeypatch):
     stub(monkeypatch, [_bin(0, 0, 7, scanned=9), _bin(1, 0, 2, scanned=9)])
-    body = client.get(POINTS, params=VIEWPORT).json()
+    body = client.get(POINTS, params=CLOSE).json()
     assert body["total"] == 9
     assert body["totalIsCapped"] is False
 
@@ -100,14 +102,14 @@ def test_the_heat_total_is_exact_not_a_floor(client, monkeypatch):
     """The grid aggregates every row in view, so there is nothing to cap."""
     cap = map_router.get_settings().map_scan_cap
     stub(monkeypatch, [_bin(0, 0, cap + 1, scanned=cap + 1)])
-    body = client.get(POINTS, params=VIEWPORT).json()
+    body = client.get(POINTS, params=CLOSE).json()
     assert body["total"] == cap + 1
     assert body["totalIsCapped"] is False
 
 
 def test_an_empty_viewport_is_not_an_error(client, monkeypatch):
     stub(monkeypatch, [])
-    body = client.get(POINTS, params=VIEWPORT).json()
+    body = client.get(POINTS, params=CLOSE).json()
     assert body["bins"] == []
     assert body["total"] == 0
 
@@ -115,7 +117,7 @@ def test_an_empty_viewport_is_not_an_error(client, monkeypatch):
 def test_the_heat_scan_is_not_capped_but_the_bins_are(client, monkeypatch):
     """An unordered row LIMIT would drop whole regions from the surface."""
     calls = stub(monkeypatch, [])
-    client.get(POINTS, params=VIEWPORT)
+    client.get(POINTS, params=CLOSE)
     assert map_router.get_settings().map_scan_cap + 1 not in bound(calls)
     assert map_router.BIN_CAP in bound(calls)
 
@@ -126,7 +128,7 @@ def test_heat_mode_stays_off_the_geography_column_when_the_covering_index_exists
     """Referencing `location` forces a heap fetch per row; at national zoom that
     is a sequential scan of the whole surface and a 504."""
     calls = stub(monkeypatch, [], one={"ok": True})
-    client.get(POINTS, params=VIEWPORT)
+    client.get(POINTS, params=CLOSE)
     query = _heat_query(calls)
     assert "ST_MakeEnvelope" not in query
     assert "longitude BETWEEN %s AND %s" in query
@@ -137,7 +139,7 @@ def test_heat_mode_keeps_the_gist_predicate_without_the_covering_index(
     client, monkeypatch
 ):
     calls = stub(monkeypatch, [], one=None)
-    client.get(POINTS, params=VIEWPORT)
+    client.get(POINTS, params=CLOSE)
     assert "ST_MakeEnvelope" in _heat_query(calls)
 
 
@@ -154,8 +156,84 @@ def test_image_mode_keeps_the_gist_predicate_even_with_the_covering_index(
 def test_the_index_probe_runs_once_rather_than_per_viewport(client, monkeypatch):
     calls = stub(monkeypatch, [], one={"ok": True})
     for _ in range(3):
-        client.get(POINTS, params=VIEWPORT)
+        client.get(POINTS, params=CLOSE)
     assert sum("to_regclass" in q for q, _p in calls) == 1
+
+
+# --- low-zoom world grid ----------------------------------------------------
+def _cell_of(lng: float, lat: float, zoom: int) -> tuple[int, int]:
+    cell = map_router._cell_size(zoom)
+    return int(lng // cell), int(lat // cell)
+
+
+def test_a_continental_view_is_built_from_one_world_grid(client, monkeypatch):
+    """No viewport bounds in the query, so every screen size shares the result."""
+    calls = stub(monkeypatch, [])
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3})
+    query = _heat_query(calls)
+    assert "latitude BETWEEN" not in query
+    assert "ST_MakeEnvelope" not in query
+    assert "location_role = %s" in query
+
+
+def test_the_world_grid_is_reused_across_viewports(client, monkeypatch):
+    calls = stub(monkeypatch, [])
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3})
+    client.get(POINTS, params={"west": -100, "south": 20, "east": -60, "north": 50, "zoom": 3})
+    assert sum("floor(" in q for q, _p in calls) == 1
+
+
+def test_filters_get_their_own_world_grid(client, monkeypatch):
+    calls = stub(monkeypatch, [])
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3})
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3, "commodity": "Wine"})
+    assert sum("floor(" in q for q, _p in calls) == 2
+    assert "wine" in bound(calls)
+
+
+def test_the_world_grid_is_clipped_to_the_viewport(client, monkeypatch):
+    inside = _cell_of(-120, 37, 3)
+    outside = _cell_of(2, 48, 3)
+    stub(monkeypatch, [_bin(*inside, 5), _bin(*outside, 40)])
+    body = client.get(POINTS, params={**VIEWPORT, "zoom": 3}).json()
+    assert [b["count"] for b in body["bins"]] == [5]
+    assert body["total"] == 5
+
+
+def test_the_world_grid_clips_across_the_antimeridian(client, monkeypatch):
+    east_side = _cell_of(175, 0, 2)
+    west_side = _cell_of(-175, 0, 2)
+    middle = _cell_of(0, 0, 2)
+    stub(monkeypatch, [_bin(*east_side, 1), _bin(*west_side, 2), _bin(*middle, 4)])
+    body = client.get(
+        POINTS, params={"west": 170, "south": -10, "east": 190, "north": 10, "zoom": 2}
+    ).json()
+    assert sorted(b["count"] for b in body["bins"]) == [1, 2]
+
+
+def test_a_stale_world_grid_is_served_while_it_rebuilds(client, monkeypatch):
+    stub(monkeypatch, [_bin(*_cell_of(-120, 37, 3), 5)])
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3})
+    key = next(iter(map_router._grid_cache))
+    built_at, cells = map_router._grid_cache[key]
+    map_router._grid_cache[key] = (built_at - 10**6, cells)
+
+    body = client.get(POINTS, params={**VIEWPORT, "zoom": 3}).json()
+    assert body["total"] == 5
+
+
+def test_the_unfiltered_world_grid_gets_the_longer_timeout(client, monkeypatch):
+    timeouts: list = []
+
+    async def fake_fetch_all(query, params=None, statement_timeout_ms=None, **_kw):
+        timeouts.append(statement_timeout_ms)
+        return []
+
+    stub(monkeypatch, [])
+    monkeypatch.setattr(map_router, "fetch_all", fake_fetch_all)
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3})
+    client.get(POINTS, params={**VIEWPORT, "zoom": 3, "commodity": "Wine"})
+    assert timeouts == [map_router.get_settings().map_heat_statement_timeout_ms, None]
 
 
 # --- image mode -------------------------------------------------------------
@@ -206,7 +284,7 @@ def test_the_role_reaches_the_query(client, monkeypatch):
 def test_an_unbuilt_map_surface_says_so_rather_than_reporting_an_empty_world(
     client, monkeypatch
 ):
-    async def missing(query, params=None):
+    async def missing(query, params=None, **_kwargs):
         raise UndefinedTable('relation "cola_map_search" does not exist')
 
     monkeypatch.setattr(map_router, "fetch_all", missing)

@@ -5,6 +5,7 @@ import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
 import Highlight from '../components/Highlight.jsx';
 import ScoreMeter, { toPct } from '../components/ScoreMeter.jsx';
+import SlowNotice from '../components/SlowNotice.jsx';
 import { api } from '../lib/api.js';
 import { fmtDate } from '../lib/format.js';
 import { readPendingImageSearch } from '../lib/imageSearchStore.js';
@@ -952,6 +953,21 @@ export default function ResultsPage() {
               </div>
             </div>
           </div>
+
+          <SlowNotice
+            active={loading && !state.error}
+            title={isVector ? 'Comparing label artwork' : 'This is a complex search'}
+            detail={
+              isVector
+                ? 'Your query is being matched against millions of label images, which can take several seconds.'
+                : 'Search terms combined with filters are checked across millions of approvals and label text, which can take several seconds.'
+            }
+            stillDetail={
+              isVector
+                ? 'Still working. The first visual search in a while can take up to half a minute; later ones are faster.'
+                : 'Still working. The most complex searches can take up to 15 seconds.'
+            }
+          />
 
           {state.error ? (
             <div className="empty panel">

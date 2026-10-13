@@ -435,6 +435,11 @@ section > .d-notice { margin-bottom: 0; }
 .map-overlay { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 5; max-width: 420px; padding: 26px; text-align: center; }
 .map-overlay h3 { margin: 10px 0 6px; }
 .map-overlay p { font-size: 13.5px; line-height: 1.55; margin-bottom: 14px; }
+/* Floats over the top of the map so the surface stays visible while it loads. */
+.map-slow { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 5; width: min(460px, calc(100% - 120px)); margin: 0; box-shadow: var(--shadow-2); background: var(--white); }
+.map-stage.has-panel .map-slow { left: calc(50% - 180px); }
+@media (max-width: 720px) { .map-slow { width: calc(100% - 70px); left: 12px; transform: none; } .map-stage.has-panel .map-slow { left: 12px; } }
+.map-area-slow { margin: 12px 0 0; }
 
 .map-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 360px; z-index: 6; overflow-y: auto; overscroll-behavior: contain; padding: 16px 18px; border-radius: 0; border-top: 0; border-bottom: 0; border-right: 0; }
 .map-panel-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -16px -18px 0; padding: 16px 18px 10px; background: var(--white); border-bottom: 1px solid var(--base-lightest); }

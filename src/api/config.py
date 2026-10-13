@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # Pins drawn in image mode. Past a few hundred the map is unreadable and the
     # thumbnail requests, one blob read each, outweigh the query itself.
     map_image_point_cap: int = 250
+    # Low-zoom heat grids are computed for the whole world once per (zoom, role,
+    # filters) and clipped per viewport. A stale grid is served while it refreshes.
+    map_heat_cache_seconds: int = 900
+    map_heat_cache_size: int = 64
+    # Cold, the national grid reads ~1.8 GB of index off a 1100 IOPS disk and
+    # overruns the global timeout; the shared unfiltered grids get longer.
+    map_heat_statement_timeout_ms: int = 60000
+    # Build the default (unfiltered) low-zoom grids in the background at startup.
+    map_heat_warm_on_startup: bool = True
     # Basemap vector tiles (PMTiles archive) in the blob container above.
     # Unset means the map page has no basemap and says so.
     map_basemap_blob: str | None = None

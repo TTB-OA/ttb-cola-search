@@ -10,6 +10,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import Combobox, { matchOptions } from '../components/Combobox.jsx';
 import { CatTag, StatusBadge } from '../components/Badges.jsx';
+import SlowNotice from '../components/SlowNotice.jsx';
 import { api } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
 import { fmtDate } from '../lib/format.js';
@@ -307,7 +308,16 @@ function AreaPanel({ state, onClose, isMobile }) {
       </div>
 
       {loading ? (
-        <div className="skel" style={{ height: 180, marginTop: 12 }} />
+        <>
+          <SlowNotice
+            active={loading}
+            title="Summarising a large area"
+            detail="Every approval inside the box is being counted, which can take several seconds."
+            stillDetail="Still working. Zooming in before selecting returns faster."
+            className="map-area-slow"
+          />
+          <div className="skel" style={{ height: 180, marginTop: 12 }} />
+        </>
       ) : error ? (
         <p className="muted an-note">This area could not be summarised. Try again in a moment.</p>
       ) : !data || !data.total ? (
@@ -502,6 +512,7 @@ export default function MapPage() {
 
   const data = pointsState.data;
   const total = data?.total || 0;
+  const zoomedOut = !viewport || viewport.zoom <= 5;
   const facets = reference.data || {};
   // Domestic and imported origins are separate lists upstream; the map filters
   // on the single origin column, so they are one control here.
@@ -611,6 +622,18 @@ export default function MapPage() {
             onSelectPoint={onSelectPoint}
           />
         </Suspense>
+
+        <SlowNotice
+          active={pointsState.loading && !unavailable}
+          title={zoomedOut ? 'Mapping the whole country' : 'Loading this part of the map'}
+          detail={
+            zoomedOut
+              ? 'This view aggregates millions of approvals, so the first load can take several seconds.'
+              : 'Busy areas hold many approvals, so this view can take several seconds.'
+          }
+          stillDetail="Still working. Zooming in or adding a filter usually loads faster."
+          className="map-slow"
+        />
 
         {unavailable ? (
           <div className="map-overlay panel">

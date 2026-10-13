@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import Counter, defaultdict
+import time
+from collections import Counter, OrderedDict, defaultdict
 from datetime import date
 from typing import Annotated, Any
 
@@ -67,6 +68,13 @@ MODES = ("heat", "image")
 BIN_CAP = 20000
 # Records listed alongside an area summary, per page.
 AREA_PAGE_SIZE = 24
+# At or below this zoom a viewport is continental and reads most of a role's
+# rows anyway, so the heat grid is built once for the whole world, cached, and
+# clipped per viewport. Each screen size and pan would otherwise be its own
+# cold 12-15 s scan, and the default national view routinely hit the timeout.
+WORLD_GRID_MAX_ZOOM = 5
+# The order the startup warm-up builds grids in: the page opens at zoom 3.
+WARM_ZOOMS = (3, 4, 5, 2, 1, 0)
 
 # Both endpoints filter the same surface, so the vocabulary and the wording are
 # written once. The enums are advertised to OpenAPI rather than enforced by the
@@ -169,6 +177,13 @@ _has_varietal: bool | None = None
 # so an environment without the index keeps the GiST path.
 _has_heat_index: bool | None = None
 
+# (zoom, role, filters) -> (built at, [(gx, gy, n), ...]) for the world grids.
+GridKey = tuple[int, str, tuple[tuple[str, str], ...]]
+GridCells = list[tuple[int, int, int]]
+_grid_cache: OrderedDict[GridKey, tuple[float, GridCells]] = OrderedDict()
+# One build per key at a time; concurrent viewports wait on the same task.
+_grid_builds: dict[GridKey, asyncio.Task[GridCells]] = {}
+
 
 async def varietal_supported() -> bool:
     global _has_varietal
@@ -219,6 +234,8 @@ def reset_limiter() -> None:
     _limiter = None
     _has_varietal = None
     _has_heat_index = None
+    _grid_cache.clear()
+    _grid_builds.clear()
 
 
 def _enforce_rate_limit(request: Request) -> None:
@@ -254,6 +271,20 @@ def _wrap_longitude(value: float) -> float:
     return ((value + 180.0) % 360.0) - 180.0
 
 
+def _normalise_viewport(
+    west: float, south: float, east: float, north: float
+) -> tuple[float, float, float, float, bool]:
+    """Clamped, ordered latitudes and wrapped longitudes, plus whether the
+    viewport spans the whole world (no longitude left to constrain)."""
+    south = max(-90.0, min(90.0, south))
+    north = max(-90.0, min(90.0, north))
+    if north < south:
+        south, north = north, south
+    if east - west >= 360.0:
+        return west, south, east, north, True
+    return _wrap_longitude(west), south, _wrap_longitude(east), north, False
+
+
 # ST_MakeEnvelope carries only four corners, and casting to geography turns its
 # edges into great-circle arcs. In the northern hemisphere the southern edge
 # bows poleward — at a continental viewport width that lifts it tens of degrees
@@ -283,19 +314,15 @@ def _bbox_condition(
     and has to be tested as two envelopes; one envelope spanning the difference
     would select the whole rest of the world instead.
     """
-    south = max(-90.0, min(90.0, south))
-    north = max(-90.0, min(90.0, north))
-    if north < south:
-        south, north = north, south
+    west, south, east, north, whole = _normalise_viewport(west, south, east, north)
 
     lat = "latitude BETWEEN %s AND %s"
 
     # Zoomed out past a whole world there is no longitude left to constrain, and
     # a global envelope is the one shape geography handles worst.
-    if east - west >= 360.0:
+    if whole:
         return lat, [south, north]
 
-    west, east = _wrap_longitude(west), _wrap_longitude(east)
     if west > east:
         lng = f"(longitude >= %s OR longitude <= %s) AND {lat}"
         if not geography:
@@ -331,10 +358,18 @@ def build_map_filters(
     date_to: date | None = None,
     varietal: str | None = None,
     geography: bool = True,
+    viewport: bool = True,
 ) -> tuple[str, list[Any]]:
-    """WHERE clause for a viewport query, and the parameters it binds."""
-    bbox_sql, params = _bbox_condition(west, south, east, north, geography)
-    conditions = [bbox_sql, "location_role = %s"]
+    """WHERE clause for a viewport query, and the parameters it binds.
+
+    ``viewport=False`` drops the bounds altogether, for the world heat grid.
+    """
+    conditions: list[str] = []
+    params: list[Any] = []
+    if viewport:
+        bbox_sql, params = _bbox_condition(west, south, east, north, geography)
+        conditions.append(bbox_sql)
+    conditions.append("location_role = %s")
     params.append(role)
 
     if commodity:
@@ -439,6 +474,128 @@ async def _heat_bins(
     return bins, total
 
 
+def _grid_key(zoom: int, role: str, filters: dict[str, Any]) -> GridKey:
+    return zoom, role, tuple(sorted((k, str(v)) for k, v in filters.items() if v))
+
+
+def _build_world_grid(
+    key: GridKey, zoom: int, role: str, filters: dict[str, Any]
+) -> asyncio.Task[GridCells]:
+    """Start (or join) the one build of a world grid, caching what it returns.
+
+    Runs as a task so a client that gives up mid-scan does not cancel the work
+    every other viewport at this zoom is waiting on.
+    """
+    running = _grid_builds.get(key)
+    if running is not None:
+        return running
+
+    settings = get_settings()
+    where, params = build_map_filters(0, 0, 0, 0, role, **filters, viewport=False)
+    cell = _cell_size(zoom)
+    # Only the shared unfiltered grids get the long timeout; a filter is one
+    # caller's choice and keeps the ordinary ceiling.
+    timeout = None if key[2] else settings.map_heat_statement_timeout_ms
+
+    async def build() -> GridCells:
+        rows = await fetch_all(
+            f"""--sql
+            SELECT floor(longitude / %s) AS gx, floor(latitude / %s) AS gy,
+                   count(*) AS n
+              FROM {MAP_TABLE} {where}
+             GROUP BY 1, 2
+            """,
+            [cell, cell, *params],
+            statement_timeout_ms=timeout,
+        )
+        cells = [(int(r["gx"]), int(r["gy"]), int(r["n"])) for r in rows]
+        _grid_cache[key] = (time.monotonic(), cells)
+        _grid_cache.move_to_end(key)
+        while len(_grid_cache) > settings.map_heat_cache_size:
+            _grid_cache.popitem(last=False)
+        return cells
+
+    def finished(task: asyncio.Task[GridCells]) -> None:
+        _grid_builds.pop(key, None)
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning("map heat grid build failed for %r", key, exc_info=task.exception())
+
+    task = asyncio.ensure_future(build())
+    task.add_done_callback(finished)
+    _grid_builds[key] = task
+    return task
+
+
+async def _world_grid(zoom: int, role: str, filters: dict[str, Any]) -> GridCells:
+    """The whole-world grid for a zoom, served stale while it rebuilds.
+
+    The surface only changes when the pipeline rebuilds it, so a grid a few
+    minutes past its TTL is still right, and answering from it beats making
+    the next visitor wait on the rebuild.
+    """
+    key = _grid_key(zoom, role, filters)
+    hit = _grid_cache.get(key)
+    if hit is not None:
+        built_at, cells = hit
+        _grid_cache.move_to_end(key)
+        if time.monotonic() - built_at > get_settings().map_heat_cache_seconds:
+            _build_world_grid(key, zoom, role, filters)
+        return cells
+    return await asyncio.shield(_build_world_grid(key, zoom, role, filters))
+
+
+def _clip_grid(
+    cells: GridCells, cell: float, west: float, south: float, east: float, north: float
+) -> tuple[list[MapHeatBin], int]:
+    """The world grid's cells that touch the viewport, densest first.
+
+    The total is summed over whole cells, so at these zooms it can include a
+    cell's worth of records just past the edge of the screen.
+    """
+    west, south, east, north, whole = _normalise_viewport(west, south, east, north)
+
+    def lng_in_view(lo: float, hi: float) -> bool:
+        if whole:
+            return True
+        if west <= east:
+            return hi >= west and lo <= east
+        return hi >= west or lo <= east
+
+    kept = [
+        (gx, gy, n)
+        for gx, gy, n in cells
+        if (gy + 1) * cell >= south and gy * cell <= north
+        and lng_in_view(gx * cell, (gx + 1) * cell)
+    ]
+    total = sum(n for _gx, _gy, n in kept)
+    kept.sort(key=lambda c: c[2], reverse=True)
+    bins = [
+        MapHeatBin(
+            lng=round((gx + 0.5) * cell, 6),
+            lat=round((gy + 0.5) * cell, 6),
+            count=n,
+        )
+        for gx, gy, n in kept[:BIN_CAP]
+    ]
+    return bins, total
+
+
+async def warm_heat_cache() -> None:
+    """Build the default view's grids so the first visitor after a deploy does
+    not wait on a cold scan. Sequential: the first build pulls the index into
+    cache and the rest then run warm."""
+    if not get_settings().map_heat_warm_on_startup:
+        return
+    for zoom in WARM_ZOOMS:
+        try:
+            await _world_grid(zoom, "primary_premise", {})
+        except UndefinedTable:
+            return
+        except Exception:
+            logger.warning("map heat warm-up failed at zoom %s", zoom, exc_info=True)
+            return
+
+
 async def _image_points(
     where: str, params: list[Any], limit: int
 ) -> list[MapImagePoint]:
@@ -538,14 +695,21 @@ async def map_points(
 
     settings = get_settings()
     supports_varietal = await varietal_supported()
-    where, params = build_map_filters(
-        west, south, east, north, role, commodity, source, origin,
-        class_type, date_from, date_to, await _resolve_varietal(varietal),
-        geography=mode == "image" or not await heat_index_available(),
-    )
+    filters: dict[str, Any] = {
+        "commodity": commodity,
+        "source": source,
+        "origin": origin,
+        "class_type": class_type,
+        "date_from": date_from,
+        "date_to": date_to,
+        "varietal": await _resolve_varietal(varietal),
+    }
 
     try:
         if mode == "image":
+            where, params = build_map_filters(
+                west, south, east, north, role, **filters, geography=True
+            )
             points = await _image_points(where, params, settings.map_image_point_cap)
             return MapPointsResponse(
                 mode=mode,
@@ -556,7 +720,16 @@ async def map_points(
                 varietal_available=supports_varietal,
             )
 
-        bins, total = await _heat_bins(where, params, _cell_size(zoom))
+        cell = _cell_size(zoom)
+        if zoom <= WORLD_GRID_MAX_ZOOM:
+            cells = await _world_grid(zoom, role, filters)
+            bins, total = _clip_grid(cells, cell, west, south, east, north)
+        else:
+            where, params = build_map_filters(
+                west, south, east, north, role, **filters,
+                geography=not await heat_index_available(),
+            )
+            bins, total = await _heat_bins(where, params, cell)
     except UndefinedTable as exc:
         raise _unavailable(exc) from exc
 

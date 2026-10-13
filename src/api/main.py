@@ -55,9 +55,11 @@ if sys.platform == "win32":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await open_pool()
+    warm = asyncio.create_task(map.warm_heat_cache())
     try:
         yield
     finally:
+        warm.cancel()
         await close_pool()
         await close_blob()
         await close_insights()
