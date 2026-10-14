@@ -2,7 +2,7 @@
 // procedural placeholder (mirrors the prototype look) when the image is
 // missing or fails to load.
 import { useState } from 'react';
-import { placeholderStyle } from '../lib/format.js';
+import { fmtAbv, placeholderStyle } from '../lib/format.js';
 
 function Placeholder({ rec, style }) {
   const { bg, ink } = placeholderStyle(rec);
@@ -21,7 +21,7 @@ function Placeholder({ rec, style }) {
         <div className="lt-foot">{rec.origin}</div>
         {(rec.netContents || rec.abv) && (
           <div className="lt-abv">
-            {[rec.netContents, rec.abv && `${rec.abv} ALC/VOL`].filter(Boolean).join(' · ')}
+            {[rec.netContents, fmtAbv(rec.abv)].filter(Boolean).join(' · ')}
           </div>
         )}
       </div>

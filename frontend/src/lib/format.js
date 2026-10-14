@@ -47,6 +47,13 @@ export function fmtPhone(value) {
   return text;
 }
 
+// The pre-2012 form's alcohol box is usually a bare percentage ("15.3").
+export function fmtAbv(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  return /^\d+(\.\d+)?$/.test(text) ? `${text}% ALC/VOL` : text;
+}
+
 // Map a commodity/category label to the CSS tag class used by styles.css.
 export function tagClass(category) {
   switch ((category || '').toLowerCase()) {

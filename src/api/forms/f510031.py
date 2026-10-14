@@ -757,7 +757,7 @@ def _draw_application(
     c.setFont(BODY, 6)
     c.drawString(394.5, 679, "TOTAL BOTTLE CAPACITY BEFORE CLOSURE")
     _value_style(c, MONO_BOLD, 7.5)
-    c.drawString(394.5, 670, _clean(detail.net_contents))
+    c.drawString(394.5, 670, _clean(detail.bottle_capacity))
     _reset_style(c)
     _checkbox(c, 384, 658, flags["d"], "d. RESUBMISSION AFTER REJECTION", size=6)
     _inline_value(

@@ -67,7 +67,7 @@ def full_detail() -> ColaDetail:
         applicant="Example Winery LLC",
         submitter="Jane Doe",
         vendor_code="V-9911",
-        net_contents="750.0000",
+        bottle_capacity="750.0000",
         mailing_address="PO Box 12, Napa CA 94558",
         application_type="CERTIFICATE OF LABEL APPROVAL",
         formula="12345",

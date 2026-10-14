@@ -7,7 +7,7 @@ import Highlight from '../components/Highlight.jsx';
 import { toPct } from '../components/ScoreMeter.jsx';
 import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
-import { fmtDate, fmtPhone, orderFaces } from '../lib/format.js';
+import { fmtAbv, fmtDate, fmtPhone, orderFaces } from '../lib/format.js';
 import { groupDuplicates } from '../lib/duplicates.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
@@ -698,7 +698,7 @@ export default function DetailPage() {
                   { label: 'Fanciful name', value: rec.fanciful },
                   { label: 'Class / Type', value: rec.classType || rec.classSub },
                   { label: 'Net contents', value: rec.netContents },
-                  { label: 'Alcohol content', value: rec.abv ? `${rec.abv} ALC/VOL` : null },
+                  { label: 'Alcohol content', value: fmtAbv(rec.abv) },
                 ]}
               />
 

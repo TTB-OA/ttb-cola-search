@@ -56,6 +56,8 @@ Table colas {
   wine_vintage         varchar     [note: 'search view "Wine Vintage" [scraped], paper COLAs only']
   form_view            varchar     [note: 'which COLAs Online view answered: form (publicFormDisplay) | search (publicDisplaySearchBasic) [local]']
   form_scraped_on      timestamptz [note: 'last detail-page read [local]; NULL selects the row for --backfill-form-flags, and list_ingest clears it when status_code changes']
+  net_contents         varchar(64) [note: 'NET CONTENTS box of the pre-mid-2012 e-filed form, as printed [local]']
+  alcohol_content      varchar(32) [note: 'ALCOHOL CONTENT box of the pre-mid-2012 e-filed form, as printed (percent) [local]']
 
   indexes {
     completed_date

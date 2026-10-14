@@ -125,8 +125,11 @@ class ColaDetail(ColaSummary):
     received_code: str | None = None
     received_description: str | None = None
     final_status: bool | None = None
+    # Net contents and alcohol content are boxes on the pre-mid-2012 e-filed
+    # form only; bottle capacity is item 14c (distinctive bottles) on the API.
     net_contents: str | None = None
     abv: str | None = None
+    bottle_capacity: str | None = None
     mailing_address: str | None = None
     # Items transcribed from the certificate image rather than the API; blank
     # until the form-scrape pass has run for the record.
