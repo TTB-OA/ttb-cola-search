@@ -425,6 +425,10 @@ class RecentQuery(ApiModel):
     results: int | None = None
     # True when `results` is a lower bound rather than an exact count.
     capped: bool = False
+    # Filter param -> value, in the same names the search URL uses.
+    filters: dict[str, str] = {}
+    # Omitted for the default (relevance) order.
+    sort: str | None = None
 
 
 class TopCola(ApiModel):

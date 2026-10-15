@@ -14,7 +14,7 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
-from .analytics import TEXT_FILTER_KEYS
+from .analytics import FILTER_KEYS, TEXT_FILTER_KEYS
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,15 @@ LATENCY_SERIES_LIMIT = 6
 
 # Rows in the recent keyword searches list.
 RECENT_QUERIES_LIMIT = 50
+
+# Every filter a search can carry, so the list can tell apart the same keyword
+# under different filters. One plain column each, prefixed so none collides with
+# the fixed columns.
+RECENT_FILTER_KEYS = tuple(k for k in FILTER_KEYS if k != "q")
+RECENT_FILTER_PREFIX = "f_"
+_RECENT_FILTER_COLUMNS = ",\n                ".join(
+    f'{RECENT_FILTER_PREFIX}{k} = tostring(Properties["{k}"])' for k in RECENT_FILTER_KEYS
+)
 
 # Log Analytics runs at most 5 queries at once per identity and queues the rest.
 QUERY_CONCURRENCY = 5
@@ -126,7 +135,9 @@ def _queries(bucket: str) -> dict[str, str]:
                 TimeGenerated,
                 query,
                 results = toint(Properties.result_total),
-                capped = tobool(Properties.total_is_capped)
+                capped = tobool(Properties.total_is_capped),
+                sort = tostring(Properties.sort),
+                {_RECENT_FILTER_COLUMNS}
         """,
         "zero_result_queries": """
             AppEvents

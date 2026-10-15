@@ -85,12 +85,20 @@ def _recent_queries(rows: list[dict[str, Any]]) -> list[RecentQuery]:
         if when is None or not query:
             continue
         results = row.get("results")
+        filters = {}
+        for key in insights.RECENT_FILTER_KEYS:
+            value = str(row.get(insights.RECENT_FILTER_PREFIX + key) or "").strip()
+            if value:
+                filters[key] = value[:200]
+        sort = str(row.get("sort") or "").strip()
         out.append(
             RecentQuery(
                 t=when,
                 query=query[:200],
                 results=int(results) if isinstance(results, (int, float)) else None,
                 capped=bool(row.get("capped")),
+                filters=filters,
+                sort=sort[:40] if sort and sort != "relevance" else None,
             )
         )
     out.sort(key=lambda r: r.t, reverse=True)

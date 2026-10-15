@@ -181,6 +181,18 @@ const WHEN = new Intl.DateTimeFormat(undefined, {
   minute: '2-digit',
 });
 
+function searchHref(r) {
+  const p = new URLSearchParams({ q: r.query, ...(r.filters || {}) });
+  if (r.sort) p.set('sort', r.sort);
+  return `/results?${p}`;
+}
+
+function describeFilters(r) {
+  return Object.entries(r.filters || {})
+    .map(([k, v]) => `${FILTER_LABELS[k] || k}: ${v}`)
+    .join(' · ');
+}
+
 function RecentQueries({ rows }) {
   if (!rows || rows.length === 0) return <p className="muted an-note">No data for this range yet.</p>;
   return (
@@ -194,17 +206,21 @@ function RecentQueries({ rows }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={`${r.t}-${i}`}>
-              <td title={r.query}>
-                <a href={`/results?q=${encodeURIComponent(r.query)}`}>{r.query}</a>
-              </td>
+          {rows.map((r, i) => {
+            const filters = describeFilters(r);
+            return (
+              <tr key={`${r.t}-${i}`}>
+                <td title={filters ? `${r.query} — ${filters}` : r.query}>
+                  <a href={searchHref(r)}>{r.query}</a>
+                  {filters ? <div className="an-sub muted">{filters}</div> : null}
+                </td>
               <td className={r.results === 0 ? 'an-zero' : undefined}>
                 {r.results == null ? '—' : `${num(r.results)}${r.capped ? '+' : ''}`}
               </td>
               <td>{WHEN.format(new Date(r.t))}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>

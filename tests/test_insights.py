@@ -125,8 +125,8 @@ def stub_panels(monkeypatch):
             "paging_depth": [{"page": "1", "count_": 90}],
             "sort_usage": [{"sort": "relevance", "count_": 80}],
             "recent_queries": [
-                {"TimeGenerated": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False},
-                {"TimeGenerated": "2026-01-01T10:00:00Z", "query": "napa cabernet", "results": 5000, "capped": True},
+                {"TimeGenerated": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False, "sort": "relevance", "f_status": "", "f_brand": None},
+                {"TimeGenerated": "2026-01-01T10:00:00Z", "query": "napa cabernet", "results": 5000, "capped": True, "sort": "approvalDate", "f_status": "Approved", "f_commodity": "Wine"},
                 {"TimeGenerated": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": None},
             ],
             "zero_result_queries": [{"query": "zzzz", "count_": 2}],
@@ -183,9 +183,16 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
     assert panels["usageOverTime"][0]["values"]["searches"] == 100
     assert panels["imageSearchOverTime"][0]["values"]["abandoned"] == 1
     assert panels["recentQueries"] == [
-        {"t": "2026-01-01T10:00:00Z", "query": "napa cabernet", "results": 5000, "capped": True},
-        {"t": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False},
-        {"t": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": False},
+        {
+            "t": "2026-01-01T10:00:00Z",
+            "query": "napa cabernet",
+            "results": 5000,
+            "capped": True,
+            "filters": {"commodity": "Wine", "status": "Approved"},
+            "sort": "approvalDate",
+        },
+        {"t": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False, "filters": {}, "sort": None},
+        {"t": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": False, "filters": {}, "sort": None},
     ]
     assert panels["zeroResultQueries"] == [{"label": "zzzz", "count": 2}]
     assert panels["filterValues"] == [{"filter": "brand", "value": "acme", "count": 4}]
@@ -386,6 +393,8 @@ def test_query_text_panels_read_the_captured_property():
     for name in ("recent_queries", "zero_result_queries", "describe_queries"):
         assert "Properties.query_text" in queries[name], name
     assert f"top {insights.RECENT_QUERIES_LIMIT} by TimeGenerated desc" in queries["recent_queries"]
+    assert 'f_commodity = tostring(Properties["commodity"])' in queries["recent_queries"]
+    assert 'Properties["q"]' not in queries["recent_queries"]
     assert '"brand"' in queries["filter_values"]
     assert '"dateFrom"' not in queries["filter_values"]
 

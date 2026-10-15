@@ -392,6 +392,9 @@ section > .d-notice { margin-bottom: 0; }
 /* Fixed height so a long list does not stretch its grid row. */
 .an-scroll { max-height: 320px; overflow-y: auto; }
 .an-scroll thead th { position: sticky; top: 0; background: var(--white); }
+.an-scroll .an-table td { vertical-align: top; }
+.an-scroll .an-table td:first-child { max-width: 320px; }
+.an-sub { font-size: 12px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
 .an-scroll .an-table td:last-child { white-space: nowrap; padding-left: 12px; }
 
 /* ---------- Coverage ---------- */
