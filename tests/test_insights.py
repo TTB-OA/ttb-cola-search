@@ -253,6 +253,108 @@ def test_each_range_is_cached_separately(client, enabled, stub_panels):
     assert stub_panels == ["7d", "30d"]
 
 
+@pytest.fixture
+def refreshes(monkeypatch):
+    """Record background refreshes instead of running them on the request loop."""
+    started: list[str] = []
+    monkeypatch.setattr(
+        insights_router, "refresh", lambda _settings, key: started.append(key)
+    )
+    return started
+
+
+def test_stale_entry_is_served_while_it_refreshes(client, enabled, monkeypatch, refreshes):
+    monkeypatch.setattr(enabled, "analytics_dashboard_cache_seconds", 60, raising=False)
+    old = insights_router.DashboardData.model_validate(
+        {"range": "30d", "generatedAt": "2026-01-01T00:00:00Z"}
+    )
+    insights.store("30d", old)
+    assert client.get(PATH).json()["cached"] is True
+    assert refreshes == []
+
+    monkeypatch.setattr(enabled, "analytics_dashboard_cache_seconds", 0, raising=False)
+    body = client.get(PATH).json()
+    assert body["cached"] is True
+    assert body["generatedAt"].startswith("2026-01-01")
+    assert refreshes == ["30d"]
+
+
+def test_incomplete_result_is_stale_at_once():
+    insights.store("7d", "partial", complete=False)
+    assert insights.lookup("7d", 900) == ("partial", True)
+    insights.store("7d", "whole")
+    assert insights.lookup("7d", 900) == ("whole", False)
+
+
+def test_concurrent_refreshes_share_one_build():
+    import asyncio
+
+    builds = 0
+
+    async def build():
+        nonlocal builds
+        builds += 1
+        await asyncio.sleep(0.01)
+        return "value", True
+
+    async def main():
+        a = insights.refresh("14d", build)
+        b = insights.refresh("14d", build)
+        assert a is b
+        return await a
+
+    assert asyncio.run(main()) == "value"
+    assert builds == 1
+    assert insights.lookup("14d", 900) == ("value", False)
+
+
+def test_slow_panel_times_out_instead_of_holding_the_page(enabled, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(enabled, "analytics_panel_timeout_seconds", 0.05, raising=False)
+
+    class Result:
+        def __init__(self):
+            self.tables = []
+
+    class Client:
+        async def query_workspace(self, _ws, query, **_kw):
+            if "describe_search_performed" in query:
+                await asyncio.sleep(5)
+            return Result()
+
+    monkeypatch.setattr(insights, "_get_client", lambda: Client())
+    panels, failed = asyncio.run(insights.run_panels(enabled, "30d"))
+
+    assert failed == ["describe_queries"]
+    assert panels["totals"] == []
+
+
+def test_hung_panel_is_retried_once(enabled, monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(enabled, "analytics_panel_timeout_seconds", 0.05, raising=False)
+    attempts = 0
+
+    class Result:
+        tables = []
+
+    class Client:
+        async def query_workspace(self, _ws, query, **_kw):
+            nonlocal attempts
+            if "describe_search_performed" in query:
+                attempts += 1
+                if attempts == 1:
+                    await asyncio.sleep(5)
+            return Result()
+
+    monkeypatch.setattr(insights, "_get_client", lambda: Client())
+    _panels, failed = asyncio.run(insights.run_panels(enabled, "30d"))
+
+    assert failed == []
+    assert attempts == 2
+
+
 def test_rate_limited_after_a_burst(client, enabled, stub_panels, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "analytics_dashboard_rate_limit", 2, raising=False)

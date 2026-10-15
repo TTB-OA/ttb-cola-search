@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
@@ -51,6 +52,9 @@ _RANKED_FILTERS = ", ".join(
 
 # Endpoints charted over time; more lines than this stop being readable.
 LATENCY_SERIES_LIMIT = 6
+
+# Log Analytics runs at most 5 queries at once per identity and queues the rest.
+QUERY_CONCURRENCY = 5
 
 
 def _queries(bucket: str) -> dict[str, str]:
@@ -307,14 +311,16 @@ def _rows(result: Any) -> list[dict[str, Any]]:
 async def run_panels(
     settings: Settings, range_key: str
 ) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
-    """Run every panel query in one batch.
+    """Run every panel query, each under its own timeout.
+
+    Not ``query_batch``: the $batch endpoint answers only when its slowest
+    member does, and in production that took 80-200 s while each query ran in
+    under 0.2 s. A panel that times out twice is reported failed, not waited on.
 
     Returns the rows per panel plus the names that errored. A panel that simply
     matched nothing comes back as an empty list and is *not* reported as failed,
     so the UI can tell "no data yet" from "we could not ask".
     """
-    from azure.monitor.query import LogsBatchQuery
-
     workspace = settings.log_analytics_workspace_id
     if not workspace:
         raise RuntimeError("LOG_ANALYTICS_WORKSPACE_ID is not configured")
@@ -322,18 +328,34 @@ async def run_panels(
     timespan = RANGES[range_key]
     queries = _queries(_BUCKETS[range_key])
     names = list(queries)
+    client = _get_client()
+    gate = asyncio.Semaphore(QUERY_CONCURRENCY)
+    timeout = settings.analytics_panel_timeout_seconds
 
-    batch = [
-        LogsBatchQuery(workspace_id=workspace, query=queries[name], timespan=timespan)
-        for name in names
-    ]
-    results = await _get_client().query_batch(batch)
+    async def one(query: str) -> Any:
+        # A hung query is luck of the draw, not load: the retry usually returns at once.
+        for attempt in range(2):
+            async with gate:
+                try:
+                    return await asyncio.wait_for(
+                        client.query_workspace(
+                            workspace, query, timespan=timespan, server_timeout=timeout
+                        ),
+                        timeout,
+                    )
+                except TimeoutError:
+                    if attempt:
+                        raise
+
+    results = await asyncio.gather(
+        *(one(queries[name]) for name in names), return_exceptions=True
+    )
 
     panels: dict[str, list[dict[str, Any]]] = {}
     failed: list[str] = []
     for name, result in zip(names, results):
         if isinstance(result, Exception) or getattr(result, "tables", None) is None:
-            logger.warning("analytics panel %s failed: %s", name, result)
+            logger.warning("analytics panel %s failed: %r", name, result)
             panels[name] = []
             failed.append(name)
             continue
@@ -345,27 +367,50 @@ async def run_panels(
 # Cache
 # --------------------------------------------------------------------------
 _cache: dict[str, tuple[float, Any]] = {}
-_locks: dict[str, asyncio.Lock] = {}
+_refreshes: dict[str, asyncio.Task[Any]] = {}
 
 
-def cached(range_key: str, ttl: float) -> Any | None:
+def lookup(range_key: str, ttl: float) -> tuple[Any, bool] | None:
+    """The cached value for a range and whether it is past its TTL."""
     entry = _cache.get(range_key)
-    if entry is not None and time.monotonic() - entry[0] < ttl:
-        return entry[1]
-    return None
+    if entry is None:
+        return None
+    stamp, value = entry
+    return value, time.monotonic() - stamp >= ttl
 
 
-def store(range_key: str, value: Any) -> None:
-    _cache[range_key] = (time.monotonic(), value)
+def store(range_key: str, value: Any, *, complete: bool = True) -> None:
+    # An incomplete result is still served, but counts as stale straight away.
+    _cache[range_key] = (time.monotonic() if complete else float("-inf"), value)
 
 
-def lock_for(range_key: str) -> asyncio.Lock:
-    """One in-flight refresh per range; the rest wait rather than re-query."""
-    lock = _locks.get(range_key)
-    if lock is None:
-        lock = _locks[range_key] = asyncio.Lock()
-    return lock
+def refresh(
+    range_key: str, build: Callable[[], Awaitable[tuple[Any, bool]]]
+) -> asyncio.Task[Any]:
+    """One in-flight rebuild per range; later callers share it.
+
+    ``build`` returns the value and whether it is complete.
+    """
+    task = _refreshes.get(range_key)
+    if task is not None and not task.done():
+        return task
+
+    async def run() -> Any:
+        value, complete = await build()
+        store(range_key, value, complete=complete)
+        return value
+
+    def finished(done: asyncio.Task[Any]) -> None:
+        if not done.cancelled() and done.exception() is not None:
+            logger.warning(
+                "analytics refresh failed for %s", range_key, exc_info=done.exception()
+            )
+
+    task = _refreshes[range_key] = asyncio.ensure_future(run())
+    task.add_done_callback(finished)
+    return task
 
 
 def reset_cache() -> None:
     _cache.clear()
+    _refreshes.clear()

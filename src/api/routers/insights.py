@@ -11,6 +11,8 @@ must send ``Authorization: Bearer <token>``.
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import hmac
 import logging
 from datetime import datetime, timedelta, timezone
@@ -301,23 +303,43 @@ async def dashboard(request: Request, range: RangeKey = "30d") -> DashboardData:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    ttl = settings.analytics_dashboard_cache_seconds
-    hit = insights.cached(range, ttl)
+    # Stale-while-revalidate: Log Analytics latency has long tails, so a stale
+    # copy is answered at once and the rebuild runs behind it.
+    hit = insights.lookup(range, settings.analytics_dashboard_cache_seconds)
     if hit is not None:
-        return hit.model_copy(update={"cached": True})
+        data, stale = hit
+        if stale:
+            refresh(settings, range)
+        return data.model_copy(update={"cached": True})
 
-    # One refresh per range at a time; a burst of cold requests otherwise turns
-    # into a burst of billed Log Analytics queries.
-    async with insights.lock_for(range):
-        hit = insights.cached(range, ttl)
-        if hit is not None:
-            return hit.model_copy(update={"cached": True})
-        try:
-            data = await _build(settings, range)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("dashboard query failed: %s", exc, exc_info=True)
-            raise HTTPException(
-                status_code=503, detail="Usage data is unavailable right now."
-            ) from exc
-        insights.store(range, data)
-        return data
+    try:
+        return await asyncio.shield(refresh(settings, range))
+    except Exception as exc:
+        logger.warning("dashboard query failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=503, detail="Usage data is unavailable right now."
+        ) from exc
+
+
+def refresh(settings: Settings, range_key: str) -> asyncio.Task[Any]:
+    """Rebuild one range in the background; concurrent callers share the task."""
+
+    async def build() -> tuple[DashboardData, bool]:
+        data = await _build(settings, range_key)
+        return data, not data.unavailable
+
+    return insights.refresh(range_key, build)
+
+
+async def warm_dashboard_cache() -> None:
+    """Build the default range at startup so the page's first load is cached."""
+    settings = get_settings()
+    if not (
+        settings.analytics_dashboard_enabled
+        and settings.analytics_dashboard_token
+        and settings.log_analytics_workspace_id
+    ):
+        return
+    # Failures are logged by the refresh task itself.
+    with contextlib.suppress(Exception):
+        await refresh(settings, insights.DEFAULT_RANGE)

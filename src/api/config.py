@@ -141,6 +141,8 @@ class Settings(BaseSettings):
     log_analytics_workspace_id: str | None = None
     # Dashboard numbers move slowly and every miss costs a Log Analytics query.
     analytics_dashboard_cache_seconds: int = 900
+    # Per panel query attempt (one retry); a slower panel is reported unavailable.
+    analytics_panel_timeout_seconds: int = 10
     analytics_dashboard_rate_limit: int = 30
     analytics_dashboard_rate_window_seconds: int = 60
 

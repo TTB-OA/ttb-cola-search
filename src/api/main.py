@@ -56,10 +56,12 @@ if sys.platform == "win32":
 async def lifespan(app: FastAPI):
     await open_pool()
     warm = asyncio.create_task(map.warm_heat_cache())
+    warm_dashboard = asyncio.create_task(insights.warm_dashboard_cache())
     try:
         yield
     finally:
         warm.cancel()
+        warm_dashboard.cancel()
         await close_pool()
         await close_blob()
         await close_insights()
