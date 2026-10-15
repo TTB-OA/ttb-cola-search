@@ -446,8 +446,9 @@ export default function DetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const q = (searchParams.get('q') || '').trim().toLowerCase();
-  const hl = (searchParams.get('q') || '').trim();
+  // Users often type SQL/glob wildcards (e.g. "berkshire%"); drop them so highlighting matches the literal text.
+  const hl = (searchParams.get('q') || '').replace(/[%*]/g, '').trim();
+  const q = hl.toLowerCase();
 
   const detailState = useAsync((signal) => api.getCola(id, signal), [id], { cacheKey: `cola:${id}` });
   const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id], {
@@ -909,7 +910,7 @@ export default function DetailPage() {
                                   }
                                 }}
                               >
-                                {isMatch ? <Highlight text={it.text} q={searchParams.get('q')} /> : it.text}
+                                {isMatch ? <Highlight text={it.text} q={hl} /> : it.text}
                               </button>
                             );
                           })}
