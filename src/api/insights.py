@@ -53,6 +53,9 @@ _RANKED_FILTERS = ", ".join(
 # Endpoints charted over time; more lines than this stop being readable.
 LATENCY_SERIES_LIMIT = 6
 
+# Rows in the recent keyword searches list.
+RECENT_QUERIES_LIMIT = 50
+
 # Log Analytics runs at most 5 queries at once per identity and queues the rest.
 QUERY_CONCURRENCY = 5
 
@@ -112,14 +115,18 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize count() by sort = tostring(Properties.sort)
             | top 10 by count_ desc
         """,
-        # Page 1 only: paging through one query should count it once.
-        "top_queries": """
+        # Page 1 only: paging through one query should list it once.
+        "recent_queries": f"""
             AppEvents
             | where Name == "search_performed" and toint(Properties.page) == 1
-            | extend query = tolower(tostring(Properties.query_text))
+            | extend query = tostring(Properties.query_text)
             | where isnotempty(query)
-            | summarize count() by query
-            | top 15 by count_ desc
+            | top {RECENT_QUERIES_LIMIT} by TimeGenerated desc
+            | project
+                TimeGenerated,
+                query,
+                results = toint(Properties.result_total),
+                capped = tobool(Properties.total_is_capped)
         """,
         "zero_result_queries": """
             AppEvents

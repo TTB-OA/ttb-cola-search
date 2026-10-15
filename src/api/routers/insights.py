@@ -1,8 +1,9 @@
 """Unlisted usage dashboard.
 
 Serves aggregates read back out of Log Analytics: counts, rates, percentiles,
-and the most frequent search text and filter values. Sessions appear only as a
-pseudonymous id inside counts; no row is tied to a visitor.
+the most frequent search text and filter values, and the latest keyword
+searches. Sessions appear only as a pseudonymous id inside counts; no row is
+tied to a visitor.
 
 The endpoint is off unless ``analytics_dashboard_enabled`` and
 ``analytics_dashboard_token`` are both set, and returns 404 (not 403) when off
@@ -32,6 +33,7 @@ from ..models import (
     LatencyRow,
     LatencySeries,
     NamedCount,
+    RecentQuery,
     TimePoint,
     TopCola,
 )
@@ -72,6 +74,26 @@ def _counts(rows: list[dict[str, Any]], key: str, width: int = 64) -> list[Named
         label = str(row.get(key) or "").strip()
         if label:
             out.append(NamedCount(label=label[:width], count=int(row.get("count_") or 0)))
+    return out
+
+
+def _recent_queries(rows: list[dict[str, Any]]) -> list[RecentQuery]:
+    out = []
+    for row in rows:
+        when = _moment(row.get("TimeGenerated"))
+        query = str(row.get("query") or "").strip()
+        if when is None or not query:
+            continue
+        results = row.get("results")
+        out.append(
+            RecentQuery(
+                t=when,
+                query=query[:200],
+                results=int(results) if isinstance(results, (int, float)) else None,
+                capped=bool(row.get("capped")),
+            )
+        )
+    out.sort(key=lambda r: r.t, reverse=True)
     return out
 
 
@@ -233,7 +255,7 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
         filter_usage=_counts(panels.get("filter_usage") or [], "filter"),
         paging_depth=_counts(panels.get("paging_depth") or [], "page"),
         sort_usage=_counts(panels.get("sort_usage") or [], "sort"),
-        top_queries=_counts(panels.get("top_queries") or [], "query", 200),
+        recent_queries=_recent_queries(panels.get("recent_queries") or []),
         zero_result_queries=_counts(panels.get("zero_result_queries") or [], "query", 200),
         filter_values=_filter_values(panels.get("filter_values") or []),
         describe_queries=_counts(panels.get("describe_queries") or [], "query", 200),

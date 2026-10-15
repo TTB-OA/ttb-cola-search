@@ -375,7 +375,8 @@ the search funnel, zero-result rate, filter popularity, and latency percentiles.
 
 Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
 aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
-and sort popularity, top keyword searches (overall and with no results), top
+and sort popularity, the 50 most recent keyword searches, top keyword searches
+with no results, top
 filter values and artwork descriptions, most-viewed records, latency percentiles
 per endpoint (as a table or over time), and image-search
 volume. It reads Log Analytics directly; the application database is touched

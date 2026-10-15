@@ -418,6 +418,15 @@ class FilterValueCount(ApiModel):
     count: int
 
 
+class RecentQuery(ApiModel):
+    t: datetime
+    query: str
+    # None when the event predates result counts being recorded.
+    results: int | None = None
+    # True when `results` is a lower bound rather than an exact count.
+    capped: bool = False
+
+
 class TopCola(ApiModel):
     cola_id: str
     views: int
@@ -434,7 +443,7 @@ class DashboardPanels(ApiModel):
     filter_usage: list[NamedCount] | None = None
     paging_depth: list[NamedCount] | None = None
     sort_usage: list[NamedCount] | None = None
-    top_queries: list[NamedCount] | None = None
+    recent_queries: list[RecentQuery] | None = None
     zero_result_queries: list[NamedCount] | None = None
     filter_values: list[FilterValueCount] | None = None
     describe_queries: list[NamedCount] | None = None

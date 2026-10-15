@@ -124,7 +124,11 @@ def stub_panels(monkeypatch):
             "filter_usage": [{"filter": "commodity", "count_": 60}],
             "paging_depth": [{"page": "1", "count_": 90}],
             "sort_usage": [{"sort": "relevance", "count_": 80}],
-            "top_queries": [{"query": "napa cabernet", "count_": 7}],
+            "recent_queries": [
+                {"TimeGenerated": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False},
+                {"TimeGenerated": "2026-01-01T10:00:00Z", "query": "napa cabernet", "results": 5000, "capped": True},
+                {"TimeGenerated": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": None},
+            ],
             "zero_result_queries": [{"query": "zzzz", "count_": 2}],
             "filter_values": [{"filter": "brand", "value": "acme", "count_": 4}],
             "describe_queries": [{"query": "red fox", "count_": 3}],
@@ -178,7 +182,11 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
     assert panels["latency"][0]["endpoint"] == "GET /api/colas"
     assert panels["usageOverTime"][0]["values"]["searches"] == 100
     assert panels["imageSearchOverTime"][0]["values"]["abandoned"] == 1
-    assert panels["topQueries"] == [{"label": "napa cabernet", "count": 7}]
+    assert panels["recentQueries"] == [
+        {"t": "2026-01-01T10:00:00Z", "query": "napa cabernet", "results": 5000, "capped": True},
+        {"t": "2026-01-01T09:00:00Z", "query": "Old Tom", "results": 0, "capped": False},
+        {"t": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": False},
+    ]
     assert panels["zeroResultQueries"] == [{"label": "zzzz", "count": 2}]
     assert panels["filterValues"] == [{"filter": "brand", "value": "acme", "count": 4}]
     assert panels["describeQueries"] == [{"label": "red fox", "count": 3}]
@@ -375,8 +383,9 @@ def test_every_range_has_a_bucket_and_lookback():
 
 def test_query_text_panels_read_the_captured_property():
     queries = insights._queries("86400s")
-    for name in ("top_queries", "zero_result_queries", "describe_queries"):
+    for name in ("recent_queries", "zero_result_queries", "describe_queries"):
         assert "Properties.query_text" in queries[name], name
+    assert f"top {insights.RECENT_QUERIES_LIMIT} by TimeGenerated desc" in queries["recent_queries"]
     assert '"brand"' in queries["filter_values"]
     assert '"dateFrom"' not in queries["filter_values"]
 

@@ -388,6 +388,11 @@ section > .d-notice { margin-bottom: 0; }
 .an-table th:first-child, .an-table td:first-child { text-align: left; }
 .an-table td { text-align: right; padding: 7px 0; border-top: 1px solid var(--base-lightest); }
 .an-table td:first-child { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-table td.an-zero { color: var(--red); font-weight: 600; }
+/* Fixed height so a long list does not stretch its grid row. */
+.an-scroll { max-height: 320px; overflow-y: auto; }
+.an-scroll thead th { position: sticky; top: 0; background: var(--white); }
+.an-scroll .an-table td:last-child { white-space: nowrap; padding-left: 12px; }
 
 /* ---------- Coverage ---------- */
 /* Six stage columns do not fit a phone, so the table scrolls sideways rather

@@ -173,6 +173,44 @@ function LatencyCard({ rows, overTime }) {
   );
 }
 
+/* ---------- Recent keyword searches ---------- */
+const WHEN = new Intl.DateTimeFormat(undefined, {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+});
+
+function RecentQueries({ rows }) {
+  if (!rows || rows.length === 0) return <p className="muted an-note">No data for this range yet.</p>;
+  return (
+    <div className="an-scroll">
+      <table className="an-table">
+        <thead>
+          <tr>
+            <th>Keyword</th>
+            <th>Results</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={`${r.t}-${i}`}>
+              <td title={r.query}>
+                <a href={`/results?q=${encodeURIComponent(r.query)}`}>{r.query}</a>
+              </td>
+              <td className={r.results === 0 ? 'an-zero' : undefined}>
+                {r.results == null ? '—' : `${num(r.results)}${r.capped ? '+' : ''}`}
+              </td>
+              <td>{WHEN.format(new Date(r.t))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ---------- Top COLAs ---------- */
 function TopColas({ rows }) {
   if (!rows || rows.length === 0) {
@@ -381,8 +419,8 @@ export default function AnalyticsPage() {
               <BarList items={panels.sortUsage} color="var(--mint)" />
             </Card>
 
-            <Card title="Top keyword searches">
-              <BarList items={panels.topQueries} />
+            <Card title="Recent keyword searches">
+              <RecentQueries rows={panels.recentQueries} />
             </Card>
 
             <Card title="Keyword searches with no results">
