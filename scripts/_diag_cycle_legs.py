@@ -35,7 +35,11 @@ runs = [r for r in runs if r["status"] == "completed"][:N]
 durations = defaultdict(list)
 last_logs = {}
 for run in runs:
-    jobs = json.loads(gh("run", "view", str(run["databaseId"]), "--json", "jobs"))["jobs"]
+    raw = gh("run", "view", str(run["databaseId"]), "--json", "jobs")
+    if not raw.strip():
+        print(f"  (skipped run {run['databaseId']}: empty gh response)")
+        continue
+    jobs = json.loads(raw)["jobs"]
     for job in jobs:
         start, end = ts(job.get("startedAt")), ts(job.get("completedAt"))
         if not start or not end or job.get("conclusion") == "skipped":
