@@ -25,6 +25,9 @@ venv/
 .mypy_cache/
 .ipynb_checkpoints/
 
+# Ad-hoc local diagnostic scripts
+scripts/_diag_*.py
+
 # OS/editor
 .DS_Store
 Thumbs.db
