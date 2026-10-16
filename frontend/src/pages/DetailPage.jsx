@@ -168,8 +168,12 @@ function isBlank(value) {
   return value == null || value === false || (typeof value === 'string' && !value.trim());
 }
 
+const SCAN_FLAG_TITLE =
+  'Machine-read from the scanned paper application, not published by TTB. It may contain transcription errors; check it against the scanned form.';
+
 // Fields with nothing behind them are dropped rather than shown as an em dash,
 // and a section that ends up with no fields at all disappears with them.
+// `scanned` marks a value read off the scanned paper form.
 function FieldSection({ title, fields = [], hl, children }) {
   const shown = fields.filter((f) => f && !isBlank(f.value));
   if (!shown.length && !children) return null;
@@ -180,7 +184,14 @@ function FieldSection({ title, fields = [], hl, children }) {
         <div className="d-fields">
           {shown.map((f) => (
             <div className="d-field" key={f.label}>
-              <div className="d-label">{f.label}</div>
+              <div className="d-label">
+                {f.label}
+                {f.scanned && (
+                  <span className="d-scan-flag" title={SCAN_FLAG_TITLE} aria-label={SCAN_FLAG_TITLE} role="note">
+                    <Icon name="image" size={11} /> From scan
+                  </span>
+                )}
+              </div>
               <div className={'d-value' + (f.mono ? ' mono' : '')}>
                 {hl && typeof f.value === 'string' ? <Highlight text={f.value} q={hl} /> : f.value}
               </div>
@@ -587,6 +598,8 @@ export default function DetailPage() {
   const memberSimilar = similarGroups(memberState.data);
   const othersSimilar = similarGroups(othersState.data);
   const proc = rec.processing || {};
+  const scannedSet = new Set(rec.scannedFields || []);
+  const fromScan = (...names) => names.some((n) => scannedSet.has(n));
   const activeView = views.find((v) => v.img.fileName === activeFile) || views[0];
   const currentImage = activeView && activeView.img;
   const showBox = !!(hlItem && currentImage && hlItem.file === currentImage.fileName && hasBox(hlItem));
@@ -715,14 +728,14 @@ export default function DetailPage() {
                   { label: 'Status', value: rec.status },
                   { label: 'For sale in', value: rec.forSaleIn },
                   // "Not required" is only a fact once the detail pass has run.
-                  { label: 'Formula', value: rec.formula || (proc.detailLoaded ? 'Not required' : null), mono: true },
+                  { label: 'Formula', value: rec.formula || (proc.detailLoaded ? 'Not required' : null), mono: true, scanned: !!rec.formula && fromScan('formula') },
                   {
                     label: 'Grape varietal',
                     value: rec.grapeVarietals && rec.grapeVarietals.length ? rec.grapeVarietals.join(', ') : null,
                   },
-                  { label: 'Appellation', value: rec.appellation },
+                  { label: 'Appellation', value: rec.appellation, scanned: fromScan('appellation') },
                   { label: 'Vintage', value: rec.wineVintage },
-                  { label: 'Blown / embossed container text', value: rec.containerText },
+                  { label: 'Blown / embossed container text', value: rec.containerText, scanned: fromScan('containerText') },
                 ]}
               />
 
@@ -739,7 +752,7 @@ export default function DetailPage() {
                       rec.formMailingAddress ||
                       (addressOnPermit(rec.mailingAddress, rec.permits) ? null : rec.mailingAddress),
                   },
-                  { label: 'Application type', value: rec.applicationType },
+                  { label: 'Application type', value: rec.applicationType, scanned: fromScan('applicationType') },
                   // Redundant with the permit list below, which carries the same
                   // number plus the name and address.
                   {
@@ -750,7 +763,11 @@ export default function DetailPage() {
                   { label: 'Serial number', value: rec.serial, mono: true },
                   { label: 'Vendor code', value: rec.vendorCode, mono: true },
                   { label: 'Received as', value: rec.receivedDescription },
-                  { label: 'Date of application', value: rec.applicationDate ? fmtDate(rec.applicationDate) : null },
+                  {
+                    label: 'Date of application',
+                    value: rec.applicationDate ? fmtDate(rec.applicationDate) : null,
+                    scanned: fromScan('applicationDate'),
+                  },
                   { label: 'Date received', value: rec.receivedDate ? fmtDate(rec.receivedDate) : null },
                   { label: 'Date approved', value: fmtDate(rec.approvalDate) },
                 ]}
@@ -761,22 +778,28 @@ export default function DetailPage() {
                 hl={hl}
                 fields={[
                   { label: 'Name', value: rec.submitter },
-                  { label: 'Printed name on form', value: rec.printedName !== rec.submitter ? rec.printedName : null },
+                  {
+                    label: 'Printed name on form',
+                    value: rec.printedName !== rec.submitter ? rec.printedName : null,
+                    scanned: fromScan('printedName'),
+                  },
                   { label: 'Submitter ID', value: rec.submitterId, mono: true },
                   {
                     label: 'Telephone',
                     value: (rec.applicantPhone || rec.submitterPhone) && fmtPhone(rec.applicantPhone || rec.submitterPhone),
                     mono: true,
+                    scanned: !!rec.applicantPhone && fromScan('applicantPhone'),
                   },
                   {
                     label: 'Fax',
                     value: (rec.applicantFax || rec.submitterFax) && fmtPhone(rec.applicantFax || rec.submitterFax),
                     mono: true,
                   },
-                  { label: 'Email', value: rec.applicantEmail },
+                  { label: 'Email', value: rec.applicantEmail, scanned: fromScan('applicantEmail') },
                   {
                     label: 'Signatures',
                     value: signatureSummary(rec),
+                    scanned: fromScan('applicantSignature', 'ttbSigned'),
                   },
                 ]}
               />

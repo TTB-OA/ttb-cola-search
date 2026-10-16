@@ -918,8 +918,28 @@ async def load_detail(cola_id: str) -> ColaDetail:
         [cola_id],
     )
     locations, geo_status = await _geocoding(cola_id)
+    scan_readings = await _scan_readings(cola_id)
 
-    return detail_from_rows(base, images, items, locations, geo_status)
+    return detail_from_rows(base, images, items, locations, geo_status, scan_readings)
+
+
+async def _scan_readings(cola_id: str) -> list[dict[str, Any]]:
+    """What scan_extract read off this COLA's scanned form sheets, if anything.
+
+    Only SUCCESS and NONE readings were ever written into colas. Optional like
+    geocoding: an environment without the scan stage still renders the page.
+    """
+    try:
+        return await fetch_all(
+            "SELECT metadata->'form_flags' AS form_flags, "
+            "metadata->'fields_read'->'form_flags' AS fields_read "
+            "FROM cola_scan_extraction "
+            "WHERE cola_id = %s AND extraction_status IN ('SUCCESS', 'NONE')",
+            [cola_id],
+        )
+    except UndefinedTable:
+        logger.warning("cola_scan_extraction is not available", exc_info=True)
+        return []
 
 
 async def _geocoding(cola_id: str) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:

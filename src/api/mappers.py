@@ -6,6 +6,8 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import quote
 
+from pydantic.alias_generators import to_camel
+
 from .config import API_PREFIX
 from .models import (
     ColaDetail,
@@ -131,6 +133,28 @@ DETAIL_COLUMN_LIST: tuple[str, ...] = SUMMARY_COLUMN_LIST + (
 
 # Rollups the detail endpoint reads from cola_search_detail.
 DETAIL_JSON_COLUMN_LIST: tuple[str, ...] = ("permits", "qualifications", "grape_varietals")
+
+# Form fields scan_extract reads off a paper COLA's scanned sheet, keyed by the
+# name its reading stores them under, mapped to the cola_search column (and so
+# the ColaDetail field) that shows them.
+SCAN_FIELD_COLUMNS: dict[str, str] = {
+    "source_of_product": "source_of_product",
+    "type_of_product": "type_of_product",
+    "application_type": "application_type",
+    "exemption_state": "exemption_state",
+    "resubmission_ttb_id": "resubmission_ttb_id",
+    "application_date": "application_date",
+    "issued_date": "issued_date",
+    "expiration_date": "expiration_date",
+    "formula_num": "formula",
+    "appellation": "appellation",
+    "applicant_phone": "applicant_phone",
+    "applicant_email": "applicant_email",
+    "printed_name": "printed_name",
+    "container_text": "container_text",
+    "applicant_signature": "applicant_signature",
+    "ttb_signed": "ttb_signed",
+}
 
 
 def select_columns(columns: tuple[str, ...], alias: str | None = None) -> str:
@@ -589,12 +613,48 @@ def location_from_row(row: Mapping[str, Any]) -> GeoLocation:
     )
 
 
+def _comparable(value: Any) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value).strip()
+
+
+def scanned_fields(
+    base: Mapping[str, Any], readings: list[Mapping[str, Any]] | None
+) -> list[str]:
+    """camelCase detail fields whose shown value was read off a scanned paper form.
+
+    scan_extract only fills columns that are still empty and keeps what it read
+    in cola_scan_extraction.metadata (form_flags from the first read,
+    fields_read.form_flags from the fields-only re-read). A stored value equal
+    to one of those readings is therefore taken to be the scan's.
+    """
+    read: dict[str, set[Any]] = {}
+    for reading in readings or []:
+        for flags in (reading.get("form_flags"), reading.get("fields_read")):
+            if not isinstance(flags, Mapping):
+                continue
+            for key, value in flags.items():
+                if key in SCAN_FIELD_COLUMNS and value is not None:
+                    read.setdefault(key, set()).add(_comparable(value))
+    return [
+        to_camel(column)
+        for key, column in SCAN_FIELD_COLUMNS.items()
+        if key in read
+        and base.get(column) is not None
+        and _comparable(base[column]) in read[key]
+    ]
+
+
 def detail_from_rows(
     base: dict[str, Any],
     images: list[dict[str, Any]],
     items: list[dict[str, Any]],
     locations: list[dict[str, Any]] | None = None,
     geo_status: Mapping[str, Any] | None = None,
+    scan_readings: list[dict[str, Any]] | None = None,
 ) -> ColaDetail:
     summary = summary_from_row(base)
     varietals = [
@@ -665,4 +725,5 @@ def detail_from_rows(
         details_url=base.get("cola_details_url"),
         form_url=base.get("cola_form_url"),
         processing=processing,
+        scanned_fields=scanned_fields(base, scan_readings),
     )

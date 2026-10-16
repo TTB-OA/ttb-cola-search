@@ -207,6 +207,8 @@
 .d-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 28px; }
 .d-field { min-width: 0; }
 .d-label { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--base-dark); font-weight: 700; margin-bottom: 3px; }
+.d-scan-flag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 5px; border: 1px solid var(--gold-dark); border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: .04em; line-height: 15px; color: #6b4a00; background: #fef5e7; vertical-align: 1px; cursor: help; }
+[data-theme="dark"] .d-scan-flag { color: #f0cf8a; background: #2d2409; }
 .d-value { font-size: 15.5px; color: var(--ink); font-weight: 500; }
 .d-qual { font-size: 14px; line-height: 1.6; color: var(--base-darker); background: var(--gray-2); border-radius: var(--radius); padding: 16px; border-left: 3px solid var(--base-light); }
 .d-qual-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--base-darker); }

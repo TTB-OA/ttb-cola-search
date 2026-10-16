@@ -172,6 +172,9 @@ class ColaDetail(ColaSummary):
     details_url: str | None = None
     form_url: str | None = None
     processing: ProcessingStatus = ProcessingStatus()
+    # camelCase names of the fields above whose value was machine-read off a
+    # scanned paper form rather than published by TTB; may carry misreadings.
+    scanned_fields: list[str] = []
 
 
 class FacetBucket(ApiModel):
