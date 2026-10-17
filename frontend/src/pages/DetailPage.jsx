@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
@@ -456,6 +456,9 @@ function Lightbox({ rec, views, file, setFile, hlItem, hlIsMatch, onClearHl, onC
 export default function DetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  // Opened straight from a single-match search, so Back leads to the form, not a results list.
+  const location = useLocation();
+  const singleResult = Boolean(location.state && location.state.singleResult);
   const [searchParams] = useSearchParams();
   // Users often type SQL/glob wildcards (e.g. "berkshire%"); drop them so highlighting matches the literal text.
   const hl = (searchParams.get('q') || '').replace(/[%*]/g, '').trim();
@@ -613,7 +616,7 @@ export default function DetailPage() {
       <div className="wrap">
         <nav className="crumbs">
           <button className="linkbtn" onClick={() => navigate(-1)}>
-            <Icon name="chevLeft" size={16} /> Back to results
+            <Icon name="chevLeft" size={16} /> {singleResult ? 'Back to search' : 'Back to results'}
           </button>
           <span className="muted" style={{ margin: '0 8px' }}>
             /

@@ -30,6 +30,9 @@ ALLOWED_EVENTS = frozenset(
         "advanced_panel_toggled",
         "view_mode_changed",
         "result_clicked",
+        # A home-page search with one match opens the detail page client-side,
+        # so the server sees a search but never the implied click.
+        "single_result_opened",
         "label_face_switched",
         "lightbox_opened",
         "ocr_chip_clicked",

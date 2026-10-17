@@ -691,7 +691,8 @@ export default function SearchPage() {
   }, [demoText]);
 
   function submitText() {
-    navigate({ pathname: '/results', search: toQuery(draftToParams({ ...draft, mode: 'text' })) });
+    // `fromSearch` lets the results page jump straight to a lone match (e.g. a COLA ID).
+    navigate({ pathname: '/results', search: toQuery(draftToParams({ ...draft, mode: 'text' })) }, { state: { fromSearch: true } });
   }
 
   function submitImage() {

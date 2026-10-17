@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
@@ -518,6 +518,8 @@ function ActiveChips({ criteria, onClearKey }) {
 /* ---------- main ---------- */
 export default function ResultsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromSearch = Boolean(location.state && location.state.fromSearch);
   const [searchParams, setSearchParams] = useSearchParams();
   const isMobile = useIsMobile();
   const criteria = paramsToObject(searchParams);
@@ -734,17 +736,34 @@ export default function ResultsPage() {
   const View = { gallery: GalleryView, wall: WallView, list: ListView }[view] || TableView;
   // Carry the search term so the detail page can highlight matching label text.
   // In describe mode `q` is an artwork prompt, not text to look for.
-  const onOpen = (id, rank) => {
+  const detailHref = (id) => {
     const keys = isDescribe ? HIGHLIGHT_KEYS.filter((k) => k !== 'q') : HIGHLIGHT_KEYS;
     const key = keys.find((k) => (criteria[k] || '').trim());
     const term = key ? criteria[key].trim() : '';
+    return `/cola/${encodeURIComponent(id)}${term ? `?q=${encodeURIComponent(term)}` : ''}`;
+  };
+  const onOpen = (id, rank) => {
     track('result_clicked', {
       rank: typeof rank === 'number' ? (page - 1) * pageSize + rank + 1 : -1,
       view,
       mode,
     });
-    navigate(`/cola/${encodeURIComponent(id)}${term ? `?q=${encodeURIComponent(term)}` : ''}`);
+    navigate(detailHref(id));
   };
+
+  // A search submitted from the home page that matches exactly one label (e.g. a
+  // COLA ID) skips the one-row list. Replacing this entry means Back returns to
+  // the form; refining facets here, or arriving via a link, never auto-opens.
+  const singleMatch =
+    !isVector && fromSearch && page === 1 && !loading && !state.error && !totalCapped && total === 1 && rows.length === 1
+      ? rows[0].id
+      : null;
+  // Layout effect so the one-row list never paints before the redirect.
+  useLayoutEffect(() => {
+    if (singleMatch == null) return;
+    track('single_result_opened', { mode });
+    navigate(detailHref(singleMatch), { replace: true, state: { singleResult: true } });
+  }, [singleMatch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Image mode with no stashed file (e.g. deep link / refresh): prompt to restart.
   if (isImg && (!pending || !pending.file)) {
