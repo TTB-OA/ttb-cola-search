@@ -227,6 +227,83 @@ function RecentQueries({ rows }) {
   );
 }
 
+/* ---------- Recent filter values ---------- */
+function filterValueHref(r) {
+  return `/results?${new URLSearchParams({ [r.filter]: r.value })}`;
+}
+
+function RecentFilterValues({ rows }) {
+  if (!rows || rows.length === 0) return <p className="muted an-note">No data for this range yet.</p>;
+  return (
+    <div className="an-scroll">
+      <table className="an-table">
+        <thead>
+          <tr>
+            <th>Filter value</th>
+            <th>Uses</th>
+            <th>Last used</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const label = FILTER_LABELS[r.filter] || r.filter;
+            return (
+              <tr key={`${r.filter}-${r.value}-${r.t}`}>
+                <td title={`${label}: ${r.value}`}>
+                  <a href={filterValueHref(r)}>{r.value}</a>
+                  <div className="an-sub muted">{label}</div>
+                </td>
+                <td>{num(r.count)}</td>
+                <td>{WHEN.format(new Date(r.t))}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ---------- Recent artwork descriptions ---------- */
+function describeHref(r) {
+  const p = new URLSearchParams({ mode: 'describe', q: r.query });
+  if (r.commodity) p.set('commodity', r.commodity);
+  return `/results?${p}`;
+}
+
+function RecentDescriptions({ rows }) {
+  if (!rows || rows.length === 0) return <p className="muted an-note">No data for this range yet.</p>;
+  return (
+    <div className="an-scroll">
+      <table className="an-table">
+        <thead>
+          <tr>
+            <th>Description</th>
+            <th>Uses</th>
+            <th>Results</th>
+            <th>Last used</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.query}-${r.commodity || ''}-${r.t}`}>
+              <td title={r.commodity ? `${r.query} — Commodity: ${r.commodity}` : r.query}>
+                <a href={describeHref(r)}>{r.query}</a>
+                {r.commodity ? <div className="an-sub muted">Commodity: {r.commodity}</div> : null}
+              </td>
+              <td>{num(r.count)}</td>
+              <td className={r.results === 0 ? 'an-zero' : undefined}>
+                {r.results == null ? '—' : num(r.results)}
+              </td>
+              <td>{WHEN.format(new Date(r.t))}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 /* ---------- Top COLAs ---------- */
 function TopColas({ rows }) {
   if (!rows || rows.length === 0) {
@@ -443,18 +520,12 @@ export default function AnalyticsPage() {
               <BarList items={panels.zeroResultQueries} color="var(--red)" />
             </Card>
 
-            <Card title="Top filter values">
-              <BarList
-                items={(panels.filterValues || []).map((r) => ({
-                  label: `${FILTER_LABELS[r.filter] || r.filter}: ${r.value}`,
-                  count: r.count,
-                }))}
-                color="var(--mint)"
-              />
+            <Card title="Recent filter values">
+              <RecentFilterValues rows={panels.recentFilterValues} />
             </Card>
 
-            <Card title="Top artwork descriptions">
-              <BarList items={panels.describeQueries} color="var(--gold-dark)" />
+            <Card title="Recent artwork descriptions">
+              <RecentDescriptions rows={panels.recentDescribeQueries} />
             </Card>
 
             <Card title="Most-viewed records">

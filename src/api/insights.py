@@ -45,7 +45,7 @@ _BUCKETS: dict[str, str] = {
 
 _SERVER_EVENTS = '"search_performed", "detail_viewed", "similar_requested", "image_search_performed"'
 
-# Dates are ranges, not something worth ranking.
+# Dates are ranges, not values worth listing.
 _RANKED_FILTERS = ", ".join(
     f'"{k}"' for k in TEXT_FILTER_KEYS if not k.endswith(("From", "To"))
 )
@@ -53,7 +53,8 @@ _RANKED_FILTERS = ", ".join(
 # Endpoints charted over time; more lines than this stop being readable.
 LATENCY_SERIES_LIMIT = 6
 
-# Rows in the recent keyword searches list.
+# Rows in each of the recent lists (keyword searches, filter values, artwork
+# descriptions).
 RECENT_QUERIES_LIMIT = 50
 
 # Every filter a search can carry, so the list can tell apart the same keyword
@@ -147,22 +148,30 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize count() by query
             | top 15 by count_ desc
         """,
-        "filter_values": f"""
+        # One row per distinct value (case-folded), stamped with its latest use
+        # and keeping the casing it was last typed in.
+        "recent_filter_values": f"""
             AppEvents
             | where Name == "search_performed" and toint(Properties.page) == 1
             | mv-expand filter = dynamic([{_RANKED_FILTERS}]) to typeof(string)
-            | extend value = tolower(tostring(Properties[filter]))
+            | extend value = tostring(Properties[filter])
             | where isnotempty(value)
-            | summarize count() by filter, value
-            | top 15 by count_ desc
+            | summarize arg_max(TimeGenerated, value), count() by filter, key = tolower(value)
+            | top {RECENT_QUERIES_LIMIT} by TimeGenerated desc
+            | project TimeGenerated, filter, value, count_
         """,
-        "describe_queries": """
+        "recent_describe_queries": f"""
             AppEvents
             | where Name == "describe_search_performed"
-            | extend query = tolower(tostring(Properties.query_text))
+            | extend
+                query = tostring(Properties.query_text),
+                commodity = tostring(Properties.commodity),
+                results = toint(Properties.result_total)
             | where isnotempty(query)
-            | summarize count() by query
-            | top 15 by count_ desc
+            | summarize arg_max(TimeGenerated, query, results), count()
+              by key = tolower(query), commodity
+            | top {RECENT_QUERIES_LIMIT} by TimeGenerated desc
+            | project TimeGenerated, query, commodity, results, count_
         """,
         # --- Content insights -----------------------------------------------
         "top_colas": """

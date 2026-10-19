@@ -1,9 +1,9 @@
 """Unlisted usage dashboard.
 
 Serves aggregates read back out of Log Analytics: counts, rates, percentiles,
-the most frequent search text and filter values, and the latest keyword
-searches. Sessions appear only as a pseudonymous id inside counts; no row is
-tied to a visitor.
+the most frequent search text, and the latest keyword searches, filter values
+and artwork descriptions. Sessions appear only as a pseudonymous id inside
+counts; no row is tied to a visitor.
 
 The endpoint is off unless ``analytics_dashboard_enabled`` and
 ``analytics_dashboard_token`` are both set, and returns 404 (not 403) when off
@@ -29,10 +29,11 @@ from ..models import (
     DashboardData,
     DashboardPanels,
     DashboardTotals,
-    FilterValueCount,
     LatencyRow,
     LatencySeries,
     NamedCount,
+    RecentDescribeQuery,
+    RecentFilterValue,
     RecentQuery,
     TimePoint,
     TopCola,
@@ -105,17 +106,45 @@ def _recent_queries(rows: list[dict[str, Any]]) -> list[RecentQuery]:
     return out
 
 
-def _filter_values(rows: list[dict[str, Any]]) -> list[FilterValueCount]:
+def _recent_filter_values(rows: list[dict[str, Any]]) -> list[RecentFilterValue]:
     out = []
     for row in rows:
+        when = _moment(row.get("TimeGenerated"))
         name = str(row.get("filter") or "").strip()
         value = str(row.get("value") or "").strip()
-        if name and value:
-            out.append(
-                FilterValueCount(
-                    filter=name[:40], value=value[:120], count=int(row.get("count_") or 0)
-                )
+        if when is None or not name or not value:
+            continue
+        out.append(
+            RecentFilterValue(
+                t=when,
+                filter=name[:40],
+                value=value[:200],
+                count=int(row.get("count_") or 0),
             )
+        )
+    out.sort(key=lambda r: r.t, reverse=True)
+    return out
+
+
+def _recent_describe_queries(rows: list[dict[str, Any]]) -> list[RecentDescribeQuery]:
+    out = []
+    for row in rows:
+        when = _moment(row.get("TimeGenerated"))
+        query = str(row.get("query") or "").strip()
+        if when is None or not query:
+            continue
+        results = row.get("results")
+        commodity = str(row.get("commodity") or "").strip()
+        out.append(
+            RecentDescribeQuery(
+                t=when,
+                query=query[:200],
+                commodity=commodity[:64] or None,
+                results=int(results) if isinstance(results, (int, float)) else None,
+                count=int(row.get("count_") or 1),
+            )
+        )
+    out.sort(key=lambda r: r.t, reverse=True)
     return out
 
 
@@ -265,8 +294,12 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
         sort_usage=_counts(panels.get("sort_usage") or [], "sort"),
         recent_queries=_recent_queries(panels.get("recent_queries") or []),
         zero_result_queries=_counts(panels.get("zero_result_queries") or [], "query", 200),
-        filter_values=_filter_values(panels.get("filter_values") or []),
-        describe_queries=_counts(panels.get("describe_queries") or [], "query", 200),
+        recent_filter_values=_recent_filter_values(
+            panels.get("recent_filter_values") or []
+        ),
+        recent_describe_queries=_recent_describe_queries(
+            panels.get("recent_describe_queries") or []
+        ),
         top_colas=await _enrich_colas(panels.get("top_colas") or []),
         commodity_usage=_counts(panels.get("commodity_usage") or [], "commodity"),
         origin_usage=_counts(panels.get("origin_usage") or [], "origin"),

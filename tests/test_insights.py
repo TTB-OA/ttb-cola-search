@@ -130,8 +130,15 @@ def stub_panels(monkeypatch):
                 {"TimeGenerated": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": None},
             ],
             "zero_result_queries": [{"query": "zzzz", "count_": 2}],
-            "filter_values": [{"filter": "brand", "value": "acme", "count_": 4}],
-            "describe_queries": [{"query": "red fox", "count_": 3}],
+            "recent_filter_values": [
+                {"TimeGenerated": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "count_": 4},
+                {"TimeGenerated": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "count_": 1},
+                {"TimeGenerated": "2026-01-01T12:00:00Z", "filter": "brand", "value": "", "count_": 2},
+            ],
+            "recent_describe_queries": [
+                {"TimeGenerated": "2026-01-01T06:00:00Z", "query": "red fox", "commodity": "", "results": 48, "count_": 3},
+                {"TimeGenerated": "2026-01-01T09:30:00Z", "query": "gold eagle", "commodity": "Wine", "results": None, "count_": 1},
+            ],
             "top_colas": [{"colaId": "123", "count_": 9}],
             "commodity_usage": [{"commodity": "Wine", "count_": 50}],
             "origin_usage": [{"origin": "California", "count_": 20}],
@@ -195,8 +202,14 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
         {"t": "2026-01-01T08:00:00Z", "query": "rye", "results": None, "capped": False, "filters": {}, "sort": None},
     ]
     assert panels["zeroResultQueries"] == [{"label": "zzzz", "count": 2}]
-    assert panels["filterValues"] == [{"filter": "brand", "value": "acme", "count": 4}]
-    assert panels["describeQueries"] == [{"label": "red fox", "count": 3}]
+    assert panels["recentFilterValues"] == [
+        {"t": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "count": 1},
+        {"t": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "count": 4},
+    ]
+    assert panels["recentDescribeQueries"] == [
+        {"t": "2026-01-01T09:30:00Z", "query": "gold eagle", "commodity": "Wine", "results": None, "count": 1},
+        {"t": "2026-01-01T06:00:00Z", "query": "red fox", "commodity": None, "results": 48, "count": 3},
+    ]
 
 
 def test_latency_over_time_is_pivoted_by_endpoint(client, enabled, stub_panels):
@@ -341,7 +354,7 @@ def test_slow_panel_times_out_instead_of_holding_the_page(enabled, monkeypatch):
     monkeypatch.setattr(insights, "_get_client", lambda: Client())
     panels, failed = asyncio.run(insights.run_panels(enabled, "30d"))
 
-    assert failed == ["describe_queries"]
+    assert failed == ["recent_describe_queries"]
     assert panels["totals"] == []
 
 
@@ -390,13 +403,15 @@ def test_every_range_has_a_bucket_and_lookback():
 
 def test_query_text_panels_read_the_captured_property():
     queries = insights._queries("86400s")
-    for name in ("recent_queries", "zero_result_queries", "describe_queries"):
+    for name in ("recent_queries", "zero_result_queries", "recent_describe_queries"):
         assert "Properties.query_text" in queries[name], name
     assert f"top {insights.RECENT_QUERIES_LIMIT} by TimeGenerated desc" in queries["recent_queries"]
     assert 'f_commodity = tostring(Properties["commodity"])' in queries["recent_queries"]
     assert 'Properties["q"]' not in queries["recent_queries"]
-    assert '"brand"' in queries["filter_values"]
-    assert '"dateFrom"' not in queries["filter_values"]
+    assert '"brand"' in queries["recent_filter_values"]
+    assert '"dateFrom"' not in queries["recent_filter_values"]
+    for name in ("recent_filter_values", "recent_describe_queries"):
+        assert f"top {insights.RECENT_QUERIES_LIMIT} by TimeGenerated desc" in queries[name], name
 
 
 def test_queries_contain_no_format_placeholders():

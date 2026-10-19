@@ -4,6 +4,7 @@ import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
 import Highlight from '../components/Highlight.jsx';
+import { matchesTerms, queryTerms } from '../lib/queryTerms.js';
 import { toPct } from '../components/ScoreMeter.jsx';
 import { api, toQuery } from '../lib/api.js';
 import { track } from '../lib/analytics.js';
@@ -460,9 +461,11 @@ export default function DetailPage() {
   const location = useLocation();
   const singleResult = Boolean(location.state && location.state.singleResult);
   const [searchParams] = useSearchParams();
-  // Users often type SQL/glob wildcards (e.g. "berkshire%"); drop them so highlighting matches the literal text.
-  const hl = (searchParams.get('q') || '').replace(/[%*]/g, '').trim();
-  const q = hl.toLowerCase();
+  // Highlight the terms the search actually matched: quoted phrases, separate words, no wildcards or exclusions.
+  const rawQ = searchParams.get('q') || '';
+  const hlTerms = useMemo(() => queryTerms(rawQ), [rawQ]);
+  const hl = hlTerms.length ? hlTerms : '';
+  const q = hlTerms.join('\n');
 
   const detailState = useAsync((signal) => api.getCola(id, signal), [id], { cacheKey: `cola:${id}` });
   const memberState = useAsync((signal) => api.similar(id, 8, signal, 'member'), [id], {
@@ -525,8 +528,8 @@ export default function DetailPage() {
   };
 
   const matchedItems = useMemo(
-    () => (q ? items.filter((it) => (it.text || '').toLowerCase().includes(q)) : []),
-    [items, q]
+    () => (hlTerms.length ? items.filter((it) => matchesTerms(it.text, hlTerms)) : []),
+    [items, hlTerms]
   );
 
   // Group extracted text by image file, reading order within each group. Groups
@@ -606,7 +609,7 @@ export default function DetailPage() {
   const activeView = views.find((v) => v.img.fileName === activeFile) || views[0];
   const currentImage = activeView && activeView.img;
   const showBox = !!(hlItem && currentImage && hlItem.file === currentImage.fileName && hasBox(hlItem));
-  const hlIsMatch = !!(q && hlItem && (hlItem.text || '').toLowerCase().includes(q));
+  const hlIsMatch = !!(hlItem && matchesTerms(hlItem.text, hlTerms));
   const onOpen = (rid) =>
     navigate(`/cola/${encodeURIComponent(rid)}${q ? `?q=${encodeURIComponent(searchParams.get('q'))}` : ''}`);
   const memberPermit = rec.permitId || rec.permit;
@@ -919,7 +922,7 @@ export default function DetailPage() {
                         </h4>
                         <div className="ocr-flow">
                           {group.items.map((it, i) => {
-                            const isMatch = q && (it.text || '').toLowerCase().includes(q);
+                            const isMatch = matchesTerms(it.text, hlTerms);
                             const on = hlItem === it;
                             return (
                               <button

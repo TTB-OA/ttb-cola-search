@@ -4,6 +4,7 @@ import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
 import { StatusBadge, CatTag } from '../components/Badges.jsx';
 import Highlight from '../components/Highlight.jsx';
+import { queryTerms } from '../lib/queryTerms.js';
 import ScoreMeter, { toPct } from '../components/ScoreMeter.jsx';
 import SlowNotice from '../components/SlowNotice.jsx';
 import { api } from '../lib/api.js';
@@ -183,6 +184,7 @@ function DupMark({ e }) {
 
 /* ---------- views ---------- */
 function GalleryView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
+  const qTerms = isVector ? criteria.q : queryTerms(criteria.q);
   return (
     <div className="gallery-grid">
       {entries.map((e) => {
@@ -209,10 +211,10 @@ function GalleryView({ entries, criteria, isVector, showRank, onOpen, onToggle }
                   <StatusBadge status={r.status} />
                 </div>
                 <div className="g-brand">
-                  <Highlight text={r.brand} q={criteria.brand || criteria.q} />
+                  <Highlight text={r.brand} q={criteria.brand || qTerms} />
                 </div>
                 <div className="g-fanciful">
-                  <Highlight text={r.fanciful} q={criteria.fanciful || criteria.q} />
+                  <Highlight text={r.fanciful} q={criteria.fanciful || qTerms} />
                 </div>
                 <div className="g-meta mono">{r.ttbId}</div>
                 <div className="g-meta">
@@ -341,6 +343,7 @@ function WallView({ entries, isVector, showRank, onOpen, onToggle, tileSize }) {
 }
 
 function ListView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
+  const qTerms = isVector ? criteria.q : queryTerms(criteria.q);
   return (
     <div className="list-view">
       {entries.map((e) => {
@@ -359,13 +362,13 @@ function ListView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
                   </span>
                 </div>
                 <div className="l-brand">
-                  <Highlight text={r.brand} q={criteria.brand || criteria.q} /> <span className="l-fanciful">{r.fanciful}</span>
+                  <Highlight text={r.brand} q={criteria.brand || qTerms} /> <span className="l-fanciful">{r.fanciful}</span>
                 </div>
                 <div className="l-meta">
                   <span className="mono">{r.ttbId}</span>
                   <span>{r.originFlag ? r.originFlag + ' ' : ''}{r.origin}</span>
                   <span>
-                    <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+                    <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || qTerms} />
                   </span>
                   {r.permitId && <span className="mono">{r.permitId}</span>}
                   {r.permitState && (
@@ -396,6 +399,7 @@ function ListView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
 }
 
 function TableView({ entries, criteria, isVector, showRank, onOpen, onToggle }) {
+  const qTerms = isVector ? criteria.q : queryTerms(criteria.q);
   return (
     <div className="table-wrap panel">
       <table className="data-table">
@@ -422,7 +426,7 @@ function TableView({ entries, criteria, isVector, showRank, onOpen, onToggle }) 
               </td>
               <td>
                 <div style={{ fontWeight: 700 }}>
-                  <Highlight text={r.brand} q={criteria.brand || criteria.q} />
+                  <Highlight text={r.brand} q={criteria.brand || qTerms} />
                 </div>
                 <div className="muted" style={{ fontSize: 12.5 }}>
                   {r.fanciful}
@@ -438,7 +442,7 @@ function TableView({ entries, criteria, isVector, showRank, onOpen, onToggle }) 
               </td>
               <td>
                 <div>
-                  <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || criteria.q} />
+                  <Highlight text={r.applicant} q={criteria.applicant || criteria.permitName || qTerms} />
                 </div>
                 <div className="muted mono" style={{ fontSize: 12, marginTop: 3 }}>
                   {[r.permitId, r.permitState].filter(Boolean).join(' · ')}

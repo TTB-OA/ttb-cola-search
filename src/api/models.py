@@ -415,10 +415,25 @@ class LatencySeries(ApiModel):
     p95: list[TimePoint] = []
 
 
-class FilterValueCount(ApiModel):
+class RecentFilterValue(ApiModel):
+    """One distinct filter value, at its most recent use."""
+
+    t: datetime
     filter: str
     value: str
+    # Searches in the range that used this value.
     count: int
+
+
+class RecentDescribeQuery(ApiModel):
+    """One distinct artwork description (per commodity), at its most recent use."""
+
+    t: datetime
+    query: str
+    commodity: str | None = None
+    # Result count of the most recent run; None if it was not recorded.
+    results: int | None = None
+    count: int = 1
 
 
 class RecentQuery(ApiModel):
@@ -452,8 +467,8 @@ class DashboardPanels(ApiModel):
     sort_usage: list[NamedCount] | None = None
     recent_queries: list[RecentQuery] | None = None
     zero_result_queries: list[NamedCount] | None = None
-    filter_values: list[FilterValueCount] | None = None
-    describe_queries: list[NamedCount] | None = None
+    recent_filter_values: list[RecentFilterValue] | None = None
+    recent_describe_queries: list[RecentDescribeQuery] | None = None
     top_colas: list[TopCola] | None = None
     commodity_usage: list[NamedCount] | None = None
     origin_usage: list[NamedCount] | None = None
