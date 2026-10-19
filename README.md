@@ -385,9 +385,11 @@ only to turn the top COLA ids into brand names.
 Enabling it takes four things:
 
 1. `ANALYTICS_DASHBOARD_ENABLED=true` (Bicep parameter `analyticsDashboardEnabled`).
-2. `ANALYTICS_DASHBOARD_TOKEN` — a long random string (Bicep parameter
-   `analyticsDashboardToken`, fed from the `ANALYTICS_DASHBOARD_TOKEN` repo
-   secret by `infra.yml`). The page prompts for it and keeps it in
+2. `ANALYTICS_DASHBOARD_TOKEN` — read from the `ttb-admin-password` secret in
+   Key Vault `ttb-keyvault-testing` (Bicep parameters `keyVaultName` /
+   `analyticsDashboardTokenSecretName`). The Bicep grants the app identity
+   `get` on secrets and wires a Key Vault reference, so rotate the secret in
+   the vault and restart the revision. The page prompts for it and keeps it in
    `sessionStorage`; the API expects `Authorization: Bearer <token>`.
 3. `LOG_ANALYTICS_WORKSPACE_ID` — Bicep passes `logs.properties.customerId`
    automatically. This is the workspace GUID, not the ARM resource id.

@@ -34,6 +34,9 @@
     },
     "analyticsDashboardEnabled": {
       "value": true
+    },
+    "keyVaultName": {
+      "value": "ttb-keyvault-testing"
     }
   }
 }

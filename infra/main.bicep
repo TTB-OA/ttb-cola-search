@@ -92,9 +92,11 @@ param analyticsSalt string = ''
 @description('Serve the /analytics usage dashboard. Also requires analyticsDashboardToken.')
 param analyticsDashboardEnabled bool = false
 
-@description('Shared access token for the /analytics dashboard. Empty keeps the dashboard off.')
-@secure()
-param analyticsDashboardToken string = ''
+@description('Existing Key Vault in this resource group (access-policy model) holding the dashboard password.')
+param keyVaultName string
+
+@description('Key Vault secret used as the /analytics dashboard token. The app identity is granted get on secrets.')
+param analyticsDashboardTokenSecretName string = 'ttb-admin-password'
 
 param minReplicas int = 1
 param maxReplicas int = 3
@@ -167,6 +169,27 @@ resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' 
   location: location
 }
 
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
+  name: keyVaultName
+}
+
+// 'add' merges into the vault's existing policies instead of replacing them.
+resource keyVaultSecretsAccess 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = {
+  parent: keyVault
+  name: 'add'
+  properties: {
+    accessPolicies: [
+      {
+        tenantId: subscription().tenantId
+        objectId: identity.properties.principalId
+        permissions: {
+          secrets: ['get']
+        }
+      }
+    ]
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Container Apps managed environment
 // ---------------------------------------------------------------------------
@@ -190,6 +213,7 @@ resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: appName
   location: location
+  dependsOn: [keyVaultSecretsAccess]
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -223,17 +247,17 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             name: 'appinsights-connection-string'
             value: appInsights.properties.ConnectionString
           }
+          {
+            // Versionless URI: Container Apps re-reads the latest version (~30 min); restart to pick up a rotation.
+            name: 'analytics-dashboard-token'
+            keyVaultUrl: '${keyVault.properties.vaultUri}secrets/${analyticsDashboardTokenSecretName}'
+            identity: identity.id
+          }
         ],
         empty(analyticsSalt) ? [] : [
           {
             name: 'analytics-salt'
             value: analyticsSalt
-          }
-        ],
-        empty(analyticsDashboardToken) ? [] : [
-          {
-            name: 'analytics-dashboard-token'
-            value: analyticsDashboardToken
           }
         ],
         empty(geminiApiKey) ? [] : [
@@ -281,12 +305,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
               // Log Analytics Reader grant on the workspace to query it.
               { name: 'LOG_ANALYTICS_WORKSPACE_ID', value: logs.properties.customerId }
               { name: 'ANALYTICS_DASHBOARD_ENABLED', value: string(analyticsDashboardEnabled) }
+              { name: 'ANALYTICS_DASHBOARD_TOKEN', secretRef: 'analytics-dashboard-token' }
             ],
             empty(analyticsSalt) ? [] : [
               { name: 'ANALYTICS_SALT', secretRef: 'analytics-salt' }
-            ],
-            empty(analyticsDashboardToken) ? [] : [
-              { name: 'ANALYTICS_DASHBOARD_TOKEN', secretRef: 'analytics-dashboard-token' }
             ],
             empty(geminiApiKey) ? [] : [
               { name: 'GEMINI_API_KEY', secretRef: 'gemini-api-key' }

@@ -18,10 +18,10 @@ jobs:
   provision:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Azure login (service principal)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -63,7 +63,6 @@ jobs:
             -p postgresUser="${{ vars.PG_USER }}" \
             -p geminiApiKey="${{ secrets.GEMINI_API_KEY }}" \
             -p analyticsSalt="${{ secrets.ANALYTICS_SALT }}" \
-            -p analyticsDashboardToken="${{ secrets.ANALYTICS_DASHBOARD_TOKEN }}" \
             --only-show-errors
 
       - name: Show outputs
