@@ -210,6 +210,13 @@
 .d-scan-flag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 5px; border: 1px solid var(--gold-dark); border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: .04em; line-height: 15px; color: #6b4a00; background: #fef5e7; vertical-align: 1px; cursor: help; }
 [data-theme="dark"] .d-scan-flag { color: #f0cf8a; background: #2d2409; }
 .d-value { font-size: 15.5px; color: var(--ink); font-weight: 500; }
+/* Paragraph-length values span the grid instead of wrapping in half of it. */
+.d-field-wide { grid-column: 1 / -1; }
+.d-long { background: var(--gray-2); border-radius: var(--radius); padding: 12px 16px; border-left: 3px solid var(--base-light); }
+.d-long-text { font-size: 14px; line-height: 1.6; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.d-long-text.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.d-long-toggle { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.d-long-toggle:hover { text-decoration: underline; }
 .d-qual { font-size: 14px; line-height: 1.6; color: var(--base-darker); background: var(--gray-2); border-radius: var(--radius); padding: 16px; border-left: 3px solid var(--base-light); }
 .d-qual-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--base-darker); }
 .d-qual-list li + li { margin-top: 10px; }
@@ -631,4 +638,6 @@ section > .d-notice { margin-bottom: 0; }
 @media print {
   .gov-banner, .prototype-banner, .site-header, .site-footer, .results-bar, .tweaks-host, button.btn, .crumbs { display: none !important; }
   .label-viewer, .panel { box-shadow: none; }
+  .d-long-text.clamped { display: block; overflow: visible; }
+  .d-long-toggle { display: none; }
 }
