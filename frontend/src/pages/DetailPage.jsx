@@ -184,7 +184,7 @@ function FieldSection({ title, fields = [], hl, children }) {
       {shown.length > 0 && (
         <div className="d-fields">
           {shown.map((f) => (
-            <div className="d-field" key={f.label}>
+            <div className={'d-field' + (f.long ? ' d-field-wide' : '')} key={f.label}>
               <div className="d-label">
                 {f.label}
                 {f.scanned && (
@@ -193,15 +193,43 @@ function FieldSection({ title, fields = [], hl, children }) {
                   </span>
                 )}
               </div>
-              <div className={'d-value' + (f.mono ? ' mono' : '')}>
-                {hl && typeof f.value === 'string' ? <Highlight text={f.value} q={hl} /> : f.value}
-              </div>
+              {f.long ? (
+                <LongValue key={f.value} text={f.value} hl={hl} />
+              ) : (
+                <div className={'d-value' + (f.mono ? ' mono' : '')}>
+                  {hl && typeof f.value === 'string' ? <Highlight text={f.value} q={hl} /> : f.value}
+                </div>
+              )}
             </div>
           ))}
         </div>
       )}
       {children}
     </>
+  );
+}
+
+// Free text that can run to a paragraph or more (blown / embossed container
+// text). It spans the whole field grid and reads as a block; past
+// LONG_CLAMP_CHARS it is clamped behind a toggle, unless a highlighted search
+// term is in it, which must not be hidden.
+const LONG_CLAMP_CHARS = 240;
+
+function LongValue({ text, hl }) {
+  const clampable = String(text).length > LONG_CLAMP_CHARS;
+  const [open, setOpen] = useState(() => !!hl && matchesTerms(text, hl));
+  const clamped = clampable && !open;
+  return (
+    <div className="d-long">
+      <div className={'d-long-text' + (clamped ? ' clamped' : '')}>
+        {hl ? <Highlight text={text} q={hl} /> : text}
+      </div>
+      {clampable && (
+        <button type="button" className="d-long-toggle" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+          {open ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -741,7 +769,7 @@ export default function DetailPage() {
                   },
                   { label: 'Appellation', value: rec.appellation, scanned: fromScan('appellation') },
                   { label: 'Vintage', value: rec.wineVintage },
-                  { label: 'Blown / embossed container text', value: rec.containerText, scanned: fromScan('containerText') },
+                  { label: 'Blown / embossed container text', value: rec.containerText, scanned: fromScan('containerText'), long: true },
                 ]}
               />
 
