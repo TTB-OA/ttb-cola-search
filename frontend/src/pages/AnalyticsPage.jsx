@@ -15,6 +15,27 @@ const RANGES = [
   { key: '90d', label: '90 days' },
 ];
 
+// Chart intervals offered per range, default first. Mirrors INTERVALS in
+// src/api/insights.py; the API rejects any other pairing.
+const INTERVALS = {
+  '7d': [
+    { key: '6h', label: '6 hours' },
+    { key: '1d', label: 'Daily' },
+  ],
+  '14d': [
+    { key: '12h', label: '12 hours' },
+    { key: '1d', label: 'Daily' },
+  ],
+  '30d': [
+    { key: '1d', label: 'Daily' },
+    { key: '1w', label: 'Weekly' },
+  ],
+  '90d': [
+    { key: '1d', label: 'Daily' },
+    { key: '1w', label: 'Weekly' },
+  ],
+};
+
 const FILTER_LABELS = {
   q: 'Keyword',
   ttbId: 'TTB ID',
@@ -241,6 +262,9 @@ function RecentFilterValues({ rows }) {
           <tr>
             <th>Filter value</th>
             <th>Uses</th>
+            <th title="Results of the most recent search that used this value, including any keyword or other filters it was combined with">
+              Results
+            </th>
             <th>Last used</th>
           </tr>
         </thead>
@@ -254,6 +278,9 @@ function RecentFilterValues({ rows }) {
                   <div className="an-sub muted">{label}</div>
                 </td>
                 <td>{num(r.count)}</td>
+                <td className={r.results === 0 ? 'an-zero' : undefined}>
+                  {r.results == null ? '—' : `${num(r.results)}${r.capped ? '+' : ''}`}
+                </td>
                 <td>{WHEN.format(new Date(r.t))}</td>
               </tr>
             );
@@ -392,10 +419,16 @@ function TokenForm({ rejected, onSubmit }) {
 export default function AnalyticsPage() {
   useDocumentTitle('Usage dashboard');
   const [range, setRange] = useState('30d');
+  const [chosenInterval, setChosenInterval] = useState(null);
   const [token, setToken] = useState(readToken);
+  // A choice the new range does not offer falls back to that range's default.
+  const intervals = INTERVALS[range];
+  const interval = intervals.some((i) => i.key === chosenInterval)
+    ? chosenInterval
+    : intervals[0].key;
   const { data, loading, error } = useAsync(
-    (signal) => api.analyticsDashboard({ range }, token, signal),
-    [range, token]
+    (signal) => api.analyticsDashboard({ range, interval }, token, signal),
+    [range, interval, token]
   );
   const unauthorized = error?.status === 401;
 
@@ -412,17 +445,14 @@ export default function AnalyticsPage() {
     <div className="wrap an-page">
       <div className="an-head">
         <h1>Usage dashboard</h1>
-        <div className="seg" role="group" aria-label="Time range">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              className={range === r.key ? 'active' : ''}
-              onClick={() => setRange(r.key)}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="an-controls">
+          <Seg label="Time range" options={RANGES} value={range} onChange={setRange} />
+          <Seg
+            label="Chart interval"
+            options={intervals}
+            value={interval}
+            onChange={setChosenInterval}
+          />
         </div>
       </div>
 
@@ -608,6 +638,9 @@ export default function AnalyticsPage() {
             Data as of {new Date(data.generatedAt).toLocaleString()}. Telemetry takes a
             few minutes to become queryable, so the most recent bucket may be
             incomplete.
+            {data.interval === '1w'
+              ? ' Weekly buckets start on Sunday (UTC), so the first and last weeks cover only part of a week.'
+              : ''}
           </p>
         </>
       )}

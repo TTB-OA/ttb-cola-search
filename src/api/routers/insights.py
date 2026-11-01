@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["analytics"])
 
 RangeKey = Literal["7d", "14d", "30d", "90d"]
+IntervalKey = Literal["6h", "12h", "1d", "1w"]
 
 _limiter: SlidingWindowLimiter | None = None
 
@@ -114,12 +115,15 @@ def _recent_filter_values(rows: list[dict[str, Any]]) -> list[RecentFilterValue]
         value = str(row.get("value") or "").strip()
         if when is None or not name or not value:
             continue
+        results = row.get("results")
         out.append(
             RecentFilterValue(
                 t=when,
                 filter=name[:40],
                 value=value[:200],
                 count=int(row.get("count_") or 0),
+                results=int(results) if isinstance(results, (int, float)) else None,
+                capped=bool(row.get("capped")),
             )
         )
     out.sort(key=lambda r: r.t, reverse=True)
@@ -259,9 +263,9 @@ async def _enrich_colas(rows: list[dict[str, Any]]) -> list[TopCola]:
     return ranked
 
 
-async def _build(settings: Settings, range_key: str) -> DashboardData:
-    panels, unavailable = await insights.run_panels(settings, range_key)
-    step = insights.BUCKET_WIDTHS[range_key]
+async def _build(settings: Settings, range_key: str, interval: str) -> DashboardData:
+    panels, unavailable = await insights.run_panels(settings, range_key, interval)
+    step = insights.BUCKET_WIDTHS[interval]
 
     totals_rows = panels.get("totals") or [{}]
     head = totals_rows[0]
@@ -334,6 +338,7 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
 
     return DashboardData(
         range=range_key,
+        interval=interval,
         generated_at=datetime.now(timezone.utc),
         totals=totals,
         panels=built,
@@ -345,7 +350,9 @@ async def _build(settings: Settings, range_key: str) -> DashboardData:
 # Route
 # ---------------------------------------------------------------------------
 @router.get("/analytics/dashboard", response_model=DashboardData)
-async def dashboard(request: Request, range: RangeKey = "30d") -> DashboardData:
+async def dashboard(
+    request: Request, range: RangeKey = "30d", interval: IntervalKey | None = None
+) -> DashboardData:
     settings = get_settings()
     if not (settings.analytics_dashboard_enabled and settings.analytics_dashboard_token):
         raise HTTPException(status_code=404, detail="Not found.")
@@ -366,17 +373,26 @@ async def dashboard(request: Request, range: RangeKey = "30d") -> DashboardData:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    try:
+        interval = insights.resolve_interval(range, interval)
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail="That interval is not offered for this range."
+        ) from None
+
     # Stale-while-revalidate: Log Analytics latency has long tails, so a stale
     # copy is answered at once and the rebuild runs behind it.
-    hit = insights.lookup(range, settings.analytics_dashboard_cache_seconds)
+    hit = insights.lookup(
+        insights.cache_key(range, interval), settings.analytics_dashboard_cache_seconds
+    )
     if hit is not None:
         data, stale = hit
         if stale:
-            refresh(settings, range)
+            refresh(settings, range, interval)
         return data.model_copy(update={"cached": True})
 
     try:
-        return await asyncio.shield(refresh(settings, range))
+        return await asyncio.shield(refresh(settings, range, interval))
     except Exception as exc:
         logger.warning("dashboard query failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -384,14 +400,15 @@ async def dashboard(request: Request, range: RangeKey = "30d") -> DashboardData:
         ) from exc
 
 
-def refresh(settings: Settings, range_key: str) -> asyncio.Task[Any]:
-    """Rebuild one range in the background; concurrent callers share the task."""
+def refresh(settings: Settings, range_key: str, interval: str) -> asyncio.Task[Any]:
+    """Rebuild one range and interval in the background; concurrent callers
+    share the task."""
 
     async def build() -> tuple[DashboardData, bool]:
-        data = await _build(settings, range_key)
+        data = await _build(settings, range_key, interval)
         return data, not data.unavailable
 
-    return insights.refresh(range_key, build)
+    return insights.refresh(insights.cache_key(range_key, interval), build)
 
 
 async def warm_dashboard_cache() -> None:
@@ -405,4 +422,8 @@ async def warm_dashboard_cache() -> None:
         return
     # Failures are logged by the refresh task itself.
     with contextlib.suppress(Exception):
-        await refresh(settings, insights.DEFAULT_RANGE)
+        await refresh(
+            settings,
+            insights.DEFAULT_RANGE,
+            insights.resolve_interval(insights.DEFAULT_RANGE, None),
+        )

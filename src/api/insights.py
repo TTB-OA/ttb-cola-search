@@ -1,9 +1,10 @@
 """Usage dashboard queries against Log Analytics.
 
 The KQL below is fixed at import time. Nothing a caller supplies is ever
-interpolated into a query: the only knob is the time range, which is resolved
-through :data:`RANGES` into a ``timedelta``. That is the injection boundary for
-this module, and it is deliberately the only one.
+interpolated into a query: the only knobs are the time range, resolved through
+:data:`RANGES` into a ``timedelta``, and the chart interval, resolved through
+:data:`INTERVALS` into a fixed bucket expression. Those two lookups are the
+injection boundary for this module, and deliberately the only ones.
 """
 from __future__ import annotations
 
@@ -30,18 +31,49 @@ RANGES: dict[str, timedelta] = {
 
 DEFAULT_RANGE = "30d"
 
-# Bucket width per range, so a chart never returns hundreds of points. The
-# dashboard reuses these to fill the buckets KQL omits when nothing happened.
+# Chart interval key -> bucket width. The dashboard reuses these to fill the
+# buckets KQL omits when nothing happened.
 BUCKET_WIDTHS: dict[str, timedelta] = {
-    "7d": timedelta(hours=6),
-    "14d": timedelta(hours=12),
-    "30d": timedelta(days=1),
-    "90d": timedelta(days=1),
+    "6h": timedelta(hours=6),
+    "12h": timedelta(hours=12),
+    "1d": timedelta(days=1),
+    "1w": timedelta(weeks=1),
 }
 
+# Interval key -> KQL bucket expression. Weeks follow the calendar (Sunday,
+# 00:00 UTC) rather than bin()'s fixed 7-day grid, which starts on a Thursday.
 _BUCKETS: dict[str, str] = {
-    key: f"{int(width.total_seconds())}s" for key, width in BUCKET_WIDTHS.items()
+    "6h": "bin(TimeGenerated, 6h)",
+    "12h": "bin(TimeGenerated, 12h)",
+    "1d": "bin(TimeGenerated, 1d)",
+    "1w": "startofweek(TimeGenerated)",
 }
+
+# Intervals offered per range, default first, so a chart never returns hundreds
+# of points nor collapses to two.
+INTERVALS: dict[str, tuple[str, ...]] = {
+    "7d": ("6h", "1d"),
+    "14d": ("12h", "1d"),
+    "30d": ("1d", "1w"),
+    "90d": ("1d", "1w"),
+}
+
+
+def resolve_interval(range_key: str, interval: str | None) -> str:
+    """The interval to chart a range at; ``None`` means the range's default.
+
+    Raises ``ValueError`` for an interval the range does not offer.
+    """
+    allowed = INTERVALS[range_key]
+    if interval is None:
+        return allowed[0]
+    if interval not in allowed:
+        raise ValueError(f"interval {interval!r} is not offered for range {range_key!r}")
+    return interval
+
+
+def cache_key(range_key: str, interval: str) -> str:
+    return f"{range_key}:{interval}"
 
 _SERVER_EVENTS = '"search_performed", "detail_viewed", "similar_requested", "image_search_performed"'
 
@@ -71,7 +103,7 @@ QUERY_CONCURRENCY = 5
 
 
 def _queries(bucket: str) -> dict[str, str]:
-    """Panel name -> KQL. `bucket` comes from _BUCKETS, never from a caller."""
+    """Panel name -> KQL. `bucket` is a _BUCKETS value, never from a caller."""
     return {
         # --- Headline usage -------------------------------------------------
         "totals": f"""
@@ -91,7 +123,7 @@ def _queries(bucket: str) -> dict[str, str]:
                 searches = countif(Name == "search_performed"),
                 detailViews = countif(Name == "detail_viewed"),
                 sessions = dcount(tostring(Properties.session_id))
-              by bin(TimeGenerated, {bucket})
+              by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
         # --- Search quality -------------------------------------------------
@@ -101,7 +133,7 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize
                 searches = count(),
                 zero = countif(tobool(Properties.zero_results))
-              by bin(TimeGenerated, {bucket})
+              by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
         "filter_usage": """
@@ -149,16 +181,21 @@ def _queries(bucket: str) -> dict[str, str]:
             | top 15 by count_ desc
         """,
         # One row per distinct value (case-folded), stamped with its latest use
-        # and keeping the casing it was last typed in.
+        # and keeping the casing it was last typed in. The result count is that
+        # latest search's total, so it reflects whatever else it was combined with.
         "recent_filter_values": f"""
             AppEvents
             | where Name == "search_performed" and toint(Properties.page) == 1
             | mv-expand filter = dynamic([{_RANKED_FILTERS}]) to typeof(string)
-            | extend value = tostring(Properties[filter])
+            | extend
+                value = tostring(Properties[filter]),
+                results = toint(Properties.result_total),
+                capped = tobool(Properties.total_is_capped)
             | where isnotempty(value)
-            | summarize arg_max(TimeGenerated, value), count() by filter, key = tolower(value)
+            | summarize arg_max(TimeGenerated, value, results, capped), count()
+              by filter, key = tolower(value)
             | top {RECENT_QUERIES_LIMIT} by TimeGenerated desc
-            | project TimeGenerated, filter, value, count_
+            | project TimeGenerated, filter, value, results, capped, count_
         """,
         "recent_describe_queries": f"""
             AppEvents
@@ -221,13 +258,13 @@ def _queries(bucket: str) -> dict[str, str]:
                 requests = count(),
                 p50 = percentile(DurationMs, 50),
                 p95 = percentile(DurationMs, 95)
-              by bin(TimeGenerated, {bucket}), endpoint = Name
+              by TimeGenerated = {bucket}, endpoint = Name
             | order by TimeGenerated asc
         """,
         "reliability": f"""
             AppRequests
             | summarize total = count(), failed = countif(Success == false)
-              by bin(TimeGenerated, {bucket})
+              by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
         "status_codes": """
@@ -244,7 +281,7 @@ def _queries(bucket: str) -> dict[str, str]:
                 performed = countif(Name == "image_search_performed"),
                 abandoned = countif(Name == "image_search_abandoned"),
                 stateLost = countif(Name == "image_search_state_lost")
-              by bin(TimeGenerated, {bucket})
+              by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
         "upload_sizes": """
@@ -262,7 +299,7 @@ def _queries(bucket: str) -> dict[str, str]:
                 areas = countif(Name == "map_area_summarized"),
                 markers = countif(Name == "map_marker_clicked"),
                 sessions = dcount(tostring(Properties.session_id))
-              by bin(TimeGenerated, {bucket})
+              by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
         # Panning fires a viewport load per stop, so counting events would say
@@ -336,9 +373,12 @@ def _rows(result: Any) -> list[dict[str, Any]]:
 
 
 async def run_panels(
-    settings: Settings, range_key: str
+    settings: Settings, range_key: str, interval: str | None = None
 ) -> tuple[dict[str, list[dict[str, Any]]], list[str]]:
     """Run every panel query, each under its own timeout.
+
+    Charts are bucketed at ``interval`` (a key of :data:`INTERVALS` for the
+    range), or at the range's default when it is ``None``.
 
     Not ``query_batch``: the $batch endpoint answers only when its slowest
     member does, and in production that took 80-200 s while each query ran in
@@ -353,7 +393,7 @@ async def run_panels(
         raise RuntimeError("LOG_ANALYTICS_WORKSPACE_ID is not configured")
 
     timespan = RANGES[range_key]
-    queries = _queries(_BUCKETS[range_key])
+    queries = _queries(_BUCKETS[resolve_interval(range_key, interval)])
     names = list(queries)
     client = _get_client()
     gate = asyncio.Semaphore(QUERY_CONCURRENCY)
@@ -397,43 +437,43 @@ _cache: dict[str, tuple[float, Any]] = {}
 _refreshes: dict[str, asyncio.Task[Any]] = {}
 
 
-def lookup(range_key: str, ttl: float) -> tuple[Any, bool] | None:
-    """The cached value for a range and whether it is past its TTL."""
-    entry = _cache.get(range_key)
+def lookup(key: str, ttl: float) -> tuple[Any, bool] | None:
+    """The cached value for a key (see :func:`cache_key`) and whether it is past its TTL."""
+    entry = _cache.get(key)
     if entry is None:
         return None
     stamp, value = entry
     return value, time.monotonic() - stamp >= ttl
 
 
-def store(range_key: str, value: Any, *, complete: bool = True) -> None:
+def store(key: str, value: Any, *, complete: bool = True) -> None:
     # An incomplete result is still served, but counts as stale straight away.
-    _cache[range_key] = (time.monotonic() if complete else float("-inf"), value)
+    _cache[key] = (time.monotonic() if complete else float("-inf"), value)
 
 
 def refresh(
-    range_key: str, build: Callable[[], Awaitable[tuple[Any, bool]]]
+    key: str, build: Callable[[], Awaitable[tuple[Any, bool]]]
 ) -> asyncio.Task[Any]:
-    """One in-flight rebuild per range; later callers share it.
+    """One in-flight rebuild per cache key; later callers share it.
 
     ``build`` returns the value and whether it is complete.
     """
-    task = _refreshes.get(range_key)
+    task = _refreshes.get(key)
     if task is not None and not task.done():
         return task
 
     async def run() -> Any:
         value, complete = await build()
-        store(range_key, value, complete=complete)
+        store(key, value, complete=complete)
         return value
 
     def finished(done: asyncio.Task[Any]) -> None:
         if not done.cancelled() and done.exception() is not None:
             logger.warning(
-                "analytics refresh failed for %s", range_key, exc_info=done.exception()
+                "analytics refresh failed for %s", key, exc_info=done.exception()
             )
 
-    task = _refreshes[range_key] = asyncio.ensure_future(run())
+    task = _refreshes[key] = asyncio.ensure_future(run())
     task.add_done_callback(finished)
     return task
 

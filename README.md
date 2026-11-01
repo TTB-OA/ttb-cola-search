@@ -161,7 +161,7 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the `/analytics` page; also needs `ANALYTICS_DASHBOARD_TOKEN` |
 | `ANALYTICS_DASHBOARD_TOKEN` | `""` | shared access token for the dashboard (`Authorization: Bearer`); treat as a secret |
 | `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
-| `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range |
+| `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range and chart interval |
 | `ANALYTICS_DASHBOARD_RATE_LIMIT` | `30` | dashboard requests per window, per client |
 | `ANALYTICS_DASHBOARD_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 |
 
@@ -376,10 +376,13 @@ the search funnel, zero-result rate, filter popularity, and latency percentiles.
 Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
 aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
 and sort popularity, the 50 most recent keyword searches, top keyword searches
-with no results, the most recent filter values and artwork descriptions (each
-linking back to the search), most-viewed records, latency percentiles
-per endpoint (as a table or over time), and image-search
-volume. It reads Log Analytics directly; the application database is touched
+with no results, the most recent filter values (with the result count of their
+latest search) and artwork descriptions (each linking back to the search),
+most-viewed records, latency percentiles per endpoint (as a table or over time),
+and image-search volume. Line charts can be grouped at a finer or coarser
+interval per range (6 hours or daily for 7 days, 12 hours or daily for 14 days,
+daily or weekly for 30 and 90 days); weekly buckets are calendar weeks starting
+Sunday 00:00 UTC, so the first and last are partial. It reads Log Analytics directly; the application database is touched
 only to turn the top COLA ids into brand names.
 
 Enabling it takes four things:
@@ -423,8 +426,8 @@ Things worth knowing before you turn it on:
 - **"Failed requests" is not uptime.** No availability test is configured, so the
   panel is a request failure rate — it cannot see an outage in which the app
   never received the request. The UI labels it accordingly.
-- Results are cached for `ANALYTICS_DASHBOARD_CACHE_SECONDS` per time range, and
-  only one refresh per range runs at a time. Every miss is a billed Log Analytics
+- Results are cached for `ANALYTICS_DASHBOARD_CACHE_SECONDS` per time range and
+  chart interval, and only one refresh per pair runs at a time. Every miss is a billed Log Analytics
   query. Ingestion also lags a few minutes, so the newest bucket is incomplete.
 - A panel whose query fails is reported in `unavailable` and rendered empty,
   never as zero. One bad panel does not fail the page.

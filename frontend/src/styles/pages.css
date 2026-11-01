@@ -343,6 +343,7 @@ section > .d-notice { margin-bottom: 0; }
 .an-page { padding: 24px 0 40px; }
 .an-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
 .an-head h1 { font-size: 28px; margin: 0 0 4px; }
+.an-controls { display: flex; gap: 10px; flex-wrap: wrap; }
 .an-caption { font-size: 13px; color: var(--base-dark); margin: 0 0 22px; }
 .an-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .an-tile { padding: 16px 18px; }
