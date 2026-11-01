@@ -423,6 +423,11 @@ class RecentFilterValue(ApiModel):
     value: str
     # Searches in the range that used this value.
     count: int
+    # Result total of the most recent of those searches, which may also have
+    # carried a keyword or other filters; None if it was not recorded.
+    results: int | None = None
+    # True when `results` is a lower bound rather than an exact count.
+    capped: bool = False
 
 
 class RecentDescribeQuery(ApiModel):
@@ -497,6 +502,8 @@ class DashboardTotals(ApiModel):
 
 class DashboardData(ApiModel):
     range: str
+    # Width of each time-series bucket, as an interval key ("6h", "1d", "1w").
+    interval: str | None = None
     generated_at: datetime
     # True when this response came from the server-side cache rather than a
     # fresh Log Analytics query.

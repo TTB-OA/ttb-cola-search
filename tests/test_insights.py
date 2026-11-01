@@ -103,8 +103,8 @@ def stub_panels(monkeypatch):
     """Stand in for Log Analytics with one representative row per panel."""
     calls: list[str] = []
 
-    async def fake(_settings, range_key):
-        calls.append(range_key)
+    async def fake(_settings, range_key, interval=None):
+        calls.append(insights.cache_key(range_key, interval))
         panels = {
             "totals": [
                 {
@@ -131,8 +131,9 @@ def stub_panels(monkeypatch):
             ],
             "zero_result_queries": [{"query": "zzzz", "count_": 2}],
             "recent_filter_values": [
-                {"TimeGenerated": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "count_": 4},
-                {"TimeGenerated": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "count_": 1},
+                {"TimeGenerated": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "results": 5000, "capped": True, "count_": 4},
+                {"TimeGenerated": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "results": 0, "capped": False, "count_": 1},
+                {"TimeGenerated": "2026-01-01T05:00:00Z", "filter": "origin", "value": "Oregon", "results": None, "capped": None, "count_": 2},
                 {"TimeGenerated": "2026-01-01T12:00:00Z", "filter": "brand", "value": "", "count_": 2},
             ],
             "recent_describe_queries": [
@@ -203,8 +204,9 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
     ]
     assert panels["zeroResultQueries"] == [{"label": "zzzz", "count": 2}]
     assert panels["recentFilterValues"] == [
-        {"t": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "count": 1},
-        {"t": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "count": 4},
+        {"t": "2026-01-01T11:00:00Z", "filter": "applicant", "value": "Gallo", "count": 1, "results": 0, "capped": False},
+        {"t": "2026-01-01T07:00:00Z", "filter": "brand", "value": "Acme", "count": 4, "results": 5000, "capped": True},
+        {"t": "2026-01-01T05:00:00Z", "filter": "origin", "value": "Oregon", "count": 2, "results": None, "capped": False},
     ]
     assert panels["recentDescribeQueries"] == [
         {"t": "2026-01-01T09:30:00Z", "query": "gold eagle", "commodity": "Wine", "results": None, "count": 1},
@@ -244,7 +246,7 @@ def test_quiet_buckets_are_filled_with_zeros():
 
 
 def test_failed_panels_are_reported_not_zeroed(client, enabled, monkeypatch):
-    async def partial(_settings, _range):
+    async def partial(_settings, _range, _interval=None):
         return {"totals": [{"searches": 7}]}, ["latency", "top_colas"]
 
     monkeypatch.setattr(insights, "run_panels", partial)
@@ -272,13 +274,21 @@ def test_second_call_is_served_from_cache(client, enabled, stub_panels):
     assert first["cached"] is False
     assert second["cached"] is True
     # One Log Analytics round trip, not two.
-    assert stub_panels == ["30d"]
+    assert stub_panels == ["30d:1d"]
 
 
 def test_each_range_is_cached_separately(client, enabled, stub_panels):
     client.get(PATH, params={"range": "7d"})
     client.get(PATH, params={"range": "30d"})
-    assert stub_panels == ["7d", "30d"]
+    assert stub_panels == ["7d:6h", "30d:1d"]
+
+
+def test_each_interval_is_cached_separately(client, enabled, stub_panels):
+    client.get(PATH, params={"range": "90d"})
+    client.get(PATH, params={"range": "90d", "interval": "1w"})
+    # Naming the default interval explicitly shares the default's entry.
+    client.get(PATH, params={"range": "90d", "interval": "1d"})
+    assert stub_panels == ["90d:1d", "90d:1w"]
 
 
 @pytest.fixture
@@ -286,7 +296,9 @@ def refreshes(monkeypatch):
     """Record background refreshes instead of running them on the request loop."""
     started: list[str] = []
     monkeypatch.setattr(
-        insights_router, "refresh", lambda _settings, key: started.append(key)
+        insights_router,
+        "refresh",
+        lambda _settings, key, interval: started.append(insights.cache_key(key, interval)),
     )
     return started
 
@@ -296,7 +308,7 @@ def test_stale_entry_is_served_while_it_refreshes(client, enabled, monkeypatch, 
     old = insights_router.DashboardData.model_validate(
         {"range": "30d", "generatedAt": "2026-01-01T00:00:00Z"}
     )
-    insights.store("30d", old)
+    insights.store("30d:1d", old)
     assert client.get(PATH).json()["cached"] is True
     assert refreshes == []
 
@@ -304,7 +316,7 @@ def test_stale_entry_is_served_while_it_refreshes(client, enabled, monkeypatch, 
     body = client.get(PATH).json()
     assert body["cached"] is True
     assert body["generatedAt"].startswith("2026-01-01")
-    assert refreshes == ["30d"]
+    assert refreshes == ["30d:1d"]
 
 
 def test_incomplete_result_is_stale_at_once():
@@ -396,9 +408,57 @@ def test_rate_limited_after_a_burst(client, enabled, stub_panels, monkeypatch):
 # Query safety
 # ---------------------------------------------------------------------------
 def test_every_range_has_a_bucket_and_lookback():
-    assert set(insights.RANGES) == set(insights._BUCKETS)
-    assert set(insights.RANGES) == set(insights.BUCKET_WIDTHS)
+    assert set(insights.RANGES) == set(insights.INTERVALS)
+    assert set(insights._BUCKETS) == set(insights.BUCKET_WIDTHS)
+    for offered in insights.INTERVALS.values():
+        assert offered and set(offered) <= set(insights._BUCKETS)
     assert insights.DEFAULT_RANGE in insights.RANGES
+
+
+def test_weekly_buckets_follow_the_calendar_week():
+    queries = insights._queries(insights._BUCKETS["1w"])
+    assert "by TimeGenerated = startofweek(TimeGenerated)" in queries["usage_over_time"]
+    assert "startofweek(TimeGenerated), endpoint = Name" in queries["latency_over_time"]
+
+
+def test_weekly_interval_is_charted_by_week(client, enabled, monkeypatch):
+    seen = []
+
+    async def weekly(_settings, range_key, interval=None):
+        seen.append((range_key, interval))
+        return {
+            "usage_over_time": [
+                {"TimeGenerated": "2026-01-04T00:00:00Z", "searches": 70},
+                {"TimeGenerated": "2026-01-25T00:00:00Z", "searches": 30},
+            ]
+        }, []
+
+    monkeypatch.setattr(insights, "run_panels", weekly)
+    body = client.get(PATH, params={"range": "90d", "interval": "1w"}).json()
+
+    assert seen == [("90d", "1w")]
+    assert body["interval"] == "1w"
+    # Quiet weeks are filled a week apart, not a day apart.
+    assert [p["t"][:10] for p in body["panels"]["usageOverTime"]] == [
+        "2026-01-04", "2026-01-11", "2026-01-18", "2026-01-25",
+    ]
+
+
+def test_default_interval_is_reported(client, enabled, stub_panels):
+    assert client.get(PATH, params={"range": "7d"}).json()["interval"] == "6h"
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"range": "7d", "interval": "1w"},
+        {"range": "90d", "interval": "6h"},
+        {"range": "30d", "interval": "1d | project *"},
+    ],
+)
+def test_interval_outside_the_range_is_rejected(client, enabled, stub_panels, params):
+    assert client.get(PATH, params=params).status_code == 422
+    assert stub_panels == []
 
 
 def test_query_text_panels_read_the_captured_property():

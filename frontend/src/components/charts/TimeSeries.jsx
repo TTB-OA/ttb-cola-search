@@ -46,11 +46,14 @@ function formatters(points) {
     timeZone,
     ...(sub ? { hour: 'numeric', timeZoneName: 'short' } : {}),
   });
-  const apply = (fmt) => (iso) => {
+  const apply = (fmt, prefix = '') => (iso) => {
     const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? '' : fmt.format(d).replace(', ', ' ');
+    return Number.isNaN(d.getTime()) ? '' : prefix + fmt.format(d).replace(', ', ' ');
   };
-  return { tickLabel: apply(axis), fullLabel: apply(full) };
+  // A weekly bucket is labelled by its first day, which reads as a single day
+  // unless the readout says otherwise.
+  const weekly = bucketWidth(points) >= 7 * DAY_MS;
+  return { tickLabel: apply(axis), fullLabel: apply(full, weekly ? 'Week of ' : '') };
 }
 
 const fmtValue = (v) => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 1 });
