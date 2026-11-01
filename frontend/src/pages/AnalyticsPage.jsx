@@ -440,6 +440,9 @@ export default function AnalyticsPage() {
   const totals = data?.totals;
   const panels = data?.panels || {};
   const missing = data?.unavailable || [];
+  // Shown while ids are recorded, and afterwards for as long as the range
+  // still holds some.
+  const showVisitors = Boolean(data?.visitorIdsEnabled || totals?.visitors);
 
   return (
     <div className="wrap an-page">
@@ -484,6 +487,13 @@ export default function AnalyticsPage() {
 
           <div className="an-tiles">
             <StatTile label="Searches" value={num(totals?.searches)} />
+            {showVisitors ? (
+              <StatTile
+                label="Visitors"
+                value={num(totals?.visitors)}
+                hint="Distinct browsers, not people"
+              />
+            ) : null}
             <StatTile label="Sessions" value={num(totals?.sessions)} />
             <StatTile label="Detail views" value={num(totals?.detailViews)} />
             <StatTile
@@ -502,13 +512,17 @@ export default function AnalyticsPage() {
           <div className="an-grid-2">
             <Card title="Activity over time">
               <TimeSeries
-                label="Searches, detail views and sessions over time"
+                label={`Searches, detail views, sessions${showVisitors ? ' and visitors' : ''} over time`}
                 points={panels.usageOverTime}
                 series={[
                   { key: 'searches', label: 'Searches', color: 'var(--accent)' },
                   { key: 'detailViews', label: 'Detail views', color: 'var(--mint)' },
                   { key: 'sessions', label: 'Sessions', color: 'var(--green)' },
+                  ...(showVisitors
+                    ? [{ key: 'visitors', label: 'Visitors', color: 'var(--gold-dark)' }]
+                    : []),
                 ]}
+                toggleable
               />
             </Card>
 
@@ -640,6 +654,9 @@ export default function AnalyticsPage() {
             incomplete.
             {data.interval === '1w'
               ? ' Weekly buckets start on Sunday (UTC), so the first and last weeks cover only part of a week.'
+              : ''}
+            {showVisitors
+              ? ' Visitors counts browsers by a pseudonymous id kept for up to 90 days; one person on two devices counts twice, and browsers that opt out of tracking count once per session. Only events since visitor ids were introduced are counted.'
               : ''}
           </p>
         </>

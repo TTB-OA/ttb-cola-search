@@ -110,6 +110,51 @@ def session_id_from(request: Any, *, trust_forwarded_for: bool, salt: str) -> st
     return hash_identifier(client_key(request, trust_forwarded_for), salt)
 
 
+# Response header ("on" / "off") telling the SPA whether visitor ids are being
+# recorded, so it can delete the one it stored and stop minting new ones.
+VISITOR_POLICY_HEADER = "X-Analytics-Visitor"
+
+
+def opted_out(request: Any) -> bool:
+    """True when the browser sends Global Privacy Control or Do Not Track."""
+    headers = getattr(request, "headers", {}) or {}
+    return (headers.get("sec-gpc") or "").strip() == "1" or (
+        headers.get("dnt") or ""
+    ).strip() == "1"
+
+
+def visitor_id_from(request: Any, *, session_id: str, enabled: bool) -> str | None:
+    """Pseudonymous visitor id, or None when visitor ids are switched off.
+
+    A browser that opted out, or that could not store an id, is counted under
+    its session id instead, so it still counts once per session but is never
+    linked across sessions.
+    """
+    if not enabled:
+        return None
+    if opted_out(request):
+        return session_id
+    headers = getattr(request, "headers", {}) or {}
+    supplied = (headers.get("x-client-visitor") or "").strip().lower()
+    return supplied if _UUID_RE.match(supplied) else session_id
+
+
+def identity_attrs(request: Any, settings: Any) -> dict[str, str]:
+    """The session and (when enabled) visitor ids every event carries."""
+    session_id = session_id_from(
+        request,
+        trust_forwarded_for=settings.trust_forwarded_for,
+        salt=settings.analytics_salt,
+    )
+    attrs = {"session_id": session_id}
+    visitor_id = visitor_id_from(
+        request, session_id=session_id, enabled=settings.analytics_visitor_id_enabled
+    )
+    if visitor_id is not None:
+        attrs["visitor_id"] = visitor_id
+    return attrs
+
+
 def size_bucket(num_bytes: int | None) -> str:
     if num_bytes is None or num_bytes < 0:
         return "unknown"

@@ -366,7 +366,7 @@ section > .d-notice { margin-bottom: 0; }
 .an-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 10px 0 0; padding: 0; font-size: 12.5px; color: var(--base-darker); }
 .an-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .an-legend-toggle {
-  display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 4px; margin: -2px -4px;
+  display: flex; align-items: center; gap: 6px; max-width: calc(100% + 8px); padding: 2px 4px; margin: -2px -4px;
   background: none; border: 0; border-radius: var(--radius); cursor: pointer;
   font: inherit; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }

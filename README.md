@@ -158,6 +158,7 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
 | `ANALYTICS_CAPTURE_QUERY_TEXT` | `true` | records keyword/describe search text and free-text filter values; `false` keeps only length and term count |
 | `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
+| `ANALYTICS_VISITOR_ID_ENABLED` | `true` | records a pseudonymous, 90-day browser id so the dashboard can count returning visitors once; `false` keeps only the per-tab session id (see below) |
 | `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the `/analytics` page; also needs `ANALYTICS_DASHBOARD_TOKEN` |
 | `ANALYTICS_DASHBOARD_TOKEN` | `""` | shared access token for the dashboard (`Authorization: Bearer`); treat as a secret |
 | `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
@@ -356,13 +357,40 @@ COLA download link.
   `permit`, `labelText`, ...), each capped at 200 characters. With it off, only
   `has_query`, `query_length`, and `term_count` are kept.
 - Latency, status code, and a session identifier.
+- While `ANALYTICS_VISITOR_ID_ENABLED` is on (the default): a visitor id, so the
+  dashboard can count a browser that comes back over several sessions once.
 
 **What is not recorded**
 
 - IP addresses. `DisableIpMasking` is left off in Bicep, so Azure masks them.
-- Anything durable about a visitor. The session id comes from `sessionStorage`
+- Anything tying an id to a person. The session id comes from `sessionStorage`
   and dies with the tab; when the SPA cannot supply one, the fallback is a
   salted hash that becomes unlinkable as soon as `ANALYTICS_SALT` is rotated.
+
+**Visitor ids**
+
+The visitor id is a random UUID the SPA keeps in `localStorage` (no cookie) and
+sends as `X-Client-Visitor`. It links sessions from the same browser, which
+makes it multi-session measurement (OMB M-10-22 Tier 2) rather than the
+single-session kind the session id is — confirm the site privacy notice
+discloses it before relying on the default. Its limits:
+
+- **It is replaced every 90 days**, matching log retention, so no id outlives
+  the data it could link.
+- **Opting out is honoured.** A browser sending Global Privacy Control
+  (`Sec-GPC: 1`) or Do Not Track (`DNT: 1`) never gets one; the server checks
+  the headers too and records such a browser under its session id instead, so
+  it still counts once per session but is never linked across them. Turning
+  either signal on also deletes an id stored earlier.
+- **Without `localStorage`** (blocked, some private windows) the browser is
+  likewise counted per session.
+- **Switching it off** (`ANALYTICS_VISITOR_ID_ENABLED=false`) stops recording
+  at once. Every API response carries `X-Analytics-Visitor: on|off`; on `off`
+  the SPA deletes its id and stops minting new ones until a response says `on`.
+- **It counts browsers, not people.** One person on a laptop and a phone is two
+  visitors; clearing site data starts a new id. Older events carry no visitor
+  id and are left out of the count rather than guessed at, so the 90-day figure
+  fills in over the three months after this ships.
 
 Health checks and image-blob requests are excluded from tracing
 (`EXCLUDED_URLS`) — the blob proxy alone is one request per thumbnail and would
@@ -374,7 +402,8 @@ the search funnel, zero-result rate, filter popularity, and latency percentiles.
 ### Usage dashboard (`/analytics`)
 
 Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
-aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
+aggregate dashboard at `/analytics` — headline volumes (including distinct
+visitors; see [Visitor ids](#visitor-ids)), zero-result rate, filter
 and sort popularity, the 50 most recent keyword searches, top keyword searches
 with no results, the most recent filter values (with the result count of their
 latest search) and artwork descriptions (each linking back to the search),

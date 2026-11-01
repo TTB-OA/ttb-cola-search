@@ -1,7 +1,7 @@
 // Thin fetch client for the COLA API. No external data-fetching library —
 // just fetch plus small typed helpers.
 
-import { clientSessionId, track } from './analytics.js';
+import { identityHeaders, noteVisitorPolicy, track } from './analytics.js';
 
 const BASE = import.meta.env.VITE_API_BASE || '/api';
 
@@ -15,9 +15,7 @@ class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', body, signal, headers = {} } = {}) {
-  const opts = { method, signal, headers: { ...headers } };
-  const sid = clientSessionId();
-  if (sid) opts.headers['X-Client-Session'] = sid;
+  const opts = { method, signal, headers: { ...headers, ...identityHeaders() } };
   if (body instanceof FormData) {
     opts.body = body;
   } else if (body !== undefined) {
@@ -25,6 +23,7 @@ async function request(path, { method = 'GET', body, signal, headers = {} } = {}
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(BASE + path, opts);
+  noteVisitorPolicy(res);
   if (!res.ok) {
     let detail;
     try {

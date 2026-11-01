@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     # Salt for hashing the client address when no client-supplied session id is
     # present. Rotate to break linkability across deployments.
     analytics_salt: str = ""
+    # Records a pseudonymous visitor id that outlives the tab, so the dashboard
+    # can count distinct browsers across sessions. The SPA keeps it in
+    # localStorage and replaces it every 90 days; Global Privacy Control and Do
+    # Not Track are honoured. Off: events carry only the session id, and the SPA
+    # deletes any stored visitor id on its next API response and stops making
+    # new ones until a response says they are back on.
+    analytics_visitor_id_enabled: bool = True
 
     # --- Usage dashboard ----------------------------------------------------
     analytics_dashboard_enabled: bool = False

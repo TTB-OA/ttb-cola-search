@@ -113,10 +113,11 @@ def stub_panels(monkeypatch):
                     "similarRequests": 5,
                     "imageSearches": 3,
                     "sessions": 25,
+                    "visitors": 18,
                 }
             ],
             "usage_over_time": [
-                {"TimeGenerated": "2026-01-01T00:00:00Z", "searches": 100, "detailViews": 40, "sessions": 25}
+                {"TimeGenerated": "2026-01-01T00:00:00Z", "searches": 100, "detailViews": 40, "sessions": 25, "visitors": 18}
             ],
             "zero_results_over_time": [
                 {"TimeGenerated": "2026-01-01T00:00:00Z", "searches": 100, "zero": 12}
@@ -176,6 +177,8 @@ def test_returns_shaped_totals(client, enabled, stub_panels):
     assert body["totals"]["searches"] == 100
     assert body["totals"]["detailViews"] == 40
     assert body["totals"]["sessions"] == 25
+    assert body["totals"]["visitors"] == 18
+    assert body["visitorIdsEnabled"] is True
     # 12 of 100 searches returned nothing.
     assert body["totals"]["zeroResultRate"] == 12.0
     # 4 of 200 requests failed.
@@ -189,6 +192,7 @@ def test_returns_shaped_panels(client, enabled, stub_panels):
     assert panels["filterUsage"] == [{"label": "commodity", "count": 60}]
     assert panels["latency"][0]["endpoint"] == "GET /api/colas"
     assert panels["usageOverTime"][0]["values"]["searches"] == 100
+    assert panels["usageOverTime"][0]["values"]["visitors"] == 18
     assert panels["imageSearchOverTime"][0]["values"]["abandoned"] == 1
     assert panels["recentQueries"] == [
         {
@@ -479,3 +483,12 @@ def test_queries_contain_no_format_placeholders():
     for bucket in insights._BUCKETS.values():
         for name, kql in insights._queries(bucket).items():
             assert "{" not in kql and "}" not in kql, name
+
+
+def test_visitors_ignore_events_without_a_visitor_id():
+    queries = insights._queries(insights._BUCKETS["1d"])
+    for name in ("totals", "usage_over_time"):
+        assert (
+            "visitors = dcountif(tostring(Properties.visitor_id), "
+            "isnotempty(tostring(Properties.visitor_id)))"
+        ) in queries[name], name

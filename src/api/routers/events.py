@@ -15,7 +15,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from ..analytics import emit, session_id_from
+from ..analytics import emit, identity_attrs
 from ..config import get_settings
 from ..ratelimit import SlidingWindowLimiter, client_key
 
@@ -59,6 +59,8 @@ MAX_EVENTS_PER_BATCH = 20
 MAX_PROPS = 10
 MAX_VALUE_LENGTH = 64
 MAX_BODY_BYTES = 16 * 1024
+
+_IDENTITY_KEYS = frozenset({"session_id", "visitor_id"})
 
 _limiter: SlidingWindowLimiter | None = None
 
@@ -190,14 +192,12 @@ async def collect_events(request: Request) -> Response:
     except (json.JSONDecodeError, ValidationError) as exc:
         raise HTTPException(status_code=422, detail="Malformed event payload.") from exc
 
-    session_id = session_id_from(
-        request,
-        trust_forwarded_for=settings.trust_forwarded_for,
-        salt=settings.analytics_salt,
-    )
+    identity = identity_attrs(request, settings)
     for event in batch.events:
+        # Props never supply identity, even one the server chose not to record.
+        props = {k: v for k, v in event.props.items() if k not in _IDENTITY_KEYS}
         # `event_source`, not `origin`: the search filter of that name would
         # otherwise overwrite it on the server side.
-        emit(event.name, {**event.props, "session_id": session_id, "event_source": "client"})
+        emit(event.name, {**props, **identity, "event_source": "client"})
 
     return Response(status_code=204)
