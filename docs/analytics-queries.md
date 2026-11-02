@@ -17,7 +17,12 @@ Event attributes land in `customDimensions`, which is dynamic — always cast
 before comparing or aggregating (`toint()`, `tobool()`, `tostring()`).
 
 Every event carries `session_id`, `event_source` (`server` or `client`), and for
-server-derived events `status_code` and `duration_ms`. Note that `origin` is a
+server-derived events `status_code` and `duration_ms`. While
+`ANALYTICS_VISITOR_ID_ENABLED` is on, events also carry `visitor_id`, which stays
+the same across a browser's sessions for up to 90 days (it equals `session_id`
+for browsers that opted out or cannot store one). Count people-ish reach with
+`dcountif(tostring(customDimensions.visitor_id), isnotempty(tostring(customDimensions.visitor_id)))`
+so events from before it existed are left out rather than counted as one. Note that `origin` is a
 search *filter* name (country/state of origin), not the event source.
 
 ## Product usage

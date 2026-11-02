@@ -17,9 +17,10 @@ from starlette.responses import Response
 
 from .analytics import (
     EVENT_BY_ROUTE,
+    VISITOR_POLICY_HEADER,
     emit,
+    identity_attrs,
     route_key,
-    session_id_from,
     shape_describe_event,
     shape_detail_event,
     shape_image_search_event,
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=[VISITOR_POLICY_HEADER],
     )
 
     @app.middleware("http")
@@ -97,6 +99,9 @@ def create_app() -> FastAPI:
         started = time.perf_counter()
         response = await call_next(request)
         _record_event(request, response.status_code, started, settings)
+        response.headers[VISITOR_POLICY_HEADER] = (
+            "on" if settings.analytics_visitor_id_enabled else "off"
+        )
         return response
 
     app.include_router(health.router, prefix=API_PREFIX)
@@ -142,11 +147,7 @@ def _record_event(
 
         params = request.query_params
         attrs: dict[str, object] = {
-            "session_id": session_id_from(
-                request,
-                trust_forwarded_for=settings.trust_forwarded_for,
-                salt=settings.analytics_salt,
-            ),
+            **identity_attrs(request, settings),
             # Not "origin": that is also the name of a search filter, and the
             # shaped attributes below would overwrite it.
             "event_source": "server",

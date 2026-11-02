@@ -495,6 +495,8 @@ class DashboardTotals(ApiModel):
     similar_requests: int = 0
     image_searches: int = 0
     sessions: int = 0
+    # Distinct browsers by visitor id; see analytics_visitor_id_enabled.
+    visitors: int = 0
     zero_result_rate: float = 0.0
     failure_rate: float = 0.0
     p95_ms: float = 0.0
@@ -504,6 +506,8 @@ class DashboardData(ApiModel):
     range: str
     # Width of each time-series bucket, as an interval key ("6h", "1d", "1w").
     interval: str | None = None
+    # Whether new events are recording visitor ids right now.
+    visitor_ids_enabled: bool = False
     generated_at: datetime
     # True when this response came from the server-side cache rather than a
     # fresh Log Analytics query.

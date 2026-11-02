@@ -98,6 +98,13 @@ _RECENT_FILTER_COLUMNS = ",\n                ".join(
     f'{RECENT_FILTER_PREFIX}{k} = tostring(Properties["{k}"])' for k in RECENT_FILTER_KEYS
 )
 
+# Distinct visitors, ignoring events from before visitor ids were recorded (or
+# while they were switched off) rather than counting those as zero-id visitors.
+_VISITORS = (
+    "dcountif(tostring(Properties.visitor_id), "
+    "isnotempty(tostring(Properties.visitor_id)))"
+)
+
 # Log Analytics runs at most 5 queries at once per identity and queues the rest.
 QUERY_CONCURRENCY = 5
 
@@ -114,7 +121,8 @@ def _queries(bucket: str) -> dict[str, str]:
                 detailViews = countif(Name == "detail_viewed"),
                 similarRequests = countif(Name == "similar_requested"),
                 imageSearches = countif(Name == "image_search_performed"),
-                sessions = dcount(tostring(Properties.session_id))
+                sessions = dcount(tostring(Properties.session_id)),
+                visitors = {_VISITORS}
         """,
         "usage_over_time": f"""
             AppEvents
@@ -122,7 +130,8 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize
                 searches = countif(Name == "search_performed"),
                 detailViews = countif(Name == "detail_viewed"),
-                sessions = dcount(tostring(Properties.session_id))
+                sessions = dcount(tostring(Properties.session_id)),
+                visitors = {_VISITORS}
               by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,

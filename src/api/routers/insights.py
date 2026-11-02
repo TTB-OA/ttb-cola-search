@@ -277,6 +277,7 @@ async def _build(settings: Settings, range_key: str, interval: str) -> Dashboard
         similar_requests=int(head.get("similarRequests") or 0),
         image_searches=int(head.get("imageSearches") or 0),
         sessions=int(head.get("sessions") or 0),
+        visitors=int(head.get("visitors") or 0),
         zero_result_rate=_rate(panels.get("zero_results_over_time") or [], "zero", "searches"),
         # No availability test is configured, so this is a request failure rate,
         # not uptime. Labelled as such in the UI.
@@ -287,7 +288,7 @@ async def _build(settings: Settings, range_key: str, interval: str) -> Dashboard
     built = DashboardPanels(
         usage_over_time=_series(
             panels.get("usage_over_time") or [],
-            ("searches", "detailViews", "sessions"),
+            ("searches", "detailViews", "sessions", "visitors"),
             step,
         ),
         zero_results_over_time=_series(
@@ -339,6 +340,7 @@ async def _build(settings: Settings, range_key: str, interval: str) -> Dashboard
     return DashboardData(
         range=range_key,
         interval=interval,
+        visitor_ids_enabled=settings.analytics_visitor_id_enabled,
         generated_at=datetime.now(timezone.utc),
         totals=totals,
         panels=built,

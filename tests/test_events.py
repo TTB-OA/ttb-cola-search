@@ -149,3 +149,95 @@ def test_detail_events_carry_the_record_id(captured):
 
     record = next(r for r in captured if r.event == "detail_viewed")
     assert record.cola_id == "26208001000457"
+
+
+# ---------------------------------------------------------------------------
+# Visitor ids
+# ---------------------------------------------------------------------------
+VISITOR = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+
+@pytest.fixture
+def visitors(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "analytics_visitor_id_enabled", True, raising=False)
+    return settings
+
+
+def test_events_carry_the_visitor_id(client, captured, visitors):
+    response = post(
+        client,
+        '{"events":[{"name":"print_clicked"}]}',
+        headers={"X-Client-Session": SESSION, "X-Client-Visitor": VISITOR},
+    )
+    assert response.status_code == 204
+    assert response.headers["x-analytics-visitor"] == "on"
+
+    client_event = next(r for r in captured if r.event == "print_clicked")
+    assert client_event.visitor_id == VISITOR
+    assert client_event.session_id == SESSION
+
+
+def test_props_cannot_supply_identity(client, captured, visitors, monkeypatch):
+    monkeypatch.setattr(visitors, "analytics_visitor_id_enabled", False, raising=False)
+    post(
+        client,
+        '{"events":[{"name":"print_clicked","props":{"visitor_id":"spoof","session_id":"spoof"}}]}',
+        headers={"X-Client-Session": SESSION},
+    )
+    record = next(r for r in captured if r.event == "print_clicked")
+    assert not hasattr(record, "visitor_id")
+    assert record.session_id == SESSION
+
+
+def test_disabled_visitor_ids_are_dropped_and_announced(client, captured, visitors, monkeypatch):
+    monkeypatch.setattr(visitors, "analytics_visitor_id_enabled", False, raising=False)
+    response = post(
+        client,
+        '{"events":[{"name":"print_clicked"}]}',
+        headers={"X-Client-Session": SESSION, "X-Client-Visitor": VISITOR},
+    )
+    # The SPA deletes its stored id when it sees this.
+    assert response.headers["x-analytics-visitor"] == "off"
+    record = next(r for r in captured if r.event == "print_clicked")
+    assert not hasattr(record, "visitor_id")
+
+
+def test_global_privacy_control_keeps_visitors_unlinked(client, captured, visitors):
+    post(
+        client,
+        '{"events":[{"name":"print_clicked"}]}',
+        headers={"X-Client-Session": SESSION, "X-Client-Visitor": VISITOR, "Sec-GPC": "1"},
+    )
+    record = next(r for r in captured if r.event == "print_clicked")
+    assert record.visitor_id == SESSION
+
+
+def test_server_events_carry_the_visitor_id(captured, visitors):
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/colas/26208001000457",
+        "query_string": b"",
+        "headers": [
+            (b"x-client-session", SESSION.encode()),
+            (b"x-client-visitor", VISITOR.encode()),
+        ],
+        "path_params": {"cola_id": 26208001000457},
+        "route": type("R", (), {"path": "/colas/{cola_id}"})(),
+    }
+    main._record_event(Request(scope), 200, time.perf_counter(), visitors)
+
+    record = next(r for r in captured if r.event == "detail_viewed")
+    assert record.visitor_id == VISITOR
+
+
+def test_visitor_policy_header_is_readable_cross_origin(client, visitors, monkeypatch):
+    monkeypatch.setattr(visitors, "analytics_visitor_id_enabled", False, raising=False)
+    response = client.post(
+        "/api/events",
+        content='{"events":[{"name":"print_clicked"}]}',
+        headers={"Origin": "http://localhost:5173"},
+    )
+    exposed = response.headers.get("access-control-expose-headers", "").lower()
+    assert "x-analytics-visitor" in exposed
