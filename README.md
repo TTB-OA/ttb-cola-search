@@ -376,7 +376,10 @@ single-session kind the session id is — confirm the site privacy notice
 discloses it before relying on the default. Its limits:
 
 - **It is replaced every 90 days**, matching log retention, so no id outlives
-  the data it could link.
+  the data it could link. A browser whose id is replaced inside the selected
+  range is counted twice (old id and new), so the Visitors figure is an upper
+  bound: about a third of returning browsers are double-counted on a 30-day
+  range, and nearly all of them on 90 days.
 - **Opting out is honoured.** A browser sending Global Privacy Control
   (`Sec-GPC: 1`) or Do Not Track (`DNT: 1`) never gets one; the server checks
   the headers too and records such a browser under its session id instead, so

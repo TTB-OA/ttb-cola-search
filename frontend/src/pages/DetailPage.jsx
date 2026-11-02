@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import LabelThumb from '../components/LabelThumb.jsx';
@@ -63,7 +63,9 @@ function useOriginRegions(points, origin) {
       cancelled = true;
     };
   }, [origins, origin]);
-  return resolved && new Map(origins.map((p, i) => [p, resolved[i]]));
+  // Memoized so a re-render (e.g. hovering a card) keeps the same map, and the
+  // pins and regions built from it, instead of rebuilding every marker.
+  return useMemo(() => resolved && new Map(origins.map((p, i) => [p, resolved[i]])), [origins, resolved]);
 }
 
 // The record's own coordinates, drawn as a locator. Deliberately not
@@ -280,16 +282,32 @@ function FieldSection({ title, fields = [], hl, children }) {
 // Free text that can run to a paragraph or more (blown / embossed container
 // text). It spans the whole field grid and reads as a block; past
 // LONG_CLAMP_CHARS it is clamped behind a toggle, unless a highlighted search
-// term is in it, which must not be hidden.
+// term is in it, which must not be hidden. The character count only decides
+// whether to try clamping; the toggle shows only if the clamp actually hides
+// something at the current width, since 4 full-width lines hold ~400 chars.
 const LONG_CLAMP_CHARS = 240;
 
 function LongValue({ text, hl }) {
-  const clampable = String(text).length > LONG_CLAMP_CHARS;
+  const ref = useRef(null);
+  const long = String(text).length > LONG_CLAMP_CHARS;
   const [open, setOpen] = useState(() => !!hl && matchesTerms(text, hl));
-  const clamped = clampable && !open;
+  const [overflows, setOverflows] = useState(true);
+  const clamped = long && !open;
+  // Measured only while clamped: once open, the toggle stays so it can close.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!clamped || !el) return undefined;
+    const check = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    check();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [clamped, text]);
+  const clampable = long && (open || overflows);
   return (
     <div className="d-long">
-      <div className={'d-long-text' + (clamped ? ' clamped' : '')}>
+      <div ref={ref} className={'d-long-text' + (clamped ? ' clamped' : '')}>
         {hl ? <Highlight text={text} q={hl} /> : text}
       </div>
       {clampable && (
