@@ -159,29 +159,56 @@ function region(geometry, name, lng, lat) {
   return { name, geometry, bounds: frameOf(polygons, lng, lat) };
 }
 
+// How far (in degrees) a centroid may sit outside a named shape's outline and
+// still confirm the name: curated centroids of small or coastal places can land
+// just offshore.
+const NEAR_DEG = 1;
+
+function nearFeature(f, lng, lat) {
+  return polygonsOf(f.geometry).some((p) => {
+    if (polygonContains(p, lng, lat)) return true;
+    const [w, s, e, n] = bboxOf([p]);
+    return lng >= w - NEAR_DEG && lng <= e + NEAR_DEG && lat >= s - NEAR_DEG && lat <= n + NEAR_DEG;
+  });
+}
+
+function largestPolygon(polygons) {
+  let best = polygons[0];
+  for (const p of polygons) if (bboxArea(bboxOf([p])) > bboxArea(bboxOf([best]))) best = p;
+  return best;
+}
+
 // Resolves an origin to the area it names. Names are tried first, states
-// before countries: a state name is unambiguous and its centroid also sits
-// inside the United States. Failing a name, the country under the centroid is
-// used, but only the one landmass the point is on: an origin such as
-// Martinique is drawn by Natural Earth as part of France, and highlighting all
-// of France for it would be wrong.
+// before countries, and a name only counts when the centroid lies on or near
+// the shape it names: "Georgia" is both a U.S. state and a country, and the
+// centroid is what tells them apart.
+//
+// Failing a name, the centroid's position is used, but only when it lands on a
+// detached part of a country: an origin such as Martinique is drawn by Natural
+// Earth as an island of France, and outlining that island is right. A centroid
+// on a country's main landmass says nothing about what the origin is, since a
+// region ("Scotland" lands on Great Britain) or a group of countries ("European
+// Union" lands on Germany) would outline the wrong area. Those keep their pin.
 //
 // States are never matched by position alone, since a multi-state or
 // nationwide origin would have its centroid land in whatever state is central.
 export function resolveOriginRegion({ names, lng, lat }) {
   const keys = (names || []).filter(Boolean).map(normalize);
-  for (const key of keys) {
-    const f = stateByName.get(key);
-    if (f) return region(f.geometry, f.properties.name, lng, lat);
+  const located = Number.isFinite(lng) && Number.isFinite(lat);
+  const fits = (f) => f && (!located || nearFeature(f, lng, lat));
+  for (const byName of [stateByName, countryByName]) {
+    for (const key of keys) {
+      const f = byName.get(key);
+      if (fits(f)) return region(f.geometry, f.properties.name, lng, lat);
+    }
   }
-  for (const key of keys) {
-    const f = countryByName.get(key);
-    if (f) return region(f.geometry, f.properties.name, lng, lat);
-  }
-  if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  if (!located) return null;
   for (const f of countries.features) {
-    const hit = polygonsOf(f.geometry).find((p) => polygonContains(p, lng, lat));
-    if (hit) return region({ type: 'Polygon', coordinates: hit }, f.properties.name, lng, lat);
+    const polygons = polygonsOf(f.geometry);
+    const hit = polygons.find((p) => polygonContains(p, lng, lat));
+    if (!hit) continue;
+    if (polygons.length < 2 || hit === largestPolygon(polygons)) return null;
+    return region({ type: 'Polygon', coordinates: hit }, f.properties.name, lng, lat);
   }
   return null;
 }

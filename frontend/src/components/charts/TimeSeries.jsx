@@ -16,9 +16,19 @@ function niceMax(value) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// The smallest gap between buckets is the bin width the API used, which is
-// under a day on the shorter ranges.
-function bucketWidth(points) {
+// The API's interval keys (src/api/insights.py INTERVALS), in milliseconds.
+const INTERVAL_MS = {
+  '6h': 6 * 60 * 60 * 1000,
+  '12h': 12 * 60 * 60 * 1000,
+  '1d': DAY_MS,
+  '1w': 7 * DAY_MS,
+};
+
+// The bin width the API used: taken from its `interval` when given, otherwise
+// the smallest gap between buckets. The gap cannot be inferred from fewer than
+// two points, so a lone weekly bucket would otherwise read as a single day.
+function bucketWidth(points, interval) {
+  if (INTERVAL_MS[interval]) return INTERVAL_MS[interval];
   let smallest = Infinity;
   for (let i = 1; i < points.length; i += 1) {
     const gap = new Date(points[i].t) - new Date(points[i - 1].t);
@@ -27,11 +37,11 @@ function bucketWidth(points) {
   return Number.isFinite(smallest) ? smallest : DAY_MS;
 }
 
-function formatters(points) {
+function formatters(points, interval) {
   // Sub-daily bins need the hour or every label on a day repeats, and an hour
   // is only meaningful in the reader's timezone. Daily bins stay in UTC, since
   // those buckets start at 00:00Z and would otherwise read as the day before.
-  const sub = bucketWidth(points) < DAY_MS;
+  const sub = bucketWidth(points, interval) < DAY_MS;
   const timeZone = sub ? 'America/New_York' : 'UTC';
   const axis = new Intl.DateTimeFormat('en-US', {
     month: 'numeric',
@@ -52,7 +62,7 @@ function formatters(points) {
   };
   // A weekly bucket is labelled by its first day, which reads as a single day
   // unless the readout says otherwise.
-  const weekly = bucketWidth(points) >= 7 * DAY_MS;
+  const weekly = bucketWidth(points, interval) >= 7 * DAY_MS;
   return { tickLabel: apply(axis), fullLabel: apply(full, weekly ? 'Week of ' : '') };
 }
 
@@ -64,7 +74,7 @@ const valueOf = (p, key) => {
   return v === undefined || v === null ? null : Number(v);
 };
 
-export default function TimeSeries({ points, series, label, format = fmtValue, toggleable = false }) {
+export default function TimeSeries({ points, series, label, interval, format = fmtValue, toggleable = false }) {
   const svgRef = useRef(null);
   const [hover, setHover] = useState(null);
   const [hidden, setHidden] = useState(() => new Set());
@@ -125,7 +135,7 @@ export default function TimeSeries({ points, series, label, format = fmtValue, t
   const ticks = [0, max / 2, max];
   // Cap the axis at a handful of labels so they never collide.
   const every = Math.max(1, Math.ceil(points.length / 6));
-  const { tickLabel, fullLabel } = formatters(points);
+  const { tickLabel, fullLabel } = formatters(points, interval);
 
   // The chart is stretched to the card width, so a screen pixel has to be
   // mapped back through the viewBox before it means anything in chart space.

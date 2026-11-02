@@ -35,7 +35,7 @@ async def main() -> None:
     cred = AzureCliCredential(process_timeout=60)
     client = LogsQueryClient(cred)
     timespan = insights.RANGES[RANGE]
-    queries = insights._queries(insights._BUCKETS[RANGE])
+    queries = insights._queries(insights._BUCKETS[insights.resolve_interval(RANGE, None)])
     try:
         t0 = time.perf_counter()
         batch = [

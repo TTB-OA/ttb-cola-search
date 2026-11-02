@@ -142,7 +142,7 @@ function LatencyTable({ rows }) {
 }
 
 /* ---------- Latency card: table or per-endpoint series ---------- */
-function LatencyCard({ rows, overTime }) {
+function LatencyCard({ rows, overTime, interval }) {
   const [view, setView] = useState('table');
   const [metric, setMetric] = useState('p95');
   const series = (overTime?.endpoints || []).map((endpoint, i) => ({
@@ -183,6 +183,7 @@ function LatencyCard({ rows, overTime }) {
         <LatencyTable rows={rows} />
       ) : (
         <TimeSeries
+          interval={interval}
           label={`${metric} response time per endpoint over time, in milliseconds`}
           points={overTime?.[metric]}
           series={series}
@@ -512,6 +513,7 @@ export default function AnalyticsPage() {
           <div className="an-grid-2">
             <Card title="Activity over time">
               <TimeSeries
+                interval={data.interval}
                 label={`Searches, detail views, sessions${showVisitors ? ' and visitors' : ''} over time`}
                 points={panels.usageOverTime}
                 series={[
@@ -528,6 +530,7 @@ export default function AnalyticsPage() {
 
             <Card title="Searches returning nothing">
               <TimeSeries
+                interval={data.interval}
                 label="Total searches versus zero-result searches"
                 points={panels.zeroResultsOverTime}
                 series={[
@@ -584,10 +587,11 @@ export default function AnalyticsPage() {
               <BarList items={panels.originUsage} color="var(--green)" />
             </Card>
 
-            <LatencyCard rows={panels.latency} overTime={panels.latencyOverTime} />
+            <LatencyCard rows={panels.latency} overTime={panels.latencyOverTime} interval={data.interval} />
 
             <Card title="Request failures">
               <TimeSeries
+                interval={data.interval}
                 label="Total versus failed requests"
                 points={panels.reliability}
                 series={[
@@ -603,6 +607,7 @@ export default function AnalyticsPage() {
 
             <Card title="Image search">
               <TimeSeries
+                interval={data.interval}
                 label="Image searches performed, abandoned and lost"
                 points={panels.imageSearchOverTime}
                 series={[
@@ -619,6 +624,7 @@ export default function AnalyticsPage() {
 
             <Card title="Map usage">
               <TimeSeries
+                interval={data.interval}
                 label="Map viewports, area summaries and label clicks over time"
                 points={panels.mapOverTime}
                 series={[
@@ -656,7 +662,7 @@ export default function AnalyticsPage() {
               ? ' Weekly buckets start on Sunday (UTC), so the first and last weeks cover only part of a week.'
               : ''}
             {showVisitors
-              ? ' Visitors counts browsers by a pseudonymous id kept for up to 90 days; one person on two devices counts twice, and browsers that opt out of tracking count once per session. Only events since visitor ids were introduced are counted.'
+              ? ' Visitors counts browsers by a pseudonymous id kept for up to 90 days, so the figure is an upper bound: a browser whose id is replaced during the range counts twice, as does one person on two devices, and browsers that opt out of tracking count once per session. Only events since visitor ids were introduced are counted.'
               : ''}
           </p>
         </>
