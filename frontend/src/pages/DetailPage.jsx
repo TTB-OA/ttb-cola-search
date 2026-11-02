@@ -36,25 +36,73 @@ function dedupeLocations(points) {
   return [...seen.values()];
 }
 
+// A product origin is a state or country centroid, so it is drawn as the area
+// it names rather than as a pin. The boundaries are a large static dataset,
+// loaded only when a record has an origin. Resolves to one region (or null) per
+// origin point, in order; `null` overall while loading.
+function useOriginRegions(points, origin) {
+  const origins = useMemo(() => points.filter((p) => p.role === 'product_origin'), [points]);
+  const [resolved, setResolved] = useState(() => (origins.length ? null : []));
+  useEffect(() => {
+    if (!origins.length) {
+      setResolved([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setResolved(null);
+    import('../lib/originRegions.js')
+      .then(({ resolveOriginRegion }) =>
+        origins.map((p) => resolveOriginRegion({ names: [origin, p.sourceKey], lng: p.lng, lat: p.lat }))
+      )
+      // Without boundaries the origin falls back to its centroid pin.
+      .catch(() => origins.map(() => null))
+      .then((regions) => {
+        if (!cancelled) setResolved(regions);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [origins, origin]);
+  return resolved && new Map(origins.map((p, i) => [p, resolved[i]]));
+}
+
 // The record's own coordinates, drawn as a locator. Deliberately not
 // interactive: this answers "where is this", and the map page answers the rest.
 function LocationPanel({ locations, status, origin }) {
   const points = useMemo(() => dedupeLocations(locations || []), [locations]);
   const [hoveredId, setHoveredId] = useState(null);
+  const regionOf = useOriginRegions(points, origin);
   const nameOf = (p) => (p.role === 'product_origin' ? origin || p.sourceKey : p.permitName || p.sourceKey);
   const locationClass = (p) =>
     p.role === 'primary_premise' ? 'is-primary' : p.role === 'product_origin' ? 'is-origin' : 'is-associated';
-  const pins = useMemo(
-    () =>
-      points.map((p, i) => ({
+  // Only pins are numbered: an outlined area carries no number on the map, so
+  // its card is keyed by colour instead.
+  const entries = useMemo(() => {
+    let n = 0;
+    return points.map((p, i) => {
+      const region = regionOf?.get(p) || null;
+      const index = region ? null : ++n;
+      const role = ROLE_LABELS[p.role] || p.role;
+      return {
         ...p,
         id: `loc-${i}`,
-        index: i + 1,
+        index,
+        region,
         locationClass: locationClass(p),
-        label: `${i + 1}. ${ROLE_LABELS[p.role] || p.role}${nameOf(p) ? ` — ${nameOf(p)}` : ''}`,
-      })),
+        label: `${index != null ? `${index}. ` : ''}${role}${nameOf(p) ? ` — ${nameOf(p)}` : ''}`,
+      };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [points, origin]
+  }, [points, origin, regionOf]);
+  // Origins wait for their boundary rather than flashing a pin that is about
+  // to be replaced.
+  const pins = useMemo(
+    () => entries.filter((e) => !e.region && !(e.role === 'product_origin' && !regionOf)),
+    [entries, regionOf]
+  );
+  const regions = useMemo(
+    () => entries.filter((e) => e.region).map((e) => ({ id: e.id, geometry: e.region.geometry })),
+    [entries]
   );
 
   if (!points.length) {
@@ -80,16 +128,22 @@ function LocationPanel({ locations, status, origin }) {
   }
 
   const primary = points[0];
-  const lats = points.map((p) => p.lat);
-  const lngs = points.map((p) => p.lng);
+  // Each entry contributes its outline's frame, or just its point.
+  const boxes = entries.map((e) => e.region?.bounds || [e.lng, e.lat, e.lng, e.lat]);
   const view = {
     center: [primary.lng, primary.lat],
     zoom: 9,
-    // A permit holder's premises can span several states, so a fixed zoom on the
-    // first one would leave the rest off screen.
+    // A permit holder's premises can span several states, and an origin is a
+    // whole state or country, so a fixed zoom on the first point would leave
+    // the rest off screen.
     bounds:
-      points.length > 1
-        ? [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)]
+      points.length > 1 || entries.some((e) => e.region)
+        ? [
+            Math.min(...boxes.map((b) => b[0])),
+            Math.min(...boxes.map((b) => b[1])),
+            Math.max(...boxes.map((b) => b[2])),
+            Math.max(...boxes.map((b) => b[3])),
+          ]
         : null,
   };
   return (
@@ -97,11 +151,18 @@ function LocationPanel({ locations, status, origin }) {
       <h3 className="d-section">Location</h3>
       <div className="d-minimap">
         <Suspense fallback={<div className="skel" style={{ height: '100%' }} />}>
-          <MapView mode="locator" points={pins} view={view} interactive={false} highlightId={hoveredId} />
+          <MapView
+            mode="locator"
+            points={pins}
+            regions={regions}
+            view={view}
+            interactive={false}
+            highlightId={hoveredId}
+          />
         </Suspense>
       </div>
       <div className="d-permits" style={{ marginTop: 10 }}>
-        {pins.map((p) => (
+        {entries.map((p) => (
           <div
             className={'d-permit is-locatable ' + p.locationClass + (hoveredId === p.id ? ' is-hovered' : '')}
             key={p.id}
@@ -112,17 +173,24 @@ function LocationPanel({ locations, status, origin }) {
             onBlur={() => setHoveredId((cur) => (cur === p.id ? null : cur))}
           >
             <div style={{ fontWeight: 600 }}>
-              <span className={'d-pin-no ' + p.locationClass}>{p.index}</span>
+              <span
+                className={'d-pin-no ' + p.locationClass + (p.region ? ' is-area' : '')}
+                aria-hidden={p.region ? 'true' : undefined}
+              >
+                {p.index}
+              </span>
               {ROLE_LABELS[p.role] || p.role}
             </div>
             <div className="muted" style={{ fontSize: 13 }}>
               {nameOf(p) || '—'}
+              {p.region && ' · outlined on map'}
             </div>
           </div>
         ))}
       </div>
       <p className="an-note muted">
-        Coordinates are approximated from the address on file.{' '}
+        Coordinates are approximated from the address on file
+        {regions.length ? '; a product origin is shown as the whole state or country' : ''}.{' '}
         <Link to={`/map?lat=${primary.lat}&lng=${primary.lng}&zoom=9`}>See this area on the map</Link>
       </p>
     </>

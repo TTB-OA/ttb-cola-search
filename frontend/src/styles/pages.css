@@ -511,6 +511,8 @@ section > .d-notice { margin-bottom: 0; }
 .d-pin-no.is-primary { background: var(--accent); }
 .d-pin-no.is-origin { background: var(--gold-dark); color: var(--on-warm); }
 .d-pin-no.is-associated { background: var(--mint); }
+/* An origin outlined as a whole area: a swatch of the fill, not a pin number. */
+.d-pin-no.is-area { border-radius: 3px; background: color-mix(in srgb, var(--gold-dark) 35%, transparent); border: 2px solid var(--gold-dark); }
 
 /* The mini-map on a COLA record: a locator, not an explorer. */
 .d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
