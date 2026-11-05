@@ -490,7 +490,10 @@ class DashboardPanels(ApiModel):
 
 
 class DashboardTotals(ApiModel):
+    # Successful first pages: one per search a person ran.
     searches: int = 0
+    # Every successful page of search results, so paging is included.
+    result_pages: int = 0
     detail_views: int = 0
     similar_requests: int = 0
     image_searches: int = 0

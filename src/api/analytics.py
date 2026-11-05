@@ -42,6 +42,19 @@ EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
 def route_key(method: str, path: str) -> tuple[str, str]:
     return method, path.removeprefix(API_PREFIX)
 
+
+# Request header the SPA sets on lookups it makes for itself rather than for a
+# search someone typed: the home page's "recently approved" strip and the tour's
+# sample record both go through `GET /api/colas`. Those are recorded under their
+# own event name so they still count a session but never count as a search.
+BACKGROUND_HEADER = "X-Client-Purpose"
+BACKGROUND_SEARCH_EVENT = "background_search"
+
+
+def is_background(request: Any) -> bool:
+    headers = getattr(request, "headers", {}) or {}
+    return (headers.get(BACKGROUND_HEADER.lower()) or "").strip().lower() == "background"
+
 # Query params that represent a user-applied filter. Names are always recorded;
 # values only for FILTER_VALUE_KEYS unless free-text capture is on.
 FILTER_KEYS = (

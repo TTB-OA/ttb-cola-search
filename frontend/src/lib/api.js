@@ -66,6 +66,15 @@ export const api = {
 
   searchColas: (params, signal) => request(`/colas${toQuery(params)}`, { signal }),
 
+  // The newest approvals, for the home page strip and the tour's sample record.
+  // Marked as background (BACKGROUND_HEADER in src/api/analytics.py) so the
+  // dashboard does not count a home page visit as a search.
+  latestApprovals: (pageSize, signal) =>
+    request(`/colas${toQuery({ sort: 'approvalDate', status: 'Approved', pageSize, facets: false })}`, {
+      signal,
+      headers: { 'X-Client-Purpose': 'background' },
+    }),
+
   getCola: (id, signal) => request(`/colas/${encodeURIComponent(id)}`, { signal }),
 
   // A URL rather than a fetch, so the browser's own PDF viewer handles it.

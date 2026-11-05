@@ -15,7 +15,7 @@ from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 
-from .analytics import FILTER_KEYS, TEXT_FILTER_KEYS
+from .analytics import BACKGROUND_SEARCH_EVENT, FILTER_KEYS
 from .config import Settings
 
 logger = logging.getLogger(__name__)
@@ -75,11 +75,40 @@ def resolve_interval(range_key: str, interval: str | None) -> str:
 def cache_key(range_key: str, interval: str) -> str:
     return f"{range_key}:{interval}"
 
-_SERVER_EVENTS = '"search_performed", "detail_viewed", "similar_requested", "image_search_performed"'
+# Background lookups are not searches, but they are still a visit: a session
+# that only opened the home page counts once.
+_SERVER_EVENTS = (
+    '"search_performed", "detail_viewed", "similar_requested", '
+    f'"image_search_performed", "{BACKGROUND_SEARCH_EVENT}"'
+)
 
-# Dates are ranges, not values worth listing.
+# A search a person ran and got an answer to. Every search panel filters on
+# this so their counts agree with each other and with the Searches tile.
+#
+# - Failed requests (timeouts, rate limits) are request failures, charted under
+#   Operational health, not searches. A missing status code counts as success.
+# - The home page's "recently approved" strip and the tour's sample record are
+#   now recorded as `background_search`. Events from before that change are
+#   still `search_performed`, recognised by their shape: no keyword, status as
+#   the only filter, sorted by approval date, facets off (the search page always
+#   asks for facets). Harmless once those age out of retention.
+_USER_SEARCH = (
+    'Name == "search_performed"'
+    " and coalesce(toint(Properties.status_code), 200) < 400"
+    ' and not(tostring(Properties.facets_requested) =~ "false"'
+    ' and tostring(Properties.filters_used) == "status"'
+    ' and tostring(Properties.sort) == "approvalDate"'
+    ' and tostring(Properties.has_query) !~ "true")'
+)
+
+# Page 2 and on of a search someone already ran. Counted as result pages, not
+# as further searches.
+_FIRST_PAGE = "toint(Properties.page) == 1"
+_USER_FIRST_PAGE = f"{_USER_SEARCH} and {_FIRST_PAGE}"
+
+# Every filter whose value is worth listing. Dates are ranges, not values.
 _RANKED_FILTERS = ", ".join(
-    f'"{k}"' for k in TEXT_FILTER_KEYS if not k.endswith(("From", "To"))
+    f'"{k}"' for k in FILTER_KEYS if k != "q" and not k.endswith(("From", "To"))
 )
 
 # Endpoints charted over time; more lines than this stop being readable.
@@ -117,7 +146,8 @@ def _queries(bucket: str) -> dict[str, str]:
             AppEvents
             | where Name in ({_SERVER_EVENTS})
             | summarize
-                searches = countif(Name == "search_performed"),
+                searches = countif({_USER_FIRST_PAGE}),
+                resultPages = countif({_USER_SEARCH}),
                 detailViews = countif(Name == "detail_viewed"),
                 similarRequests = countif(Name == "similar_requested"),
                 imageSearches = countif(Name == "image_search_performed"),
@@ -126,9 +156,9 @@ def _queries(bucket: str) -> dict[str, str]:
         """,
         "usage_over_time": f"""
             AppEvents
-            | where Name in ("search_performed", "detail_viewed")
+            | where Name in ("search_performed", "detail_viewed", "{BACKGROUND_SEARCH_EVENT}")
             | summarize
-                searches = countif(Name == "search_performed"),
+                searches = countif({_USER_FIRST_PAGE}),
                 detailViews = countif(Name == "detail_viewed"),
                 sessions = dcount(tostring(Properties.session_id)),
                 visitors = {_VISITORS}
@@ -138,38 +168,39 @@ def _queries(bucket: str) -> dict[str, str]:
         # --- Search quality -------------------------------------------------
         "zero_results_over_time": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_FIRST_PAGE}
             | summarize
                 searches = count(),
                 zero = countif(tobool(Properties.zero_results))
               by TimeGenerated = {bucket}
             | order by TimeGenerated asc
         """,
-        "filter_usage": """
+        "filter_usage": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_FIRST_PAGE}
             | extend used = split(tostring(Properties.filters_used), ",")
             | mv-expand filter = used to typeof(string)
             | where isnotempty(filter)
             | summarize count() by filter
             | top 15 by count_ desc
         """,
-        "paging_depth": """
+        # Every page, so this is where paging shows up.
+        "paging_depth": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_SEARCH}
             | summarize count() by page = tostring(toint(Properties.page))
             | top 10 by count_ desc
         """,
-        "sort_usage": """
+        "sort_usage": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_FIRST_PAGE}
             | summarize count() by sort = tostring(Properties.sort)
             | top 10 by count_ desc
         """,
         # Page 1 only: paging through one query should list it once.
         "recent_queries": f"""
             AppEvents
-            | where Name == "search_performed" and toint(Properties.page) == 1
+            | where {_USER_FIRST_PAGE}
             | extend query = tostring(Properties.query_text)
             | where isnotempty(query)
             | top {RECENT_QUERIES_LIMIT} by TimeGenerated desc
@@ -181,9 +212,9 @@ def _queries(bucket: str) -> dict[str, str]:
                 sort = tostring(Properties.sort),
                 {_RECENT_FILTER_COLUMNS}
         """,
-        "zero_result_queries": """
+        "zero_result_queries": f"""
             AppEvents
-            | where Name == "search_performed" and tobool(Properties.zero_results)
+            | where {_USER_FIRST_PAGE} and tobool(Properties.zero_results)
             | extend query = tolower(tostring(Properties.query_text))
             | where isnotempty(query)
             | summarize count() by query
@@ -194,7 +225,7 @@ def _queries(bucket: str) -> dict[str, str]:
         # latest search's total, so it reflects whatever else it was combined with.
         "recent_filter_values": f"""
             AppEvents
-            | where Name == "search_performed" and toint(Properties.page) == 1
+            | where {_USER_FIRST_PAGE}
             | mv-expand filter = dynamic([{_RANKED_FILTERS}]) to typeof(string)
             | extend
                 value = tostring(Properties[filter]),
@@ -228,17 +259,17 @@ def _queries(bucket: str) -> dict[str, str]:
             | summarize count() by colaId
             | top 10 by count_ desc
         """,
-        "commodity_usage": """
+        "commodity_usage": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_FIRST_PAGE}
             | extend commodity = tostring(Properties.commodity)
             | where isnotempty(commodity)
             | summarize count() by commodity
             | top 10 by count_ desc
         """,
-        "origin_usage": """
+        "origin_usage": f"""
             AppEvents
-            | where Name == "search_performed"
+            | where {_USER_FIRST_PAGE}
             | extend origin = tostring(Properties.origin)
             | where isnotempty(origin)
             | summarize count() by origin

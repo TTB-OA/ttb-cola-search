@@ -273,6 +273,7 @@ async def _build(settings: Settings, range_key: str, interval: str) -> Dashboard
 
     totals = DashboardTotals(
         searches=int(head.get("searches") or 0),
+        result_pages=int(head.get("resultPages") or 0),
         detail_views=int(head.get("detailViews") or 0),
         similar_requests=int(head.get("similarRequests") or 0),
         image_searches=int(head.get("imageSearches") or 0),

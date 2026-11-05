@@ -678,7 +678,7 @@ export default function SearchPage() {
   const categories = ref.categories || [];
 
   const recentState = useAsync(
-    (signal) => api.searchColas({ sort: 'approvalDate', status: 'Approved', pageSize: 6, facets: false }, signal),
+    (signal) => api.latestApprovals(6, signal),
     [],
     { cacheKey: 'recent' }
   );

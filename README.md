@@ -342,7 +342,10 @@ vendor as a side effect of the routing scheme.
 Server-derived events (`search_performed`, `detail_viewed`, `similar_requested`,
 `image_search_performed`, `describe_search_performed`) need no client
 cooperation, so they survive ad
-blockers. Client events cover only interactions that produce no request —
+blockers. Lookups the SPA makes for itself through `/api/colas` (the home
+page's recently approved strip, the tour's sample record) send
+`X-Client-Purpose: background` and are recorded as `background_search`: they
+count toward sessions, never toward searches. Client events cover only interactions that produce no request —
 opening the advanced panel, switching label faces, or following the outbound
 COLA download link.
 
@@ -416,6 +419,13 @@ interval per range (6 hours or daily for 7 days, 12 hours or daily for 14 days,
 daily or weekly for 30 and 90 days); weekly buckets are calendar weeks starting
 Sunday 00:00 UTC, so the first and last are partial. It reads Log Analytics directly; the application database is touched
 only to turn the top COLA ids into brand names.
+
+**Searches** counts the successful first page of each search a person ran;
+**Result pages** counts every successful page, so the gap between the two is
+paging. Every search panel uses the same definition (`_USER_SEARCH` in
+`src/api/insights.py`): failed requests and background lookups are left out,
+including background lookups logged as `search_performed` before they were
+marked, which are recognised by their shape.
 
 Enabling it takes four things:
 

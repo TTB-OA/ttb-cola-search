@@ -16,10 +16,12 @@ from psycopg.errors import QueryCanceled
 from starlette.responses import Response
 
 from .analytics import (
+    BACKGROUND_SEARCH_EVENT,
     EVENT_BY_ROUTE,
     VISITOR_POLICY_HEADER,
     emit,
     identity_attrs,
+    is_background,
     route_key,
     shape_describe_event,
     shape_detail_event,
@@ -145,6 +147,10 @@ def _record_event(
         if name is None:
             return
 
+        searched = name == "search_performed"
+        if searched and is_background(request):
+            name = BACKGROUND_SEARCH_EVENT
+
         params = request.query_params
         attrs: dict[str, object] = {
             **identity_attrs(request, settings),
@@ -155,7 +161,7 @@ def _record_event(
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }
 
-        if name == "search_performed":
+        if searched:
             attrs |= shape_search_event(
                 params, capture_query_text=settings.analytics_capture_query_text
             )

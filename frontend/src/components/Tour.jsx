@@ -354,7 +354,7 @@ export function TourProvider({ children }) {
     if (colaIdRef.current === undefined && !fetchingRef.current) {
       fetchingRef.current = true;
       api
-        .searchColas({ sort: 'approvalDate', status: 'Approved', pageSize: 1, facets: false })
+        .latestApprovals(1)
         .then((d) => {
           const first = d && d.items && d.items[0];
           colaIdRef.current = first ? first.id : null;
