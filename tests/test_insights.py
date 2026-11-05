@@ -109,6 +109,7 @@ def stub_panels(monkeypatch):
             "totals": [
                 {
                     "searches": 100,
+                    "resultPages": 130,
                     "detailViews": 40,
                     "similarRequests": 5,
                     "imageSearches": 3,
@@ -175,6 +176,7 @@ def test_returns_shaped_totals(client, enabled, stub_panels):
     assert body["range"] == "30d"
     assert body["cached"] is False
     assert body["totals"]["searches"] == 100
+    assert body["totals"]["resultPages"] == 130
     assert body["totals"]["detailViews"] == 40
     assert body["totals"]["sessions"] == 25
     assert body["totals"]["visitors"] == 18
@@ -473,7 +475,11 @@ def test_query_text_panels_read_the_captured_property():
     assert 'f_commodity = tostring(Properties["commodity"])' in queries["recent_queries"]
     assert 'Properties["q"]' not in queries["recent_queries"]
     assert '"brand"' in queries["recent_filter_values"]
+    # Facet values are listed too, so a facet-only search shows up somewhere.
+    for facet in ("commodity", "source", "origin", "status"):
+        assert f'"{facet}"' in queries["recent_filter_values"], facet
     assert '"dateFrom"' not in queries["recent_filter_values"]
+    assert '"q"' not in queries["recent_filter_values"]
     for name in ("recent_filter_values", "recent_describe_queries"):
         assert f"top {insights.RECENT_QUERIES_LIMIT} by TimeGenerated desc" in queries[name], name
 
@@ -483,6 +489,45 @@ def test_queries_contain_no_format_placeholders():
     for bucket in insights._BUCKETS.values():
         for name, kql in insights._queries(bucket).items():
             assert "{" not in kql and "}" not in kql, name
+
+
+def test_every_search_panel_counts_the_same_searches():
+    """One definition of a search, so the tile and the panels add up."""
+    queries = insights._queries(insights._BUCKETS["1d"])
+    readers = [n for n, q in queries.items() if '"search_performed"' in q]
+    assert set(readers) >= {
+        "totals",
+        "usage_over_time",
+        "zero_results_over_time",
+        "filter_usage",
+        "paging_depth",
+        "sort_usage",
+        "recent_queries",
+        "zero_result_queries",
+        "recent_filter_values",
+        "commodity_usage",
+        "origin_usage",
+    }
+    for name in readers:
+        assert insights._USER_SEARCH in queries[name], name
+        # Paging depth is the one panel that is about later pages.
+        if name != "paging_depth":
+            assert insights._USER_FIRST_PAGE in queries[name], name
+    assert "resultPages = countif(" in queries["totals"]
+
+
+def test_searches_leave_out_failures_and_home_page_lookups():
+    predicate = insights._USER_SEARCH
+    assert "Properties.status_code" in predicate
+    # Events from before the SPA marked its own lookups as background.
+    assert 'tostring(Properties.facets_requested) =~ "false"' in predicate
+    assert 'tostring(Properties.filters_used) == "status"' in predicate
+
+
+def test_background_lookups_still_count_a_session():
+    queries = insights._queries(insights._BUCKETS["1d"])
+    for name in ("totals", "usage_over_time"):
+        assert '"background_search"' in queries[name], name
 
 
 def test_visitors_ignore_events_without_a_visitor_id():

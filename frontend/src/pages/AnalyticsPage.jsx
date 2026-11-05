@@ -462,7 +462,7 @@ export default function AnalyticsPage() {
 
       {loading ? (
         <div className="an-tiles">
-          {[0, 1, 2, 3, 4].map((i) => (
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="skel an-tile" style={{ height: 92 }} />
           ))}
         </div>
@@ -487,7 +487,16 @@ export default function AnalyticsPage() {
           ) : null}
 
           <div className="an-tiles">
-            <StatTile label="Searches" value={num(totals?.searches)} />
+            <StatTile
+              label="Searches"
+              value={num(totals?.searches)}
+              hint="First page of each search"
+            />
+            <StatTile
+              label="Result pages"
+              value={num(totals?.resultPages)}
+              hint="Including later pages"
+            />
             {showVisitors ? (
               <StatTile
                 label="Visitors"
@@ -661,6 +670,10 @@ export default function AnalyticsPage() {
             {data.interval === '1w'
               ? ' Weekly buckets start on Sunday (UTC), so the first and last weeks cover only part of a week.'
               : ''}
+            {' '}Searches counts each search once, on its first page; later pages count
+            only toward Result pages. Neither counts failed requests or the home
+            page’s list of recent approvals. The recent lists show the latest 50
+            entries, not every search, and leave out date filters.
             {showVisitors
               ? ' Visitors counts browsers by a pseudonymous id kept for up to 90 days, so the figure is an upper bound: a browser whose id is replaced during the range counts twice, as does one person on two devices, and browsers that opt out of tracking count once per session. Only events since visitor ids were introduced are counted.'
               : ''}

@@ -151,6 +151,35 @@ def test_detail_events_carry_the_record_id(captured):
     assert record.cola_id == "26208001000457"
 
 
+def _search_request(headers=()):
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/colas",
+            "query_string": b"sort=approvalDate&status=Approved&pageSize=6&facets=false",
+            "headers": [(b"x-client-session", SESSION.encode()), *headers],
+            "path_params": {},
+            "route": type("R", (), {"path": "/colas"})(),
+        }
+    )
+
+
+def test_background_lookups_are_not_recorded_as_searches(captured):
+    request = _search_request([(b"x-client-purpose", b"background")])
+    main._record_event(request, 200, time.perf_counter(), get_settings())
+
+    assert [r.event for r in captured] == ["background_search"]
+    record = captured[0]
+    assert record.session_id == SESSION
+    assert record.filters_used == "status"
+
+
+def test_searches_without_the_background_header_are_searches(captured):
+    main._record_event(_search_request(), 200, time.perf_counter(), get_settings())
+    assert [r.event for r in captured] == ["search_performed"]
+
+
 # ---------------------------------------------------------------------------
 # Visitor ids
 # ---------------------------------------------------------------------------

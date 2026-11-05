@@ -25,6 +25,22 @@ for browsers that opted out or cannot store one). Count people-ish reach with
 so events from before it existed are left out rather than counted as one. Note that `origin` is a
 search *filter* name (country/state of origin), not the event source.
 
+`search_performed` is one per `/api/colas` response, so raw counts include
+later pages and failed requests. To match the dashboard's **Searches** figure,
+keep successful first pages and drop the home page's recently approved lookup
+as logged before it became `background_search`:
+
+```kusto
+customEvents
+| where name == "search_performed"
+| where toint(customDimensions.page) == 1
+    and coalesce(toint(customDimensions.status_code), 200) < 400
+    and not(tostring(customDimensions.facets_requested) =~ "false"
+        and tostring(customDimensions.filters_used) == "status"
+        and tostring(customDimensions.sort) == "approvalDate"
+        and tostring(customDimensions.has_query) !~ "true")
+```
+
 ## Product usage
 
 ### Search funnel
