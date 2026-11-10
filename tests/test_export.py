@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 
 from src.api.main import app
 from src.api.routers import colas as colas_router
-from src.api.routers.colas import EXPORT_COLUMNS, csv_cell
+from src.api.routers.colas import (
+    EXPORT_COLUMNS,
+    FILTERED_ALIAS,
+    KEYWORD_ALIAS,
+    csv_cell,
+)
 
 PATH = "/api/colas/export.csv"
 
@@ -77,8 +82,8 @@ def test_export_returns_a_csv_attachment(statements):
 
     header, *body = parse(response)
     assert header == [h for h, _ in EXPORT_COLUMNS]
-    assert [r[0] for r in body] == ["26087001000123", "26087001000124"]
-    record = dict(zip(header, body[1]))
+    assert [r[0] for r in body] == ['="26087001000123"', '="26087001000124"']
+    record = dict(zip(header, body[1], strict=True))
     assert record["Brand Name"] == "Ça Va"
     assert record["Approval Date"] == "2026-03-04"
     assert record["Commodity"] == "Wine"
@@ -128,3 +133,59 @@ def test_export_applies_the_search_filters(statements):
 )
 def test_cells_cannot_be_read_as_formulas(value, expected):
     assert csv_cell(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        # Leading zero of a 2000s id, and 14 digits Excel would show as 2.6E+13.
+        ("08074001000126", '="08074001000126"'),
+        ("26087001000123", '="26087001000123"'),
+        # Ids with letters are already text to a spreadsheet.
+        ("26J087", "26J087"),
+        ("26208001000457A", "26208001000457A"),
+        ("=1+1", "'=1+1"),
+        (None, ""),
+    ],
+)
+def test_identifier_cells_stay_text_in_a_spreadsheet(value, expected):
+    assert csv_cell(value, identifier=True) == expected
+
+
+def test_digit_only_values_outside_identifier_columns_are_untouched():
+    assert csv_cell("12345") == "12345"
+
+
+def test_serial_numbers_are_written_as_text(statements):
+    statements.rows = [row("26087001000123", serial_num="080001")]
+    header, record = parse(TestClient(app).get(PATH))
+    assert dict(zip(header, record, strict=True))["Serial Number"] == '="080001"'
+
+
+def rows_statements(statements) -> list[str]:
+    return [sql for sql, _ in statements if "'total' AS dim" not in sql]
+
+
+def test_a_keyword_export_never_walks_the_sort_index(statements):
+    """The plain-predicate walk is for a page; 5,000 rows would run past the timeout."""
+    statements.rows = []
+    TestClient(app).get(PATH, params={"q": "vodka", "status": "Approved"})
+    sql = rows_statements(statements)
+    assert sql
+    assert all(f"{KEYWORD_ALIAS} AS MATERIALIZED" in s for s in sql)
+
+
+def test_a_keyword_page_still_walks_the_sort_index(statements):
+    statements.rows = []
+    TestClient(app).get("/api/colas", params={"q": "vodka", "status": "Approved"})
+    first = rows_statements(statements)[0]
+    assert "MATERIALIZED" not in first
+
+
+def test_a_label_text_export_materialises_the_matching_set(statements):
+    statements.rows = []
+    TestClient(app).get(PATH, params={"labelText": "hangover", "status": "Approved"})
+    # No count is needed to choose the plan, and no walk is attempted.
+    assert all("'total' AS dim" not in sql for sql, _ in statements)
+    (sql,) = rows_statements(statements)
+    assert f"{FILTERED_ALIAS} AS MATERIALIZED" in sql

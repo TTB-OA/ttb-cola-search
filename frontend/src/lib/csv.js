@@ -26,23 +26,36 @@ export const EXPORT_COLUMNS = [
   ['Submitter', 'submitter'],
 ];
 
+// Identifiers that are often all digits. A spreadsheet would read those as
+// numbers, dropping the leading zero of a 2000s TTB id and showing the rest in
+// scientific notation, so they are written to stay text.
+const TEXT_ID_KEYS = new Set(['ttbId', 'serial']);
+
 // Spreadsheet apps read a cell starting with one of these as a formula, and
 // brand and applicant names are applicant-supplied text.
 const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
-function cell(value) {
+function quote(s) {
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function cell(value, identifier = false) {
   if (value === null || value === undefined) return '';
   let s = String(value);
+  // A text-valued formula, safe because the content is checked to be digits.
+  if (identifier && /^[0-9]+$/.test(s)) return quote(`="${s}"`);
   if (FORMULA_LEAD.test(s)) s = `'${s}`;
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  return quote(s);
 }
 
 // `extra` adds leading columns, e.g. [['Rank', (r, i) => i + 1]].
 export function resultsToCsv(rows, extra = []) {
   const header = [...extra.map(([h]) => h), ...EXPORT_COLUMNS.map(([h]) => h)];
-  const lines = [header.map(cell).join(',')];
+  const lines = [header.map((h) => cell(h)).join(',')];
   rows.forEach((r, i) => {
-    lines.push([...extra.map(([, get]) => get(r, i)), ...EXPORT_COLUMNS.map(([, key]) => r[key])].map(cell).join(','));
+    lines.push(
+      [...extra.map(([, get]) => cell(get(r, i))), ...EXPORT_COLUMNS.map(([, key]) => cell(r[key], TEXT_ID_KEYS.has(key)))].join(',')
+    );
   });
   // The byte-order mark makes Excel read the file as UTF-8.
   return '﻿' + lines.join('\r\n') + '\r\n';

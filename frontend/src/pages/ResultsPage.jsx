@@ -808,8 +808,13 @@ export default function ResultsPage() {
   const exportResults = async () => {
     setExportNote(null);
     if (isVector) {
+      // The rank on screen numbers distinct artwork, so with grouping on a
+      // folded duplicate shares its lead's rank; the file says the same.
+      // Collapsed duplicates are not in `entries`, so take theirs from the groups.
+      const rankOf = new Map(entries.map((e) => [e.r.id, e.rank]));
+      if (grouping) groups.forEach((g, k) => g.dupes.forEach((d) => rankOf.set(d.id, k + 1)));
       const extra = isDescribe
-        ? [['Rank', (r, i) => i + 1]]
+        ? [['Rank', (r, i) => rankOf.get(r.id) ?? i + 1]]
         : [['Match %', (r) => (r.score != null ? toPct(r.score) : '')]];
       const csv = resultsToCsv(rows, extra);
       downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), exportFilename(isDescribe ? 'cola-artwork-search' : 'cola-image-search'));

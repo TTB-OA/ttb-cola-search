@@ -144,7 +144,11 @@ _Q_RANK = f"{KEYWORD_ALIAS}.rec DESC"
 # An index walk has to pass over every matching row before the page, so its cost
 # grows with the offset (page 20 of "vodka" measured 2.5 s against 35 ms for
 # page 1). The materialised form costs the same at any depth and takes over.
+# The rows asked for count the same way as the rows skipped, so the walk is only
+# offered for a page-sized LIMIT: an export asking for thousands of rows walks
+# as far as a page hundreds deep.
 _INDEX_WALK_MAX_OFFSET = 240
+PAGE_SIZE_MAX = 100
 
 
 @dataclass(frozen=True)
@@ -860,7 +864,11 @@ async def _fetch_rows(
     if criteria.ranked:
         # Record matches rank ahead of label-only ones, so a page they fill
         # on their own is the answer and label text is never consulted.
-        if only_status_filtered(criteria.filters) and offset <= _INDEX_WALK_MAX_OFFSET:
+        if (
+            only_status_filtered(criteria.filters)
+            and offset <= _INDEX_WALK_MAX_OFFSET
+            and limit <= PAGE_SIZE_MAX
+        ):
             # Plain predicate: the planner may walk the sort index and
             # filter, which for a common term beats fetching every match.
             sql, params = rows_sql([], _and(where, record_match()), False)
@@ -906,7 +914,7 @@ async def list_colas(
         le=500,
         description="1-based page number. Deep paging is capped; narrow the filters instead.",
     ),
-    page_size: int = Query(default=24, ge=1, le=100, alias="pageSize"),
+    page_size: int = Query(default=24, ge=1, le=PAGE_SIZE_MAX, alias="pageSize"),
     facets: bool = Query(
         default=True,
         title="Include facet aggregations",
@@ -1002,15 +1010,24 @@ EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("Submitter", "submitter"),
 )
 
+# Identifiers that are often all digits. A spreadsheet would read those as
+# numbers, dropping the leading zero of a 2000s TTB id ("08074001000126") and
+# showing the rest in scientific notation, so they are written to stay text.
+_TEXT_ID_COLUMNS = frozenset({"ttb_id", "serial"})
+
 # A cell starting with one of these is read as a formula by spreadsheet apps;
 # brand and applicant names are applicant-supplied text.
 _FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
 
 
-def csv_cell(value: Any) -> str:
+def csv_cell(value: Any, *, identifier: bool = False) -> str:
     if value is None:
         return ""
     text = value.isoformat() if isinstance(value, date) else str(value)
+    if identifier and text.isascii() and text.isdigit():
+        # A text-valued formula: Excel, LibreOffice and Google Sheets all show
+        # the digits verbatim. Safe because the content is checked to be digits.
+        return f'="{text}"'
     return f"'{text}" if text.startswith(_FORMULA_LEADS) else text
 
 
@@ -1020,7 +1037,12 @@ def render_csv(rows: list[dict[str, Any]]) -> str:
     writer.writerow([header for header, _ in EXPORT_COLUMNS])
     for row in rows:
         summary = summary_from_row(row)
-        writer.writerow([csv_cell(getattr(summary, attr)) for _, attr in EXPORT_COLUMNS])
+        writer.writerow(
+            [
+                csv_cell(getattr(summary, attr), identifier=attr in _TEXT_ID_COLUMNS)
+                for _, attr in EXPORT_COLUMNS
+            ]
+        )
     # The byte-order mark is what makes Excel read the file as UTF-8, so accented
     # brand and origin names survive a double-click open.
     return "﻿" + buf.getvalue()
@@ -1046,11 +1068,13 @@ async def export_colas(
     ),
 ) -> Response:
     where, where_params = _build_filters(**criteria.filters)
-    narrow = False
-    if _label_text_only(criteria):
-        aggregate = await _count_and_facets([], where, where_params, False)
-        narrow = aggregate is not None and aggregate[0] <= COUNT_CAP
-    rows = await _fetch_rows(criteria, where, where_params, limit, 0, label_narrow=narrow)
+    # The list walks the date index for a common label term because a page needs
+    # only a couple of dozen matches. An export needs thousands, which that walk
+    # would test row by row past the timeout, so the matching set is always
+    # materialised here: its cost is bounded by the matches, not by their density.
+    rows = await _fetch_rows(
+        criteria, where, where_params, limit, 0, label_narrow=_label_text_only(criteria)
+    )
     truncated = len(rows) > limit
     rows = rows[:limit]
 
