@@ -38,6 +38,7 @@ const EMPTY = {
   status: 'Approved',
   dateFrom: '',
   dateTo: '',
+  approvedWithin: '',
   submittedFrom: '',
   submittedTo: '',
   appellation: '',
@@ -72,6 +73,7 @@ const PASSTHROUGH_KEYS = [
   'status',
   'dateFrom',
   'dateTo',
+  'approvedWithin',
   'submittedFrom',
   'submittedTo',
   'appellation',
@@ -381,6 +383,20 @@ function AdvancedFields({ draft, set, refData }) {
         onFrom={(v) => set('dateFrom', v)}
         onTo={(v) => set('dateTo', v)}
       />
+      <div className="field">
+        <label>Approved in</label>
+        <select className="select" value={draft.approvedWithin} onChange={(e) => set('approvedWithin', e.target.value)}>
+          <option value="">Any time</option>
+          {[1, 2, 3, 5, 10].map((n) => (
+            <option key={n} value={String(n)}>
+              The {n === 1 ? 'last year' : `last ${n} years`}
+            </option>
+          ))}
+          {draft.approvedWithin && ![1, 2, 3, 5, 10].includes(Number(draft.approvedWithin)) && (
+            <option value={draft.approvedWithin}>The last {draft.approvedWithin} years</option>
+          )}
+        </select>
+      </div>
       <DateRange
         label="Submitted date"
         from={draft.submittedFrom}

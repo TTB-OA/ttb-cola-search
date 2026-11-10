@@ -26,8 +26,10 @@ from src.api.routers.colas import (
     only_status_filtered,
     record_match,
     term_match,
+    today,
     ts_filter_sql,
     weighted_match,
+    years_before,
 )
 
 FILTER_VALUES = {
@@ -57,6 +59,7 @@ FILTER_VALUES = {
     "formula": "1600940",
     "submitted_from": date(2024, 1, 1),
     "submitted_to": date(2024, 6, 30),
+    "approved_within": 1,
 }
 
 EMPTY = {name: None for name in FILTER_VALUES}
@@ -437,3 +440,54 @@ def test_facets_include_class_type_and_brand(monkeypatch):
         {"value": "TABLE WHITE WINE", "count": 2},
     ]
     assert facets["brand"] == [{"value": "Cedar Hollow", "count": 4}]
+
+
+# --- Approved within the last n years ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "today,years,expected",
+    [
+        (date(2026, 11, 10), 1, date(2025, 11, 10)),
+        (date(2026, 11, 10), 5, date(2021, 11, 10)),
+        # No 29 February in the target year.
+        (date(2028, 2, 29), 1, date(2027, 2, 28)),
+        (date(2028, 2, 29), 4, date(2024, 2, 29)),
+    ],
+)
+def test_years_before_keeps_the_calendar_day(today, years, expected):
+    assert years_before(today, years) == expected
+
+
+def test_approved_within_is_a_rolling_lower_bound_on_the_approval_date():
+    where, params = build(approved_within=2)
+    assert where == "WHERE completed_date >= %s"
+    assert params == [years_before(today(), 2)]
+
+
+def test_approved_within_ands_with_an_explicit_date_from():
+    where, params = build(approved_within=1, date_from=date(2000, 1, 1))
+    assert where.count("completed_date >= %s") == 2
+    assert_aligned(where, params)
+
+
+def test_approved_within_reaches_the_query_from_the_url(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.api.routers import colas as colas_router
+
+    bound: list[list] = []
+
+    async def fake_fetch_all(sql, params=None, **kwargs):
+        assert sql.count("%s") == len(params)
+        bound.append(params)
+        return []
+
+    monkeypatch.setattr(colas_router, "fetch_all", fake_fetch_all)
+    client = TestClient(app)
+    assert client.get("/api/colas", params={"approvedWithin": 1}).status_code == 200
+    cutoff = years_before(today(), 1)
+    assert all(cutoff in params for params in bound)
+
+    assert client.get("/api/colas", params={"approvedWithin": 0}).status_code == 422
