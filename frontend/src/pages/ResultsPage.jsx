@@ -12,6 +12,7 @@ import { fmtDate } from '../lib/format.js';
 import { readPendingImageSearch } from '../lib/imageSearchStore.js';
 import { track } from '../lib/analytics.js';
 import { groupDuplicates } from '../lib/duplicates.js';
+import { downloadBlob, exportFilename, resultsToCsv } from '../lib/csv.js';
 import { useAsync } from '../hooks/useAsync.js';
 import { useDocumentTitle } from '../hooks/useDocumentTitle.js';
 import { useIsMobile } from '../hooks/useIsMobile.js';
@@ -57,6 +58,7 @@ const FILTER_KEYS = [
   'status',
   'dateFrom',
   'dateTo',
+  'approvedWithin',
   'submittedFrom',
   'submittedTo',
   'appellation',
@@ -77,6 +79,11 @@ const FACET_PARAM = {
   classType: 'classType',
   brand: 'brand',
 };
+
+// Rolling approval windows offered in the sidebar, in years.
+const APPROVED_WITHIN_YEARS = [1, 2, 3, 5, 10];
+
+const yearsLabel = (n) => (Number(n) === 1 ? 'last year' : `last ${n} years`);
 
 // Params that may repeat; they come out of the URL as arrays.
 const MULTI_KEYS = ['classType'];
@@ -465,6 +472,42 @@ function TableView({ entries, criteria, isVector, showRank, onOpen, onToggle }) 
   );
 }
 
+/* ---------- approval window ---------- */
+// A filter rather than a facet: it has no counts, so it shows while the facets
+// load and when the aggregate was skipped.
+function ApprovedWithin({ value, onChange }) {
+  const options = value && !APPROVED_WITHIN_YEARS.includes(Number(value)) ? [Number(value), ...APPROVED_WITHIN_YEARS] : APPROVED_WITHIN_YEARS;
+  return (
+    <div className="facet">
+      <div className="facet-title">Approved in</div>
+      <select className="select facet-select" aria-label="Approved in" value={value || ''} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Any time</option>
+        {options.map((n) => (
+          <option key={n} value={String(n)}>
+            The {yearsLabel(n)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/* ---------- export ---------- */
+function ExportButton({ busy, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      className="btn secondary sm export-btn"
+      disabled={disabled || busy}
+      onClick={onClick}
+      title="Save these results as a CSV file"
+    >
+      <Icon name="download" size={15} />
+      {busy ? 'Exporting…' : 'Export CSV'}
+    </button>
+  );
+}
+
 /* ---------- active filter chips ---------- */
 const CHIP_LABELS = {
   q: null,
@@ -490,6 +533,7 @@ const CHIP_LABELS = {
   status: 'Status',
   dateFrom: 'Approved from',
   dateTo: 'Approved to',
+  approvedWithin: 'Approved',
   submittedFrom: 'Submitted from',
   submittedTo: 'Submitted to',
   appellation: 'Appellation',
@@ -500,6 +544,7 @@ function ActiveChips({ criteria, onClearKey }) {
   const items = [];
   FILTER_KEYS.filter((k) => hasValue(criteria[k])).forEach((k) => {
     if (k === 'q') items.push({ k, key: k, label: `“${criteria[k]}”` });
+    else if (k === 'approvedWithin') items.push({ k, key: k, label: `Approved in the ${yearsLabel(criteria[k])}` });
     else if (Array.isArray(criteria[k]))
       criteria[k].forEach((v) => items.push({ k, value: v, key: `${k}:${v}`, label: `${CHIP_LABELS[k]}: ${v}` }));
     else items.push({ k, key: k, label: `${CHIP_LABELS[k]}: ${criteria[k]}` });
@@ -736,7 +781,7 @@ export default function ResultsPage() {
 
   const activeFacet = (group) => criteria[FACET_PARAM[group]] || null;
   const classTypes = criteria.classType || [];
-  const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]);
+  const hasActiveFacets = Object.values(FACET_PARAM).some((k) => criteria[k]) || Boolean(criteria.approvedWithin);
   const View = { gallery: GalleryView, wall: WallView, list: ListView }[view] || TableView;
   // Carry the search term so the detail page can highlight matching label text.
   // In describe mode `q` is an artwork prompt, not text to look for.
@@ -753,6 +798,40 @@ export default function ResultsPage() {
       mode,
     });
     navigate(detailHref(id));
+  };
+
+  // Text results are exported by the server, which reaches every match up to
+  // its cap; vector results exist only as the rows already loaded.
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState(null);
+  useEffect(() => setExportNote(null), [searchParams.toString()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const exportResults = async () => {
+    setExportNote(null);
+    if (isVector) {
+      const extra = isDescribe
+        ? [['Rank', (r, i) => i + 1]]
+        : [['Match %', (r) => (r.score != null ? toPct(r.score) : '')]];
+      const csv = resultsToCsv(rows, extra);
+      downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), exportFilename(isDescribe ? 'cola-artwork-search' : 'cola-image-search'));
+      track('vector_results_exported', { mode, rows: rows.length });
+      return;
+    }
+    const { page: _p, pageSize: _s, facets: _f, ...params } = textParams;
+    setExporting(true);
+    try {
+      const { blob, rows: n, truncated } = await api.exportColas(params);
+      downloadBlob(blob, exportFilename());
+      if (truncated) {
+        setExportNote({ text: `Saved the first ${n.toLocaleString()} results. Narrow the filters to export the rest.` });
+      }
+    } catch (err) {
+      setExportNote({
+        error: true,
+        text: err && err.status === 504 ? 'The export took too long. Narrow the filters and try again.' : (err && err.message) || 'The export failed.',
+      });
+    } finally {
+      setExporting(false);
+    }
   };
 
   // A search submitted from the home page that matches exactly one label (e.g. a
@@ -842,6 +921,7 @@ export default function ResultsPage() {
                   onClick={() =>
                     patchParams((p) => {
                       Object.values(FACET_PARAM).forEach((k) => delete p[k]);
+                      delete p.approvedWithin;
                       delete p.page;
                     })
                   }
@@ -850,6 +930,16 @@ export default function ResultsPage() {
                 </button>
               )}
             </div>
+            <ApprovedWithin
+              value={criteria.approvedWithin}
+              onChange={(v) =>
+                patchParams((p) => {
+                  if (v) p.approvedWithin = v;
+                  else delete p.approvedWithin;
+                  delete p.page;
+                })
+              }
+            />
             {facets ? (
               <>
                 <FacetGroup title="Commodity" buckets={facets.commodity} selected={activeFacet('commodity')} onSelect={(v) => selectFacet('commodity', v)} />
@@ -960,6 +1050,7 @@ export default function ResultsPage() {
                   <Icon name="image" size={19} />
                 </label>
               )}
+              <ExportButton busy={exporting} disabled={loading || Boolean(state.error) || rows.length === 0} onClick={exportResults} />
               <div className="seg">
                 <button className={view === 'gallery' ? 'active' : ''} onClick={() => setView('gallery')} title="Gallery">
                   <Icon name="grid" />
@@ -976,6 +1067,16 @@ export default function ResultsPage() {
               </div>
             </div>
           </div>
+
+          {exportNote && (
+            <div className={`export-note${exportNote.error ? ' error' : ''}`} role="status">
+              <Icon name="info" size={15} />
+              <span>{exportNote.text}</span>
+              <button type="button" className="linkbtn" onClick={() => setExportNote(null)} aria-label="Dismiss">
+                <Icon name="close" size={12} />
+              </button>
+            </div>
+          )}
 
           <SlowNotice
             active={loading && !state.error}

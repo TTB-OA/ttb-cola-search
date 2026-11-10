@@ -179,6 +179,7 @@ All routes are mounted under `/api`.
 | `GET` | `/reference` | Filter vocabularies (origins, statuses, categories, permit states); cached in process for 1 hour |
 | `GET` | `/coverage` | Pipeline coverage by approval year plus search-index freshness, for the `/coverage` page; cached in process for 15 minutes |
 | `GET` | `/colas` | Paged, filtered, faceted search |
+| `GET` | `/colas/export.csv` | The same search as a CSV download, up to 5,000 rows; `X-Export-Truncated` says whether more matched |
 | `GET` | `/colas/{cola_id}` | Full COLA detail with images and label analysis |
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
@@ -193,8 +194,10 @@ All routes are mounted under `/api`.
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `business`, `permit`, `permitName`, `permitState`, `permitCity`,
 `submitter`, `varietal`, `qualification`, `labelText`, `commodity`, `source`,
-`origin`, `status`, `dateFrom`, `dateTo`, `sort`, `page`, `pageSize`,
-and `facets`.
+`origin`, `status`, `dateFrom`, `dateTo`, `approvedWithin`, `sort`, `page`,
+`pageSize`, and `facets`. `approvedWithin=n` keeps COLAs approved in the last
+`n` years, counted back from today on every request, so a saved link stays
+current. `GET /colas/export.csv` takes the same filters and `sort`.
 ### Search behaviour
 
 A few semantics are worth knowing before writing queries against it:

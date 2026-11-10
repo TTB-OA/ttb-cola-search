@@ -14,7 +14,8 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, signal, headers = {} } = {}) {
+// Fetch and fail on a non-2xx status; the caller reads the body.
+async function send(path, { method = 'GET', body, signal, headers = {} } = {}) {
   const opts = { method, signal, headers: { ...headers, ...identityHeaders() } };
   if (body instanceof FormData) {
     opts.body = body;
@@ -36,6 +37,11 @@ async function request(path, { method = 'GET', body, signal, headers = {} } = {}
     if (path !== '/events') track('client_api_error', { endpoint: path.split('?')[0], status: res.status });
     throw new ApiError(message, res.status, detail);
   }
+  return res;
+}
+
+async function request(path, opts) {
+  const res = await send(path, opts);
   if (res.status === 204) return null;
   return res.json();
 }
@@ -65,6 +71,17 @@ export const api = {
   coverage: (signal) => request('/coverage', { signal }),
 
   searchColas: (params, signal) => request(`/colas${toQuery(params)}`, { signal }),
+
+  // Every match of a text search (up to the server's cap) as a CSV file. Takes
+  // the same filters and sort as searchColas; paging params are ignored.
+  exportColas: async (params, signal) => {
+    const res = await send(`/colas/export.csv${toQuery(params)}`, { signal });
+    return {
+      blob: await res.blob(),
+      rows: parseInt(res.headers.get('X-Export-Rows') || '0', 10),
+      truncated: res.headers.get('X-Export-Truncated') === 'true',
+    };
+  },
 
   // The newest approvals, for the home page strip and the tour's sample record.
   // Marked as background (BACKGROUND_HEADER in src/api/analytics.py) so the

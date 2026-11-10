@@ -30,6 +30,7 @@ logger.setLevel(logging.INFO)
 # telemetry, it just carries no shaped attributes.
 EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
     ("GET", "/colas"): "search_performed",
+    ("GET", "/colas/export.csv"): "results_exported",
     ("GET", "/colas/{cola_id}"): "detail_viewed",
     ("GET", "/colas/{cola_id}/similar"): "similar_requested",
     ("POST", "/search/image"): "image_search_performed",
@@ -78,6 +79,7 @@ FILTER_KEYS = (
     "status",
     "dateFrom",
     "dateTo",
+    "approvedWithin",
     "appellation",
     "formula",
     "submittedFrom",
@@ -85,7 +87,7 @@ FILTER_KEYS = (
 )
 
 # Closed vocabularies, safe to record verbatim.
-FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status")
+FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status", "approvedWithin")
 
 # User-typed filter values, recorded under their own param name when capture is
 # on. `q` is excluded: it is recorded as `query_text`.

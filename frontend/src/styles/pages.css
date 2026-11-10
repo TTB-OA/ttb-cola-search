@@ -94,6 +94,14 @@
 
 .results-main { min-width: 0; }
 .results-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.export-btn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding-top: 0; padding-bottom: 0; white-space: nowrap; }
+.export-note {
+  display: flex; align-items: center; gap: 10px; margin: -8px 0 16px; padding: 10px 14px;
+  background: var(--accent-lighter); border: 1px solid var(--accent-light); border-left: 4px solid var(--accent);
+  border-radius: var(--radius); color: var(--base-darker); font-size: 13.5px;
+}
+.export-note > span { flex: 1; }
+.export-note.error { border-left-color: var(--red); }
 
 /* ---------- Gallery ---------- */
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 22px; }

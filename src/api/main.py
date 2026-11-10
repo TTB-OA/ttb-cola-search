@@ -93,7 +93,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=[VISITOR_POLICY_HEADER],
+        # The export headers say how many rows a CSV carries and whether the
+        # match set was cut short, which the SPA reports beside the button.
+        expose_headers=[VISITOR_POLICY_HEADER, "X-Export-Rows", "X-Export-Truncated"],
     )
 
     @app.middleware("http")
@@ -161,7 +163,8 @@ def _record_event(
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }
 
-        if searched:
+        # An export carries the same filters as the search it was taken from.
+        if searched or name == "results_exported":
             attrs |= shape_search_event(
                 params, capture_query_text=settings.analytics_capture_query_text
             )

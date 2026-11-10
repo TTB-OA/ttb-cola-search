@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from psycopg.errors import QueryCanceled, UndefinedTable
 
 from ..config import get_settings
@@ -296,6 +298,19 @@ def aggregate_is_affordable(**filters: Any) -> bool:
     return any(_terms(filters.get(name)) for name in _ANCHOR_FILTERS)
 
 
+def today() -> date:
+    """Today's date in UTC, the clock the approval dates are compared against."""
+    return datetime.now(UTC).date()
+
+
+def years_before(day: date, years: int) -> date:
+    """The same calendar day `years` earlier; 29 February falls back to the 28th."""
+    try:
+        return day.replace(year=day.year - years)
+    except ValueError:
+        return day.replace(year=day.year - years, day=28)
+
+
 def _build_filters(
     ttb_id: str | None,
     brand: str | None,
@@ -323,6 +338,7 @@ def _build_filters(
     formula: str | None = None,
     submitted_from: date | None = None,
     submitted_to: date | None = None,
+    approved_within: int | None = None,
 ) -> tuple[str, list[Any]]:
     """WHERE clause for every filter except `q`, which resolves through a Source."""
     conditions: list[str] = []
@@ -434,6 +450,12 @@ def _build_filters(
     if date_to:
         conditions.append("completed_date <= %s")
         params.append(date_to)
+    if approved_within:
+        # A rolling window, resolved against today on every request so a saved
+        # or shared link keeps meaning "the last n years". It ANDs with dateFrom
+        # rather than replacing it, so the later of the two bounds wins.
+        conditions.append("completed_date >= %s")
+        params.append(years_before(today(), approved_within))
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return where, params
@@ -556,9 +578,25 @@ async def _no_aggregate() -> tuple[int, Facets | None] | None:
     return None
 
 
-@router.get("/colas", response_model=SearchResponse)
-async def list_colas(
-    request: Request,
+@dataclass(frozen=True)
+class SearchCriteria:
+    """The filters and ordering of a text search, shared by the list and export."""
+
+    q: str | None
+    filters: dict[str, Any]
+    sort: str
+
+    @property
+    def term(self) -> str:
+        return (self.q or "").strip()
+
+    @property
+    def ranked(self) -> bool:
+        """Whether record-field matches rank ahead of label-only ones."""
+        return bool(self.term) and (self.sort not in SORTS or self.sort == "relevance")
+
+
+def search_criteria(
     q: str | None = Query(
         default=None,
         title="Keyword search",
@@ -717,6 +755,18 @@ async def list_colas(
         ),
     ] = None,
     date_to: Annotated[date | None, Query(alias="dateTo")] = None,
+    approved_within: int | None = Query(
+        default=None,
+        alias="approvedWithin",
+        ge=1,
+        le=100,
+        description=(
+            "Only COLAs approved/completed in the last n years, counted back from "
+            "today. A rolling window, so a saved link keeps its meaning; combined "
+            "with `dateFrom`, the later bound applies."
+        ),
+        examples=[1],
+    ),
     sort: str = Query(
         default="relevance",
         title="Result ordering",
@@ -736,6 +786,120 @@ async def list_colas(
         ),
         examples=["relevance", "approvalDate", "brand"],
     ),
+) -> SearchCriteria:
+    return SearchCriteria(
+        q=q,
+        sort=sort,
+        filters=dict(
+            ttb_id=ttb_id,
+            brand=brand,
+            fanciful=fanciful,
+            commodity=commodity,
+            source=source,
+            origin=origin,
+            status=status,
+            date_from=date_from,
+            date_to=date_to,
+            applicant=applicant,
+            business=business,
+            permit=permit,
+            permit_name=permit_name,
+            permit_state=permit_state,
+            permit_city=permit_city,
+            submitter=submitter,
+            varietal=varietal,
+            qualification=qualification,
+            label_text=label_text,
+            class_type=class_type,
+            received_by=received_by,
+            application_type=application_type,
+            appellation=appellation,
+            formula=formula,
+            submitted_from=submitted_from,
+            submitted_to=submitted_to,
+            approved_within=approved_within,
+        ),
+    )
+
+
+Criteria = Annotated[SearchCriteria, Depends(search_criteria)]
+
+
+async def _fetch_rows(
+    criteria: SearchCriteria,
+    where: str,
+    where_params: list[Any],
+    limit: int,
+    offset: int,
+    *,
+    label_narrow: bool = False,
+) -> list[dict[str, Any]]:
+    """Up to `limit` + 1 matching rows from `offset`, in the requested order.
+
+    One row past the limit tells whether there is a next page when the count is
+    unavailable, and whether a record-only pass filled the page.
+    """
+    settings = get_settings()
+    term = criteria.term
+    sort = criteria.sort
+
+    def rows_sql(sources: list[Source], where_sql: str, ranked_source: bool) -> tuple[str, list[Any]]:
+        # A keyword source already carries the filters, so the outer WHERE is
+        # empty in that case; the tier-1 pass has no source and keeps them.
+        with_sql, from_sql, source_params = compose(sources)
+        outer_params = where_params if where_sql else []
+        return (
+            f"{with_sql} SELECT {_SUMMARY_COLUMNS} FROM {from_sql} {where_sql} "
+            f"ORDER BY {_order_by(sort, ranked=ranked_source)} LIMIT %s OFFSET %s",
+            [*source_params, *outer_params, limit + 1, offset],
+        )
+
+    async def run(sql: str, params: list[Any]) -> list[dict[str, Any]]:
+        return await fetch_all(sql, params, work_mem=settings.search_work_mem, prepare=False)
+
+    if criteria.ranked:
+        # Record matches rank ahead of label-only ones, so a page they fill
+        # on their own is the answer and label text is never consulted.
+        if only_status_filtered(criteria.filters) and offset <= _INDEX_WALK_MAX_OFFSET:
+            # Plain predicate: the planner may walk the sort index and
+            # filter, which for a common term beats fetching every match.
+            sql, params = rows_sql([], _and(where, record_match()), False)
+            params[:0] = _term_params(term)
+        else:
+            sql, params = rows_sql(
+                [_keyword_source(term, where, where_params, record_only=True)], "", False
+            )
+        rows = await run(sql, params)
+        if len(rows) > limit:
+            return rows
+    if term:
+        return await run(
+            *rows_sql(
+                [_keyword_source(term, where, where_params, ranked=criteria.ranked)],
+                "",
+                criteria.ranked,
+            )
+        )
+    if label_narrow:
+        return await run(*rows_sql([filtered_source(where, where_params)], "", False))
+    return await run(*rows_sql([], where, False))
+
+
+def _label_text_only(criteria: SearchCriteria) -> bool:
+    """Whether the rows query must wait on the count to pick its plan.
+
+    The label GIN overestimates rare lexemes (6.8k rows estimated, 45 actual
+    for "hangover"), so the planner walks the date index testing every row
+    and runs past the timeout. The capped count settles it first: a set
+    under the cap is materialised, a common term keeps the short walk.
+    """
+    return bool(criteria.filters["label_text"]) and not criteria.term
+
+
+@router.get("/colas", response_model=SearchResponse)
+async def list_colas(
+    request: Request,
+    criteria: Criteria,
     page: int = Query(
         default=1,
         ge=1,
@@ -756,99 +920,28 @@ async def list_colas(
         ),
     ),
 ) -> SearchResponse:
-    settings = get_settings()
-    filters: dict[str, Any] = dict(
-        ttb_id=ttb_id,
-        brand=brand,
-        fanciful=fanciful,
-        commodity=commodity,
-        source=source,
-        origin=origin,
-        status=status,
-        date_from=date_from,
-        date_to=date_to,
-        applicant=applicant,
-        business=business,
-        permit=permit,
-        permit_name=permit_name,
-        permit_state=permit_state,
-        permit_city=permit_city,
-        submitter=submitter,
-        varietal=varietal,
-        qualification=qualification,
-        label_text=label_text,
-        class_type=class_type,
-        received_by=received_by,
-        application_type=application_type,
-        appellation=appellation,
-        formula=formula,
-        submitted_from=submitted_from,
-        submitted_to=submitted_to,
-    )
-    term = (q or "").strip()
+    term = criteria.term
+    filters = criteria.filters
     where, where_params = _build_filters(**filters)
-    ranked = bool(term) and (sort not in SORTS or sort == "relevance")
     offset = (page - 1) * page_size
 
-    def rows_sql(sources: list[Source], where_sql: str, ranked_source: bool) -> tuple[str, list[Any]]:
-        # A keyword source already carries the filters, so the outer WHERE is
-        # empty in that case; the tier-1 pass has no source and keeps them.
-        with_sql, from_sql, source_params = compose(sources)
-        outer_params = where_params if where_sql else []
-        return (
-            f"{with_sql} SELECT {_SUMMARY_COLUMNS} FROM {from_sql} {where_sql} "
-            f"ORDER BY {_order_by(sort, ranked=ranked_source)} LIMIT %s OFFSET %s",
-            [*source_params, *outer_params, page_size + 1, offset],
-        )
-
-    async def run(sql: str, params: list[Any]) -> list[dict[str, Any]]:
-        return await fetch_all(sql, params, work_mem=settings.search_work_mem, prepare=False)
-
-    async def fetch_page(label_narrow: bool = False) -> list[dict[str, Any]]:
-        # One row past the page tells whether there is a next page when the count
-        # is unavailable, and whether a record-only pass filled the page. It is
-        # never returned.
-        if ranked:
-            # Record matches rank ahead of label-only ones, so a page they fill
-            # on their own is the answer and label text is never consulted.
-            if only_status_filtered(filters) and offset <= _INDEX_WALK_MAX_OFFSET:
-                # Plain predicate: the planner may walk the sort index and
-                # filter, which for a common term beats fetching every match.
-                sql, params = rows_sql([], _and(where, record_match()), False)
-                params[:0] = _term_params(term)
-            else:
-                sql, params = rows_sql(
-                    [_keyword_source(term, where, where_params, record_only=True)], "", False
-                )
-            rows = await run(sql, params)
-            if len(rows) > page_size:
-                return rows
-        if term:
-            return await run(
-                *rows_sql([_keyword_source(term, where, where_params, ranked=ranked)], "", ranked)
-            )
-        if label_narrow:
-            return await run(*rows_sql([filtered_source(where, where_params)], "", False))
-        return await run(*rows_sql([], where, False))
-
-    affordable = aggregate_is_affordable(q=q, **filters)
+    affordable = aggregate_is_affordable(q=criteria.q, **filters)
     if term:
         aggregate_coro = _count_and_facets(
             [_keyword_source(term, where, where_params)], "", [], facets
         )
     else:
         aggregate_coro = _count_and_facets([], where, where_params, facets)
-    if label_text and not term:
-        # The label GIN overestimates rare lexemes (6.8k rows estimated, 45 actual
-        # for "hangover"), so the planner walks the date index testing every row
-        # and runs past the timeout. The capped count settles it first: a set
-        # under the cap is materialised, a common term keeps the short walk.
+    if _label_text_only(criteria):
         aggregate = await aggregate_coro
         narrow = aggregate is not None and aggregate[0] <= COUNT_CAP
-        rows = await fetch_page(label_narrow=narrow)
+        rows = await _fetch_rows(
+            criteria, where, where_params, page_size, offset, label_narrow=narrow
+        )
     else:
         rows, aggregate = await asyncio.gather(
-            fetch_page(), aggregate_coro if affordable else _no_aggregate()
+            _fetch_rows(criteria, where, where_params, page_size, offset),
+            aggregate_coro if affordable else _no_aggregate(),
         )
 
     has_more = len(rows) > page_size
@@ -880,6 +973,99 @@ async def list_colas(
         page=page,
         page_size=page_size,
         facets=facet_data,
+    )
+
+
+# Rows one export may carry. Past this the file is cut short and says so in the
+# X-Export-Truncated header; narrowing the filters is the way to the rest.
+EXPORT_MAX_ROWS = 5_000
+
+# (header, ColaSummary attribute), in file order.
+EXPORT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("TTB ID", "ttb_id"),
+    ("Serial Number", "serial"),
+    ("Status", "status"),
+    ("Approval Date", "approval_date"),
+    ("Brand Name", "brand"),
+    ("Fanciful Name", "fanciful"),
+    ("Commodity", "category"),
+    ("Class/Type", "class_type"),
+    ("Class/Type Description", "class_sub"),
+    ("Domestic/Imported", "origin_group"),
+    ("Origin", "origin"),
+    ("Applicant", "applicant"),
+    ("Permit Number", "permit"),
+    ("Primary Permit", "permit_id"),
+    ("Permit Holder", "permit_name"),
+    ("Permit City", "permit_city"),
+    ("Permit State", "permit_state"),
+    ("Submitter", "submitter"),
+)
+
+# A cell starting with one of these is read as a formula by spreadsheet apps;
+# brand and applicant names are applicant-supplied text.
+_FORMULA_LEADS = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    text = value.isoformat() if isinstance(value, date) else str(value)
+    return f"'{text}" if text.startswith(_FORMULA_LEADS) else text
+
+
+def render_csv(rows: list[dict[str, Any]]) -> str:
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\r\n")
+    writer.writerow([header for header, _ in EXPORT_COLUMNS])
+    for row in rows:
+        summary = summary_from_row(row)
+        writer.writerow([csv_cell(getattr(summary, attr)) for _, attr in EXPORT_COLUMNS])
+    # The byte-order mark is what makes Excel read the file as UTF-8, so accented
+    # brand and origin names survive a double-click open.
+    return "﻿" + buf.getvalue()
+
+
+@router.get(
+    "/colas/export.csv",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}, "description": "The matching COLAs as CSV."}},
+)
+async def export_colas(
+    request: Request,
+    criteria: Criteria,
+    limit: int = Query(
+        default=EXPORT_MAX_ROWS,
+        ge=1,
+        le=EXPORT_MAX_ROWS,
+        description=(
+            "Most rows to include. Takes the same filters and `sort` as `GET /colas` "
+            "and returns the matches from the top of that ordering. The "
+            "`X-Export-Truncated` response header is `true` when more matched."
+        ),
+    ),
+) -> Response:
+    where, where_params = _build_filters(**criteria.filters)
+    narrow = False
+    if _label_text_only(criteria):
+        aggregate = await _count_and_facets([], where, where_params, False)
+        narrow = aggregate is not None and aggregate[0] <= COUNT_CAP
+    rows = await _fetch_rows(criteria, where, where_params, limit, 0, label_narrow=narrow)
+    truncated = len(rows) > limit
+    rows = rows[:limit]
+
+    request.state.analytics = {"export_rows": len(rows), "export_truncated": truncated}
+
+    filename = f"cola-search-{today().isoformat()}.csv"
+    return Response(
+        content=render_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Export-Rows": str(len(rows)),
+            "X-Export-Truncated": "true" if truncated else "false",
+            "Cache-Control": "no-store",
+        },
     )
 
 
