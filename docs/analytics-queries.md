@@ -17,8 +17,29 @@ Event attributes land in `customDimensions`, which is dynamic — always cast
 before comparing or aggregating (`toint()`, `tobool()`, `tostring()`).
 
 Every event carries `session_id`, `event_source` (`server` or `client`), and for
-server-derived events `status_code` and `duration_ms`. Note that `origin` is a
+server-derived events `status_code` and `duration_ms`. While
+`ANALYTICS_VISITOR_ID_ENABLED` is on, events also carry `visitor_id`, which stays
+the same across a browser's sessions for up to 90 days (it equals `session_id`
+for browsers that opted out or cannot store one). Count people-ish reach with
+`dcountif(tostring(customDimensions.visitor_id), isnotempty(tostring(customDimensions.visitor_id)))`
+so events from before it existed are left out rather than counted as one. Note that `origin` is a
 search *filter* name (country/state of origin), not the event source.
+
+`search_performed` is one per `/api/colas` response, so raw counts include
+later pages and failed requests. To match the dashboard's **Searches** figure,
+keep successful first pages and drop the home page's recently approved lookup
+as logged before it became `background_search`:
+
+```kusto
+customEvents
+| where name == "search_performed"
+| where toint(customDimensions.page) == 1
+    and coalesce(toint(customDimensions.status_code), 200) < 400
+    and not(tostring(customDimensions.facets_requested) =~ "false"
+        and tostring(customDimensions.filters_used) == "status"
+        and tostring(customDimensions.sort) == "approvalDate"
+        and tostring(customDimensions.has_query) !~ "true")
+```
 
 ## Product usage
 

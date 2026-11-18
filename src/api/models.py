@@ -423,6 +423,11 @@ class RecentFilterValue(ApiModel):
     value: str
     # Searches in the range that used this value.
     count: int
+    # Result total of the most recent of those searches, which may also have
+    # carried a keyword or other filters; None if it was not recorded.
+    results: int | None = None
+    # True when `results` is a lower bound rather than an exact count.
+    capped: bool = False
 
 
 class RecentDescribeQuery(ApiModel):
@@ -485,11 +490,16 @@ class DashboardPanels(ApiModel):
 
 
 class DashboardTotals(ApiModel):
+    # Successful first pages: one per search a person ran.
     searches: int = 0
+    # Every successful page of search results, so paging is included.
+    result_pages: int = 0
     detail_views: int = 0
     similar_requests: int = 0
     image_searches: int = 0
     sessions: int = 0
+    # Distinct browsers by visitor id; see analytics_visitor_id_enabled.
+    visitors: int = 0
     zero_result_rate: float = 0.0
     failure_rate: float = 0.0
     p95_ms: float = 0.0
@@ -497,6 +507,10 @@ class DashboardTotals(ApiModel):
 
 class DashboardData(ApiModel):
     range: str
+    # Width of each time-series bucket, as an interval key ("6h", "1d", "1w").
+    interval: str | None = None
+    # Whether new events are recording visitor ids right now.
+    visitor_ids_enabled: bool = False
     generated_at: datetime
     # True when this response came from the server-side cache rather than a
     # fresh Log Analytics query.

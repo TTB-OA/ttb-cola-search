@@ -30,6 +30,7 @@ logger.setLevel(logging.INFO)
 # telemetry, it just carries no shaped attributes.
 EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
     ("GET", "/colas"): "search_performed",
+    ("GET", "/colas/export.csv"): "results_exported",
     ("GET", "/colas/{cola_id}"): "detail_viewed",
     ("GET", "/colas/{cola_id}/similar"): "similar_requested",
     ("POST", "/search/image"): "image_search_performed",
@@ -41,6 +42,19 @@ EVENT_BY_ROUTE: dict[tuple[str, str], str] = {
 
 def route_key(method: str, path: str) -> tuple[str, str]:
     return method, path.removeprefix(API_PREFIX)
+
+
+# Request header the SPA sets on lookups it makes for itself rather than for a
+# search someone typed: the home page's "recently approved" strip and the tour's
+# sample record both go through `GET /api/colas`. Those are recorded under their
+# own event name so they still count a session but never count as a search.
+BACKGROUND_HEADER = "X-Client-Purpose"
+BACKGROUND_SEARCH_EVENT = "background_search"
+
+
+def is_background(request: Any) -> bool:
+    headers = getattr(request, "headers", {}) or {}
+    return (headers.get(BACKGROUND_HEADER.lower()) or "").strip().lower() == "background"
 
 # Query params that represent a user-applied filter. Names are always recorded;
 # values only for FILTER_VALUE_KEYS unless free-text capture is on.
@@ -65,6 +79,7 @@ FILTER_KEYS = (
     "status",
     "dateFrom",
     "dateTo",
+    "approvedWithin",
     "appellation",
     "formula",
     "submittedFrom",
@@ -72,7 +87,7 @@ FILTER_KEYS = (
 )
 
 # Closed vocabularies, safe to record verbatim.
-FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status")
+FILTER_VALUE_KEYS = ("commodity", "source", "origin", "status", "approvedWithin")
 
 # User-typed filter values, recorded under their own param name when capture is
 # on. `q` is excluded: it is recorded as `query_text`.
@@ -108,6 +123,51 @@ def session_id_from(request: Any, *, trust_forwarded_for: bool, salt: str) -> st
     if _UUID_RE.match(supplied):
         return supplied
     return hash_identifier(client_key(request, trust_forwarded_for), salt)
+
+
+# Response header ("on" / "off") telling the SPA whether visitor ids are being
+# recorded, so it can delete the one it stored and stop minting new ones.
+VISITOR_POLICY_HEADER = "X-Analytics-Visitor"
+
+
+def opted_out(request: Any) -> bool:
+    """True when the browser sends Global Privacy Control or Do Not Track."""
+    headers = getattr(request, "headers", {}) or {}
+    return (headers.get("sec-gpc") or "").strip() == "1" or (
+        headers.get("dnt") or ""
+    ).strip() == "1"
+
+
+def visitor_id_from(request: Any, *, session_id: str, enabled: bool) -> str | None:
+    """Pseudonymous visitor id, or None when visitor ids are switched off.
+
+    A browser that opted out, or that could not store an id, is counted under
+    its session id instead, so it still counts once per session but is never
+    linked across sessions.
+    """
+    if not enabled:
+        return None
+    if opted_out(request):
+        return session_id
+    headers = getattr(request, "headers", {}) or {}
+    supplied = (headers.get("x-client-visitor") or "").strip().lower()
+    return supplied if _UUID_RE.match(supplied) else session_id
+
+
+def identity_attrs(request: Any, settings: Any) -> dict[str, str]:
+    """The session and (when enabled) visitor ids every event carries."""
+    session_id = session_id_from(
+        request,
+        trust_forwarded_for=settings.trust_forwarded_for,
+        salt=settings.analytics_salt,
+    )
+    attrs = {"session_id": session_id}
+    visitor_id = visitor_id_from(
+        request, session_id=session_id, enabled=settings.analytics_visitor_id_enabled
+    )
+    if visitor_id is not None:
+        attrs["visitor_id"] = visitor_id
+    return attrs
 
 
 def size_bucket(num_bytes: int | None) -> str:

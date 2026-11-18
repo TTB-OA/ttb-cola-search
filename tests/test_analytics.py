@@ -15,6 +15,7 @@ from src.api.analytics import (
     shape_search_event,
     shape_similar_event,
     size_bucket,
+    visitor_id_from,
 )
 
 SESSION = "0f8fad5b-d9cb-469f-a165-70867728950e"
@@ -195,3 +196,32 @@ def test_event_routes_use_route_templates_not_concrete_paths():
 def test_route_key_normalises_prefixed_and_unprefixed_paths():
     assert route_key("GET", "/api/colas") == route_key("GET", "/colas")
     assert route_key("GET", "/api/colas") in EVENT_BY_ROUTE
+
+
+# ---------------------------------------------------------------------------
+# Visitor ids
+# ---------------------------------------------------------------------------
+VISITOR = "7c9e6679-7425-40de-944b-e07fc1f90ae7"
+
+
+def test_visitor_id_prefers_client_supplied_uuid():
+    request = FakeRequest({"x-client-visitor": VISITOR.upper()})
+    assert visitor_id_from(request, session_id=SESSION, enabled=True) == VISITOR
+
+
+@pytest.mark.parametrize("supplied", [None, "", "not-a-uuid"])
+def test_missing_or_malformed_visitor_falls_back_to_the_session(supplied):
+    headers = {"x-client-visitor": supplied} if supplied is not None else {}
+    request = FakeRequest(headers)
+    assert visitor_id_from(request, session_id=SESSION, enabled=True) == SESSION
+
+
+@pytest.mark.parametrize("header", [{"sec-gpc": "1"}, {"dnt": "1"}])
+def test_opted_out_browsers_are_counted_per_session_only(header):
+    request = FakeRequest({"x-client-visitor": VISITOR, **header})
+    assert visitor_id_from(request, session_id=SESSION, enabled=True) == SESSION
+
+
+def test_disabled_visitor_ids_are_not_recorded():
+    request = FakeRequest({"x-client-visitor": VISITOR})
+    assert visitor_id_from(request, session_id=SESSION, enabled=False) is None

@@ -158,10 +158,11 @@ All settings are read from the environment or `.env` (case-insensitive). See
 | `TELEMETRY_SAMPLING_RATIO` | `1.0` | traces only; analytics events are never sampled |
 | `ANALYTICS_CAPTURE_QUERY_TEXT` | `true` | records keyword/describe search text and free-text filter values; `false` keeps only length and term count |
 | `ANALYTICS_SALT` | `""` | salt for the fallback visitor hash; treat as a secret |
+| `ANALYTICS_VISITOR_ID_ENABLED` | `true` | records a pseudonymous, 90-day browser id so the dashboard can count returning visitors once; `false` keeps only the per-tab session id (see below) |
 | `ANALYTICS_DASHBOARD_ENABLED` | `false` | serves the `/analytics` page; also needs `ANALYTICS_DASHBOARD_TOKEN` |
 | `ANALYTICS_DASHBOARD_TOKEN` | `""` | shared access token for the dashboard (`Authorization: Bearer`); treat as a secret |
 | `LOG_ANALYTICS_WORKSPACE_ID` | unset | workspace **GUID** (`customerId`), not the resource id; Bicep injects it |
-| `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range |
+| `ANALYTICS_DASHBOARD_CACHE_SECONDS` | `900` | Log Analytics queries are billed, so results are cached per range and chart interval |
 | `ANALYTICS_DASHBOARD_RATE_LIMIT` | `30` | dashboard requests per window, per client |
 | `ANALYTICS_DASHBOARD_RATE_WINDOW_SECONDS` | `60` | over the limit returns HTTP 429 |
 
@@ -178,6 +179,7 @@ All routes are mounted under `/api`.
 | `GET` | `/reference` | Filter vocabularies (origins, statuses, categories, permit states); cached in process for 1 hour |
 | `GET` | `/coverage` | Pipeline coverage by approval year plus search-index freshness, for the `/coverage` page; cached in process for 15 minutes |
 | `GET` | `/colas` | Paged, filtered, faceted search |
+| `GET` | `/colas/export.csv` | The same search as a CSV download, up to 5,000 rows; `X-Export-Truncated` says whether more matched |
 | `GET` | `/colas/{cola_id}` | Full COLA detail with images and label analysis |
 | `GET` | `/colas/{cola_id}/similar` | Visually similar labels (pgvector ANN) |
 | `GET` | `/colas/{cola_id}/images/{file_name}` | Streams a label image; `primary` resolves the front label |
@@ -192,8 +194,10 @@ All routes are mounted under `/api`.
 Responses are camelCase. `GET /colas` accepts `q`, `ttbId`, `brand`, `fanciful`,
 `applicant`, `business`, `permit`, `permitName`, `permitState`, `permitCity`,
 `submitter`, `varietal`, `qualification`, `labelText`, `commodity`, `source`,
-`origin`, `status`, `dateFrom`, `dateTo`, `sort`, `page`, `pageSize`,
-and `facets`.
+`origin`, `status`, `dateFrom`, `dateTo`, `approvedWithin`, `sort`, `page`,
+`pageSize`, and `facets`. `approvedWithin=n` keeps COLAs approved in the last
+`n` years, counted back from today on every request, so a saved link stays
+current. `GET /colas/export.csv` takes the same filters and `sort`.
 ### Search behaviour
 
 A few semantics are worth knowing before writing queries against it:
@@ -341,7 +345,10 @@ vendor as a side effect of the routing scheme.
 Server-derived events (`search_performed`, `detail_viewed`, `similar_requested`,
 `image_search_performed`, `describe_search_performed`) need no client
 cooperation, so they survive ad
-blockers. Client events cover only interactions that produce no request —
+blockers. Lookups the SPA makes for itself through `/api/colas` (the home
+page's recently approved strip, the tour's sample record) send
+`X-Client-Purpose: background` and are recorded as `background_search`: they
+count toward sessions, never toward searches. Client events cover only interactions that produce no request —
 opening the advanced panel, switching label faces, or following the outbound
 COLA download link.
 
@@ -356,13 +363,43 @@ COLA download link.
   `permit`, `labelText`, ...), each capped at 200 characters. With it off, only
   `has_query`, `query_length`, and `term_count` are kept.
 - Latency, status code, and a session identifier.
+- While `ANALYTICS_VISITOR_ID_ENABLED` is on (the default): a visitor id, so the
+  dashboard can count a browser that comes back over several sessions once.
 
 **What is not recorded**
 
 - IP addresses. `DisableIpMasking` is left off in Bicep, so Azure masks them.
-- Anything durable about a visitor. The session id comes from `sessionStorage`
+- Anything tying an id to a person. The session id comes from `sessionStorage`
   and dies with the tab; when the SPA cannot supply one, the fallback is a
   salted hash that becomes unlinkable as soon as `ANALYTICS_SALT` is rotated.
+
+**Visitor ids**
+
+The visitor id is a random UUID the SPA keeps in `localStorage` (no cookie) and
+sends as `X-Client-Visitor`. It links sessions from the same browser, which
+makes it multi-session measurement (OMB M-10-22 Tier 2) rather than the
+single-session kind the session id is — confirm the site privacy notice
+discloses it before relying on the default. Its limits:
+
+- **It is replaced every 90 days**, matching log retention, so no id outlives
+  the data it could link. A browser whose id is replaced inside the selected
+  range is counted twice (old id and new), so the Visitors figure is an upper
+  bound: about a third of returning browsers are double-counted on a 30-day
+  range, and nearly all of them on 90 days.
+- **Opting out is honoured.** A browser sending Global Privacy Control
+  (`Sec-GPC: 1`) or Do Not Track (`DNT: 1`) never gets one; the server checks
+  the headers too and records such a browser under its session id instead, so
+  it still counts once per session but is never linked across them. Turning
+  either signal on also deletes an id stored earlier.
+- **Without `localStorage`** (blocked, some private windows) the browser is
+  likewise counted per session.
+- **Switching it off** (`ANALYTICS_VISITOR_ID_ENABLED=false`) stops recording
+  at once. Every API response carries `X-Analytics-Visitor: on|off`; on `off`
+  the SPA deletes its id and stops minting new ones until a response says `on`.
+- **It counts browsers, not people.** One person on a laptop and a phone is two
+  visitors; clearing site data starts a new id. Older events carry no visitor
+  id and are left out of the count rather than guessed at, so the 90-day figure
+  fills in over the three months after this ships.
 
 Health checks and image-blob requests are excluded from tracing
 (`EXCLUDED_URLS`) — the blob proxy alone is one request per thumbnail and would
@@ -374,13 +411,24 @@ the search funnel, zero-result rate, filter popularity, and latency percentiles.
 ### Usage dashboard (`/analytics`)
 
 Off by default. When `ANALYTICS_DASHBOARD_ENABLED` is set, the SPA serves an
-aggregate dashboard at `/analytics` — headline volumes, zero-result rate, filter
+aggregate dashboard at `/analytics` — headline volumes (including distinct
+visitors; see [Visitor ids](#visitor-ids)), zero-result rate, filter
 and sort popularity, the 50 most recent keyword searches, top keyword searches
-with no results, the most recent filter values and artwork descriptions (each
-linking back to the search), most-viewed records, latency percentiles
-per endpoint (as a table or over time), and image-search
-volume. It reads Log Analytics directly; the application database is touched
+with no results, the most recent filter values (with the result count of their
+latest search) and artwork descriptions (each linking back to the search),
+most-viewed records, latency percentiles per endpoint (as a table or over time),
+and image-search volume. Line charts can be grouped at a finer or coarser
+interval per range (6 hours or daily for 7 days, 12 hours or daily for 14 days,
+daily or weekly for 30 and 90 days); weekly buckets are calendar weeks starting
+Sunday 00:00 UTC, so the first and last are partial. It reads Log Analytics directly; the application database is touched
 only to turn the top COLA ids into brand names.
+
+**Searches** counts the successful first page of each search a person ran;
+**Result pages** counts every successful page, so the gap between the two is
+paging. Every search panel uses the same definition (`_USER_SEARCH` in
+`src/api/insights.py`): failed requests and background lookups are left out,
+including background lookups logged as `search_performed` before they were
+marked, which are recognised by their shape.
 
 Enabling it takes four things:
 
@@ -423,8 +471,8 @@ Things worth knowing before you turn it on:
 - **"Failed requests" is not uptime.** No availability test is configured, so the
   panel is a request failure rate — it cannot see an outage in which the app
   never received the request. The UI labels it accordingly.
-- Results are cached for `ANALYTICS_DASHBOARD_CACHE_SECONDS` per time range, and
-  only one refresh per range runs at a time. Every miss is a billed Log Analytics
+- Results are cached for `ANALYTICS_DASHBOARD_CACHE_SECONDS` per time range and
+  chart interval, and only one refresh per pair runs at a time. Every miss is a billed Log Analytics
   query. Ingestion also lags a few minutes, so the newest bucket is incomplete.
 - A panel whose query fails is reported in `unavailable` and rendered empty,
   never as zero. One bad panel does not fail the page.

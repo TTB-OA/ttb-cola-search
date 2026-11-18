@@ -26,6 +26,11 @@ const AREA_LINE = 'cola-area-line';
 // --blue-dark, and a tint of it that survives a black basemap; MapLibre paint
 // cannot read a CSS custom property.
 const AREA_COLOR = { light: '#1a4480', dark: '#8ab4f8' };
+const REGION_SOURCE = 'cola-region';
+const REGION_FILL = 'cola-region-fill';
+const REGION_LINE = 'cola-region-line';
+// --gold-dark in each mode, matching the origin cards under the mini-map.
+const REGION_COLOR = { light: '#e5a000', dark: '#e0b040' };
 const BLANK_BG = { light: '#eef1f5', dark: '#11151b' };
 const ATTRIBUTION = '<a href="https://openstreetmap.org">OpenStreetMap</a> via <a href="https://protomaps.com">Protomaps</a>';
 
@@ -129,6 +134,17 @@ function areaGeoJson(area) {
         },
       },
     ],
+  };
+}
+
+function regionGeoJson(regions) {
+  return {
+    type: 'FeatureCollection',
+    features: (regions || []).map((r) => ({
+      type: 'Feature',
+      properties: { id: r.id },
+      geometry: r.geometry,
+    })),
   };
 }
 
@@ -303,6 +319,21 @@ function markerElement(point, onSelect) {
 // the lot, so adding them is a step of its own rather than part of the first
 // load. The empty data here is filled in by the effects that watch the props.
 function addOverlays(instance, theme) {
+  // Below everything else: a region is context for the pins, not a target.
+  instance.addSource(REGION_SOURCE, { type: 'geojson', data: regionGeoJson([]) });
+  instance.addLayer({
+    id: REGION_FILL,
+    type: 'fill',
+    source: REGION_SOURCE,
+    paint: { 'fill-color': REGION_COLOR[theme], 'fill-opacity': 0.22 },
+  });
+  instance.addLayer({
+    id: REGION_LINE,
+    type: 'line',
+    source: REGION_SOURCE,
+    paint: { 'line-color': REGION_COLOR[theme], 'line-width': 1.5 },
+  });
+
   instance.addSource(HEAT_SOURCE, { type: 'geojson', data: toGeoJson([]) });
   instance.addLayer({ id: HEAT_LAYER, type: 'heatmap', source: HEAT_SOURCE, paint: heatPaint([], instance) });
 
@@ -348,6 +379,7 @@ export default function MapView({
   mode = 'heat',
   bins,
   points,
+  regions,
   area,
   view,
   interactive = true,
@@ -537,6 +569,21 @@ export default function MapView({
     if (!instance || !ready) return;
     instance.getSource(AREA_SOURCE)?.setData(areaGeoJson(area));
   }, [area?.west, area?.south, area?.east, area?.north, ready]);
+
+  // Highlighted areas: product origins drawn as the state or country they name.
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready) return;
+    instance.getSource(REGION_SOURCE)?.setData(regionGeoJson(regions));
+  }, [regions, ready]);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance || !ready || !instance.getLayer(REGION_LINE)) return;
+    const on = ['==', ['get', 'id'], highlightId ?? ''];
+    instance.setPaintProperty(REGION_LINE, 'line-width', ['case', on, 3, 1.5]);
+    instance.setPaintProperty(REGION_FILL, 'fill-opacity', ['case', on, 0.38, 0.22]);
+  }, [highlightId, regions, ready]);
 
   // Image pins
   useEffect(() => {

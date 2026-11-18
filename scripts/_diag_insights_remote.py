@@ -10,7 +10,7 @@ async def main():
     cred = DefaultAzureCredential()
     client = LogsQueryClient(cred)
     span = insights.RANGES["30d"]
-    qs = insights._queries(insights._BUCKETS["30d"])
+    qs = insights._queries(insights._BUCKETS[insights.resolve_interval("30d", None)])
     t = time.perf_counter()
     await cred.get_token("https://api.loganalytics.io/.default")
     print("token", round(time.perf_counter() - t, 1), flush=True)

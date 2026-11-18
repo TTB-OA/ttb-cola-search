@@ -16,10 +16,13 @@ from psycopg.errors import QueryCanceled
 from starlette.responses import Response
 
 from .analytics import (
+    BACKGROUND_SEARCH_EVENT,
     EVENT_BY_ROUTE,
+    VISITOR_POLICY_HEADER,
     emit,
+    identity_attrs,
+    is_background,
     route_key,
-    session_id_from,
     shape_describe_event,
     shape_detail_event,
     shape_image_search_event,
@@ -90,6 +93,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The export headers say how many rows a CSV carries and whether the
+        # match set was cut short, which the SPA reports beside the button.
+        expose_headers=[VISITOR_POLICY_HEADER, "X-Export-Rows", "X-Export-Truncated"],
     )
 
     @app.middleware("http")
@@ -97,6 +103,9 @@ def create_app() -> FastAPI:
         started = time.perf_counter()
         response = await call_next(request)
         _record_event(request, response.status_code, started, settings)
+        response.headers[VISITOR_POLICY_HEADER] = (
+            "on" if settings.analytics_visitor_id_enabled else "off"
+        )
         return response
 
     app.include_router(health.router, prefix=API_PREFIX)
@@ -140,13 +149,13 @@ def _record_event(
         if name is None:
             return
 
+        searched = name == "search_performed"
+        if searched and is_background(request):
+            name = BACKGROUND_SEARCH_EVENT
+
         params = request.query_params
         attrs: dict[str, object] = {
-            "session_id": session_id_from(
-                request,
-                trust_forwarded_for=settings.trust_forwarded_for,
-                salt=settings.analytics_salt,
-            ),
+            **identity_attrs(request, settings),
             # Not "origin": that is also the name of a search filter, and the
             # shaped attributes below would overwrite it.
             "event_source": "server",
@@ -154,7 +163,8 @@ def _record_event(
             "duration_ms": round((time.perf_counter() - started) * 1000, 1),
         }
 
-        if name == "search_performed":
+        # An export carries the same filters as the search it was taken from.
+        if searched or name == "results_exported":
             attrs |= shape_search_event(
                 params, capture_query_text=settings.analytics_capture_query_text
             )

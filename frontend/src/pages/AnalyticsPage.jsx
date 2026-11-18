@@ -15,6 +15,27 @@ const RANGES = [
   { key: '90d', label: '90 days' },
 ];
 
+// Chart intervals offered per range, default first. Mirrors INTERVALS in
+// src/api/insights.py; the API rejects any other pairing.
+const INTERVALS = {
+  '7d': [
+    { key: '6h', label: '6 hours' },
+    { key: '1d', label: 'Daily' },
+  ],
+  '14d': [
+    { key: '12h', label: '12 hours' },
+    { key: '1d', label: 'Daily' },
+  ],
+  '30d': [
+    { key: '1d', label: 'Daily' },
+    { key: '1w', label: 'Weekly' },
+  ],
+  '90d': [
+    { key: '1d', label: 'Daily' },
+    { key: '1w', label: 'Weekly' },
+  ],
+};
+
 const FILTER_LABELS = {
   q: 'Keyword',
   ttbId: 'TTB ID',
@@ -121,7 +142,7 @@ function LatencyTable({ rows }) {
 }
 
 /* ---------- Latency card: table or per-endpoint series ---------- */
-function LatencyCard({ rows, overTime }) {
+function LatencyCard({ rows, overTime, interval }) {
   const [view, setView] = useState('table');
   const [metric, setMetric] = useState('p95');
   const series = (overTime?.endpoints || []).map((endpoint, i) => ({
@@ -162,6 +183,7 @@ function LatencyCard({ rows, overTime }) {
         <LatencyTable rows={rows} />
       ) : (
         <TimeSeries
+          interval={interval}
           label={`${metric} response time per endpoint over time, in milliseconds`}
           points={overTime?.[metric]}
           series={series}
@@ -241,6 +263,9 @@ function RecentFilterValues({ rows }) {
           <tr>
             <th>Filter value</th>
             <th>Uses</th>
+            <th title="Results of the most recent search that used this value, including any keyword or other filters it was combined with">
+              Results
+            </th>
             <th>Last used</th>
           </tr>
         </thead>
@@ -254,6 +279,9 @@ function RecentFilterValues({ rows }) {
                   <div className="an-sub muted">{label}</div>
                 </td>
                 <td>{num(r.count)}</td>
+                <td className={r.results === 0 ? 'an-zero' : undefined}>
+                  {r.results == null ? '—' : `${num(r.results)}${r.capped ? '+' : ''}`}
+                </td>
                 <td>{WHEN.format(new Date(r.t))}</td>
               </tr>
             );
@@ -392,10 +420,16 @@ function TokenForm({ rejected, onSubmit }) {
 export default function AnalyticsPage() {
   useDocumentTitle('Usage dashboard');
   const [range, setRange] = useState('30d');
+  const [chosenInterval, setChosenInterval] = useState(null);
   const [token, setToken] = useState(readToken);
+  // A choice the new range does not offer falls back to that range's default.
+  const intervals = INTERVALS[range];
+  const interval = intervals.some((i) => i.key === chosenInterval)
+    ? chosenInterval
+    : intervals[0].key;
   const { data, loading, error } = useAsync(
-    (signal) => api.analyticsDashboard({ range }, token, signal),
-    [range, token]
+    (signal) => api.analyticsDashboard({ range, interval }, token, signal),
+    [range, interval, token]
   );
   const unauthorized = error?.status === 401;
 
@@ -407,28 +441,28 @@ export default function AnalyticsPage() {
   const totals = data?.totals;
   const panels = data?.panels || {};
   const missing = data?.unavailable || [];
+  // Shown while ids are recorded, and afterwards for as long as the range
+  // still holds some.
+  const showVisitors = Boolean(data?.visitorIdsEnabled || totals?.visitors);
 
   return (
     <div className="wrap an-page">
       <div className="an-head">
         <h1>Usage dashboard</h1>
-        <div className="seg" role="group" aria-label="Time range">
-          {RANGES.map((r) => (
-            <button
-              key={r.key}
-              type="button"
-              className={range === r.key ? 'active' : ''}
-              onClick={() => setRange(r.key)}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="an-controls">
+          <Seg label="Time range" options={RANGES} value={range} onChange={setRange} />
+          <Seg
+            label="Chart interval"
+            options={intervals}
+            value={interval}
+            onChange={setChosenInterval}
+          />
         </div>
       </div>
 
       {loading ? (
         <div className="an-tiles">
-          {[0, 1, 2, 3, 4].map((i) => (
+          {[0, 1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="skel an-tile" style={{ height: 92 }} />
           ))}
         </div>
@@ -453,7 +487,23 @@ export default function AnalyticsPage() {
           ) : null}
 
           <div className="an-tiles">
-            <StatTile label="Searches" value={num(totals?.searches)} />
+            <StatTile
+              label="Searches"
+              value={num(totals?.searches)}
+              hint="First page of each search"
+            />
+            <StatTile
+              label="Result pages"
+              value={num(totals?.resultPages)}
+              hint="Including later pages"
+            />
+            {showVisitors ? (
+              <StatTile
+                label="Visitors"
+                value={num(totals?.visitors)}
+                hint="Distinct browsers, not people"
+              />
+            ) : null}
             <StatTile label="Sessions" value={num(totals?.sessions)} />
             <StatTile label="Detail views" value={num(totals?.detailViews)} />
             <StatTile
@@ -472,18 +522,24 @@ export default function AnalyticsPage() {
           <div className="an-grid-2">
             <Card title="Activity over time">
               <TimeSeries
-                label="Searches, detail views and sessions over time"
+                interval={data.interval}
+                label={`Searches, detail views, sessions${showVisitors ? ' and visitors' : ''} over time`}
                 points={panels.usageOverTime}
                 series={[
                   { key: 'searches', label: 'Searches', color: 'var(--accent)' },
                   { key: 'detailViews', label: 'Detail views', color: 'var(--mint)' },
                   { key: 'sessions', label: 'Sessions', color: 'var(--green)' },
+                  ...(showVisitors
+                    ? [{ key: 'visitors', label: 'Visitors', color: 'var(--gold-dark)' }]
+                    : []),
                 ]}
+                toggleable
               />
             </Card>
 
             <Card title="Searches returning nothing">
               <TimeSeries
+                interval={data.interval}
                 label="Total searches versus zero-result searches"
                 points={panels.zeroResultsOverTime}
                 series={[
@@ -540,10 +596,11 @@ export default function AnalyticsPage() {
               <BarList items={panels.originUsage} color="var(--green)" />
             </Card>
 
-            <LatencyCard rows={panels.latency} overTime={panels.latencyOverTime} />
+            <LatencyCard rows={panels.latency} overTime={panels.latencyOverTime} interval={data.interval} />
 
             <Card title="Request failures">
               <TimeSeries
+                interval={data.interval}
                 label="Total versus failed requests"
                 points={panels.reliability}
                 series={[
@@ -559,6 +616,7 @@ export default function AnalyticsPage() {
 
             <Card title="Image search">
               <TimeSeries
+                interval={data.interval}
                 label="Image searches performed, abandoned and lost"
                 points={panels.imageSearchOverTime}
                 series={[
@@ -575,6 +633,7 @@ export default function AnalyticsPage() {
 
             <Card title="Map usage">
               <TimeSeries
+                interval={data.interval}
                 label="Map viewports, area summaries and label clicks over time"
                 points={panels.mapOverTime}
                 series={[
@@ -608,6 +667,16 @@ export default function AnalyticsPage() {
             Data as of {new Date(data.generatedAt).toLocaleString()}. Telemetry takes a
             few minutes to become queryable, so the most recent bucket may be
             incomplete.
+            {data.interval === '1w'
+              ? ' Weekly buckets start on Sunday (UTC), so the first and last weeks cover only part of a week.'
+              : ''}
+            {' '}Searches counts each search once, on its first page; later pages count
+            only toward Result pages. Neither counts failed requests or the home
+            page’s list of recent approvals. The recent lists show the latest 50
+            entries, not every search, and leave out date filters.
+            {showVisitors
+              ? ' Visitors counts browsers by a pseudonymous id kept for up to 90 days, so the figure is an upper bound: a browser whose id is replaced during the range counts twice, as does one person on two devices, and browsers that opt out of tracking count once per session. Only events since visitor ids were introduced are counted.'
+              : ''}
           </p>
         </>
       )}

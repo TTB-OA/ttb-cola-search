@@ -94,6 +94,14 @@
 
 .results-main { min-width: 0; }
 .results-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.export-btn { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding-top: 0; padding-bottom: 0; white-space: nowrap; }
+.export-note {
+  display: flex; align-items: center; gap: 10px; margin: -8px 0 16px; padding: 10px 14px;
+  background: var(--accent-lighter); border: 1px solid var(--accent-light); border-left: 4px solid var(--accent);
+  border-radius: var(--radius); color: var(--base-darker); font-size: 13.5px;
+}
+.export-note > span { flex: 1; }
+.export-note.error { border-left-color: var(--red); }
 
 /* ---------- Gallery ---------- */
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 22px; }
@@ -210,6 +218,13 @@
 .d-scan-flag { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 0 5px; border: 1px solid var(--gold-dark); border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: .04em; line-height: 15px; color: #6b4a00; background: #fef5e7; vertical-align: 1px; cursor: help; }
 [data-theme="dark"] .d-scan-flag { color: #f0cf8a; background: #2d2409; }
 .d-value { font-size: 15.5px; color: var(--ink); font-weight: 500; }
+/* Paragraph-length values span the grid instead of wrapping in half of it. */
+.d-field-wide { grid-column: 1 / -1; }
+.d-long { background: var(--gray-2); border-radius: var(--radius); padding: 12px 16px; border-left: 3px solid var(--base-light); }
+.d-long-text { font-size: 14px; line-height: 1.6; color: var(--ink); white-space: pre-line; overflow-wrap: anywhere; }
+.d-long-text.clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.d-long-toggle { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.d-long-toggle:hover { text-decoration: underline; }
 .d-qual { font-size: 14px; line-height: 1.6; color: var(--base-darker); background: var(--gray-2); border-radius: var(--radius); padding: 16px; border-left: 3px solid var(--base-light); }
 .d-qual-list { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.6; color: var(--base-darker); }
 .d-qual-list li + li { margin-top: 10px; }
@@ -336,6 +351,7 @@ section > .d-notice { margin-bottom: 0; }
 .an-page { padding: 24px 0 40px; }
 .an-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
 .an-head h1 { font-size: 28px; margin: 0 0 4px; }
+.an-controls { display: flex; gap: 10px; flex-wrap: wrap; }
 .an-caption { font-size: 13px; color: var(--base-dark); margin: 0 0 22px; }
 .an-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
 .an-tile { padding: 16px 18px; }
@@ -358,7 +374,7 @@ section > .d-notice { margin-bottom: 0; }
 .an-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; list-style: none; margin: 10px 0 0; padding: 0; font-size: 12.5px; color: var(--base-darker); }
 .an-legend li { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .an-legend-toggle {
-  display: flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 4px; margin: -2px -4px;
+  display: flex; align-items: center; gap: 6px; max-width: calc(100% + 8px); padding: 2px 4px; margin: -2px -4px;
   background: none; border: 0; border-radius: var(--radius); cursor: pointer;
   font: inherit; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
@@ -503,6 +519,8 @@ section > .d-notice { margin-bottom: 0; }
 .d-pin-no.is-primary { background: var(--accent); }
 .d-pin-no.is-origin { background: var(--gold-dark); color: var(--on-warm); }
 .d-pin-no.is-associated { background: var(--mint); }
+/* An origin outlined as a whole area: a swatch of the fill, not a pin number. */
+.d-pin-no.is-area { border-radius: 3px; background: color-mix(in srgb, var(--gold-dark) 35%, transparent); border: 2px solid var(--gold-dark); }
 
 /* The mini-map on a COLA record: a locator, not an explorer. */
 .d-minimap { height: 220px; position: relative; border: 1px solid var(--base-lighter); border-radius: var(--radius); overflow: hidden; margin-top: 10px; }
@@ -631,4 +649,6 @@ section > .d-notice { margin-bottom: 0; }
 @media print {
   .gov-banner, .prototype-banner, .site-header, .site-footer, .results-bar, .tweaks-host, button.btn, .crumbs { display: none !important; }
   .label-viewer, .panel { box-shadow: none; }
+  .d-long-text.clamped { display: block; overflow: visible; -webkit-line-clamp: none; line-clamp: none; }
+  .d-long-toggle { display: none; }
 }
